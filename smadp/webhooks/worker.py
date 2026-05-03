@@ -16,6 +16,7 @@ import httpx
 import structlog
 
 from smadp.config import Config, load_config
+from smadp.schemas.webhooks import WebhookDelivery
 from smadp.tenancy.keys import load_signing_key
 from smadp.transparency import journal
 from smadp.utils.time import utcnow
@@ -27,6 +28,9 @@ log = structlog.get_logger(__name__)
 _BACKOFFS_SECONDS: Final[tuple[int, ...]] = (1, 4, 16, 64, 256)
 _MAX_ATTEMPTS: Final[int] = 6  # 1 original + 5 retries
 _POST_TIMEOUT_S: Final[float] = 10.0
+_RESERVED_HEADERS: Final[frozenset[str]] = frozenset(
+    {"x-smadp-signature", "x-smadp-event-type", "x-smadp-delivery-id", "content-type"}
+)
 
 
 def _now() -> datetime:
@@ -43,6 +47,30 @@ def _backoff_for_attempts_done(attempts_done: int) -> int:
     return _BACKOFFS_SECONDS[attempts_done - 1]
 
 
+def _build_headers(*, delivery: WebhookDelivery, signature: str) -> dict[str, str]:
+    """Merge integration headers; reserved SMADP headers win conflicts.
+
+    Overlay headers are applied first, but any that conflict with reserved
+    headers are dropped and logged. Then the four reserved headers are set
+    from worker-controlled values.
+    """
+    headers: dict[str, str] = {}
+    for k, v in (delivery.headers_overlay or {}).items():
+        if k.lower() in _RESERVED_HEADERS:
+            log.info(
+                "webhooks.worker.header_conflict_dropped",
+                delivery_id=delivery.id,
+                header=k,
+            )
+            continue
+        headers[k] = v
+    headers["Content-Type"] = "application/json"
+    headers["X-SMADP-Signature"] = signature
+    headers["X-SMADP-Event-Type"] = delivery.event_type.value
+    headers["X-SMADP-Delivery-Id"] = delivery.id
+    return headers
+
+
 def process_one_pending(*, config: Config | None = None) -> bool:
     """Claim and process one pending delivery; return True if any work happened."""
     cfg = config or load_config()
@@ -53,12 +81,7 @@ def process_one_pending(*, config: Config | None = None) -> bool:
     secret = store.load_subscription_secret(subscription_id=delivery.subscription_id, config=cfg)
     sub = store.get_subscription(subscription_id=delivery.subscription_id, config=cfg)
     sig = compute_hmac(secret, delivery.body)
-    headers = {
-        "Content-Type": "application/json",
-        "X-SMADP-Event-Type": delivery.event_type.value,
-        "X-SMADP-Delivery-Id": delivery.id,
-        "X-SMADP-Signature": sig,
-    }
+    headers = _build_headers(delivery=delivery, signature=sig)
     try:
         with httpx.Client(timeout=_POST_TIMEOUT_S) as client:
             resp = client.post(sub.url, content=delivery.body, headers=headers)
