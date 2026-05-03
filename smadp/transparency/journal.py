@@ -19,12 +19,17 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 
 from smadp.config import Config, load_config
 from smadp.schemas.transparency import SignedEvent
@@ -174,7 +179,71 @@ def append_event(
         conn.close()
 
 
+@dataclass(frozen=True)
+class VerificationReport:
+    valid: bool
+    first_break: int | None
+    reason: str
+
+
+def iter_events(*, config: Config | None = None) -> Iterator[SignedEvent]:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute("SELECT * FROM signed_events ORDER BY id ASC")
+        for row in cur.fetchall():
+            yield SignedEvent(
+                id=row["id"],
+                event_type=row["event_type"],
+                payload=json.loads(row["payload"]),
+                ts=datetime.fromisoformat(row["ts"].replace("Z", "+00:00")),
+                prev_hash=row["prev_hash"],
+                signature=row["signature"],
+                rekor_uuid=row["rekor_uuid"],
+            )
+    finally:
+        conn.close()
+
+
+def verify_chain(
+    *,
+    public_key: Ed25519PublicKey,
+    config: Config | None = None,
+) -> VerificationReport:
+    """Walk the journal and verify every signature + chain link.
+
+    Returns the first break encountered, or ``valid=True`` if intact.
+    """
+    cfg = config or load_config()
+    expected_prev = GENESIS_PREV_HASH
+    for ev in iter_events(config=cfg):
+        # 1. chain link
+        if ev.prev_hash != expected_prev:
+            return VerificationReport(
+                valid=False,
+                first_break=ev.id,
+                reason=f"prev_hash mismatch at id {ev.id}: expected {expected_prev}",
+            )
+        # 2. signature
+        try:
+            public_key.verify(
+                bytes.fromhex(ev.signature), _canonical_signing_input(ev)
+            )
+        except (InvalidSignature, ValueError) as e:
+            return VerificationReport(
+                valid=False,
+                first_break=ev.id,
+                reason=f"signature invalid at id {ev.id}: {type(e).__name__}",
+            )
+        expected_prev = _hash_signature(ev.signature)
+    return VerificationReport(valid=True, first_break=None, reason="ok")
+
+
 __all__ = [
     "GENESIS_PREV_HASH",
+    "VerificationReport",
     "append_event",
+    "iter_events",
+    "verify_chain",
 ]
