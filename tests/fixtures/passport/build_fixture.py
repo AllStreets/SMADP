@@ -17,9 +17,7 @@ from smadp.schemas.tenancy import Plan
 from smadp.tenancy import keys, store
 
 
-def build_fixture_passport(
-    cache_dir: Path, *, rendered_at: str = "2026-05-03T12:00:00Z"
-) -> bytes:
+def build_fixture_passport(cache_dir: Path, *, rendered_at: str = "2026-05-03T12:00:00Z") -> bytes:
     """Build a deterministic passport using the given cache_dir as state.
 
     Caller must ensure SMADP_CACHE_DIR + SMADP_KEK_MASTER are set in the env

@@ -51,9 +51,14 @@ def test_sigstore_unreachable_renders_deferred(cfg: Config, workspace_id: str):
         return_value=httpx.Response(503)
     )
     html = render_passport(
-        verdict=_verdict(), frameworks={}, evidence_index={}, evidence_blobs={},
-        signing_strategy=SigningStrategy.SIGSTORE, workspace_id=workspace_id,
-        rendered_at="2026-05-03T12:00:00Z", config=cfg,
+        verdict=_verdict(),
+        frameworks={},
+        evidence_index={},
+        evidence_blobs={},
+        signing_strategy=SigningStrategy.SIGSTORE,
+        workspace_id=workspace_id,
+        rendered_at="2026-05-03T12:00:00Z",
+        config=cfg,
     )
     text = html.decode("utf-8")
     assert 'name="smadp-transparency-status" content="deferred"' in text
@@ -63,9 +68,7 @@ def test_sigstore_unreachable_renders_deferred(cfg: Config, workspace_id: str):
 
 
 @respx.mock
-def test_sigstore_success_embeds_rekor_uuid_and_proof_index(
-    cfg: Config, workspace_id: str
-):
+def test_sigstore_success_embeds_rekor_uuid_and_proof_index(cfg: Config, workspace_id: str):
     respx.post("https://rekor.example.test/api/v1/log/entries").mock(
         return_value=httpx.Response(
             201,
@@ -78,9 +81,7 @@ def test_sigstore_success_embeds_rekor_uuid_and_proof_index(
             },
         )
     )
-    respx.get(
-        "https://rekor.example.test/api/v1/log/entries/uuid-success-001/proof"
-    ).mock(
+    respx.get("https://rekor.example.test/api/v1/log/entries/uuid-success-001/proof").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -93,9 +94,14 @@ def test_sigstore_success_embeds_rekor_uuid_and_proof_index(
         )
     )
     html = render_passport(
-        verdict=_verdict(), frameworks={}, evidence_index={}, evidence_blobs={},
-        signing_strategy=SigningStrategy.SIGSTORE, workspace_id=workspace_id,
-        rendered_at="2026-05-03T12:00:00Z", config=cfg,
+        verdict=_verdict(),
+        frameworks={},
+        evidence_index={},
+        evidence_blobs={},
+        signing_strategy=SigningStrategy.SIGSTORE,
+        workspace_id=workspace_id,
+        rendered_at="2026-05-03T12:00:00Z",
+        config=cfg,
     )
     text = html.decode("utf-8")
     assert 'name="smadp-transparency-status" content="submitted"' in text

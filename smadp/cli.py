@@ -25,8 +25,8 @@ from smadp.catalog.index import CatalogIndex
 from smadp.catalog.lint import LintReport, lint_catalog
 from smadp.catalog.repo import CatalogRepo, NotFoundError
 from smadp.config import Config, load_config
-from smadp.transparency.cli import transparency_group
 from smadp.passport.cli import passport_group
+from smadp.transparency.cli import transparency_group
 from smadp.utils.slug import normalize_slug, sort_pair
 
 console = Console()

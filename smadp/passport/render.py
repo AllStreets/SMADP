@@ -86,20 +86,14 @@ def _render_unsigned(
 
 
 def _utcnow_isoformat_seconds() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="seconds")
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _evidence_blobs_b64(evidence_blobs: dict[str, dict[str, Any]]) -> str:
     """Base64-encode the JSON serialization of all evidence blobs."""
     if not evidence_blobs:
         return ""
-    payload = json.dumps(
-        evidence_blobs, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    )
+    payload = json.dumps(evidence_blobs, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return base64.b64encode(payload.encode("utf-8")).decode("ascii")
 
 
@@ -169,9 +163,7 @@ def render_passport(
             if uuid:
                 proof = _sigstore.get_inclusion_proof(uuid, config=cfg)
                 rekor_uuid = uuid
-                rekor_log_index = (
-                    str(proof.get("logIndex", "")) if proof else ""
-                )
+                rekor_log_index = str(proof.get("logIndex", "")) if proof else ""
                 transparency_status = "submitted"
             else:
                 transparency_status = "deferred"

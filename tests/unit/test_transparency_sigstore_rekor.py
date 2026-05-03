@@ -27,9 +27,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 
 def _append_one(cfg: Config) -> tuple[int, Ed25519PrivateKey]:
     key = Ed25519PrivateKey.generate()
-    ev = journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg
-    )
+    ev = journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg)
     return ev.id, key
 
 
@@ -80,9 +78,7 @@ def test_submit_signed_payload_returns_uuid_on_201(
     respx.post("https://rekor.example.test/api/v1/log/entries").mock(
         return_value=httpx.Response(
             201,
-            json={
-                "feed-face-uuid": {"logIndex": 12345, "integratedTime": 1714740000}
-            },
+            json={"feed-face-uuid": {"logIndex": 12345, "integratedTime": 1714740000}},
         )
     )
     out = sigstore.submit_signed_payload(
@@ -114,16 +110,16 @@ def test_get_inclusion_proof_returns_proof_dict(cfg: Config):
         "hashes": ["cd" * 32, "ef" * 32],
         "checkpoint": "rekor.example.test\n100000\n" + "ab" * 32 + "\n",
     }
-    respx.get(
-        "https://rekor.example.test/api/v1/log/entries/uuid-123/proof"
-    ).mock(return_value=httpx.Response(200, json=proof_payload))
+    respx.get("https://rekor.example.test/api/v1/log/entries/uuid-123/proof").mock(
+        return_value=httpx.Response(200, json=proof_payload)
+    )
     out = sigstore.get_inclusion_proof("uuid-123", config=cfg)
     assert out == proof_payload
 
 
 @respx.mock
 def test_get_inclusion_proof_returns_none_on_404(cfg: Config):
-    respx.get(
-        "https://rekor.example.test/api/v1/log/entries/missing/proof"
-    ).mock(return_value=httpx.Response(404))
+    respx.get("https://rekor.example.test/api/v1/log/entries/missing/proof").mock(
+        return_value=httpx.Response(404)
+    )
     assert sigstore.get_inclusion_proof("missing", config=cfg) is None

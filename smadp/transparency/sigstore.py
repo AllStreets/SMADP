@@ -73,9 +73,7 @@ def _build_hashedrekord_body(
             "data": {"hash": {"algorithm": "sha256", "value": sha}},
             "signature": {
                 "content": base64.b64encode(bytes.fromhex(signature_hex)).decode(),
-                "publicKey": {
-                    "content": base64.b64encode(public_key_pem.encode()).decode()
-                },
+                "publicKey": {"content": base64.b64encode(public_key_pem.encode()).decode()},
             },
         },
     }
@@ -164,9 +162,7 @@ def submit_signed_payload(
     return _post_entry(body)
 
 
-def get_inclusion_proof(
-    rekor_uuid: str, *, config: Config | None = None
-) -> dict[str, Any] | None:
+def get_inclusion_proof(rekor_uuid: str, *, config: Config | None = None) -> dict[str, Any] | None:
     """Fetch the inclusion proof for a Rekor entry by UUID.
 
     Returns the raw proof dict on success, None on 404/5xx/network error.
@@ -207,9 +203,7 @@ def mark_submitted(*, event_id: int, rekor_uuid: str, config: Config | None = No
             (rekor_uuid, event_id),
         )
         if cur.rowcount == 0:
-            raise KeyError(
-                f"No pending event with id {event_id!r}; already submitted or absent."
-            )
+            raise KeyError(f"No pending event with id {event_id!r}; already submitted or absent.")
         log.info(
             "transparency.sigstore.submitted",
             event_id=event_id,

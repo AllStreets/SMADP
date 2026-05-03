@@ -72,9 +72,14 @@ def test_render_passport_byok_appends_transparency_event(
 
     before = len(list(journal.iter_events(config=cfg)))
     render_passport(
-        verdict=_verdict(), frameworks={}, evidence_index={}, evidence_blobs={},
-        signing_strategy=SigningStrategy.BYOK, workspace_id=ws_id,
-        rendered_at="2026-05-03T12:00:00Z", config=cfg,
+        verdict=_verdict(),
+        frameworks={},
+        evidence_index={},
+        evidence_blobs={},
+        signing_strategy=SigningStrategy.BYOK,
+        workspace_id=ws_id,
+        rendered_at="2026-05-03T12:00:00Z",
+        config=cfg,
     )
     after = list(journal.iter_events(config=cfg))
     assert len(after) == before + 1
@@ -85,9 +90,14 @@ def test_render_passport_byok_missing_key_raises(cfg: Config):
     ws = store.create_workspace(name="X", plan=Plan.PUBLIC, config=cfg)
     with pytest.raises(KeyError, match="byok_key_missing_for_workspace"):
         render_passport(
-            verdict=_verdict(), frameworks={}, evidence_index={}, evidence_blobs={},
-            signing_strategy=SigningStrategy.BYOK, workspace_id=ws.id,
-            rendered_at="2026-05-03T12:00:00Z", config=cfg,
+            verdict=_verdict(),
+            frameworks={},
+            evidence_index={},
+            evidence_blobs={},
+            signing_strategy=SigningStrategy.BYOK,
+            workspace_id=ws.id,
+            rendered_at="2026-05-03T12:00:00Z",
+            config=cfg,
         )
 
 
@@ -100,13 +110,16 @@ def test_render_passport_embeds_canonical_payload_as_script_tag(
         frameworks={"nist_ai_rmf": {"name": "NIST AI RMF"}},
         evidence_index={},
         evidence_blobs={},
-        signing_strategy=SigningStrategy.BYOK, workspace_id=ws_id,
-        rendered_at="2026-05-03T12:00:00Z", config=cfg,
+        signing_strategy=SigningStrategy.BYOK,
+        workspace_id=ws_id,
+        rendered_at="2026-05-03T12:00:00Z",
+        config=cfg,
     )
     text = html.decode("utf-8")
     m = re.search(
         r'<script type="application/json" id="smadp-passport-payload">(.+?)</script>',
-        text, re.DOTALL,
+        text,
+        re.DOTALL,
     )
     assert m is not None
     payload = json.loads(m.group(1))

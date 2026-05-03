@@ -19,11 +19,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 def _replace_meta(html: bytes, name: str, value: str) -> bytes:
     """Replace the content of a <meta name="..."> tag in-place."""
-    pattern = re.compile(
-        rb'(name="' + re.escape(name.encode()) + rb'" content=")([^"]*)(")'
-    )
+    pattern = re.compile(rb'(name="' + re.escape(name.encode()) + rb'" content=")([^"]*)(")')
     new_content = value.encode("utf-8")
-    return pattern.sub(rb'\g<1>' + new_content + rb'\g<3>', html, count=1)
+    return pattern.sub(rb"\g<1>" + new_content + rb"\g<3>", html, count=1)
 
 
 def inject_signature_meta(
@@ -44,9 +42,7 @@ def inject_signature_meta(
     out = _replace_meta(out, "smadp-signing-strategy", signing_strategy_label)
     out = _replace_meta(out, "smadp-rekor-uuid", rekor_uuid)
     out = _replace_meta(out, "smadp-rekor-log-index", rekor_log_index)
-    out = _replace_meta(
-        out, "smadp-transparency-event-id", str(transparency_event_id)
-    )
+    out = _replace_meta(out, "smadp-transparency-event-id", str(transparency_event_id))
     out = _replace_meta(out, "smadp-transparency-status", transparency_status)
     return out
 

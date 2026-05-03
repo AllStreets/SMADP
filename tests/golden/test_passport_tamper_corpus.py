@@ -47,7 +47,7 @@ def test_tamper_2_public_key_swap(passport_html: bytes):
     )
     bad = re.sub(
         rb'(name="smadp-public-key-hex" content=")[0-9a-f]+(")',
-        rb'\g<1>' + other.encode() + rb'\g<2>',
+        rb"\g<1>" + other.encode() + rb"\g<2>",
         passport_html,
         count=1,
     )
@@ -57,7 +57,7 @@ def test_tamper_2_public_key_swap(passport_html: bytes):
 def test_tamper_3_canonical_sha_meta_lies(passport_html: bytes):
     bad = re.sub(
         rb'(name="smadp-canonical-sha256" content=")sha256:[0-9a-f]+(")',
-        rb'\g<1>sha256:' + b'0' * 64 + rb'\g<2>',
+        rb"\g<1>sha256:" + b"0" * 64 + rb"\g<2>",
         passport_html,
         count=1,
     )
@@ -67,7 +67,7 @@ def test_tamper_3_canonical_sha_meta_lies(passport_html: bytes):
 def test_tamper_4_payload_verdict_id_changed(passport_html: bytes):
     bad = re.sub(
         rb'("verdict_id":")vdt_FIXTURE(")',
-        rb'\g<1>vdt_HACKED\g<2>',
+        rb"\g<1>vdt_HACKED\g<2>",
         passport_html,
         count=1,
     )
@@ -101,7 +101,7 @@ def test_tamper_9_payload_script_removed(passport_html: bytes):
     """Strip the embedded canonical payload script tag entirely."""
     bad = re.sub(
         rb'<script type="application/json" id="smadp-passport-payload">.+?</script>',
-        b'',
+        b"",
         passport_html,
         count=1,
         flags=re.DOTALL,
@@ -113,7 +113,7 @@ def test_tamper_10_payload_truncated(passport_html: bytes):
     """Truncate the JSON payload mid-way to force a JSONDecodeError."""
     bad = re.sub(
         rb'(<script type="application/json" id="smadp-passport-payload">)(.{20})(.+?)(</script>)',
-        rb'\g<1>\g<2></script>',
+        rb"\g<1>\g<2></script>",
         passport_html,
         count=1,
         flags=re.DOTALL,
@@ -124,7 +124,7 @@ def test_tamper_10_payload_truncated(passport_html: bytes):
 def test_tamper_11_signature_meta_removed(passport_html: bytes):
     bad = re.sub(
         rb'<meta name="smadp-signature-hex" content="[0-9a-f]*"\s*/?>',
-        b'',
+        b"",
         passport_html,
         count=1,
     )
@@ -134,7 +134,7 @@ def test_tamper_11_signature_meta_removed(passport_html: bytes):
 def test_tamper_12_public_key_hex_invalid(passport_html: bytes):
     bad = re.sub(
         rb'(name="smadp-public-key-hex" content=")[0-9a-f]+(")',
-        rb'\g<1>not-hex\g<2>',
+        rb"\g<1>not-hex\g<2>",
         passport_html,
         count=1,
     )

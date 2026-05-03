@@ -20,9 +20,7 @@ def test_canonical_payload_is_sorted_compact_utf8():
         "headline": "Test",
         "framework_mappings": {"nist_ai_rmf": ["GOVERN-1.1"]},
     }
-    frameworks_dict = {
-        "nist_ai_rmf": {"name": "NIST AI RMF", "controls": [{"id": "GOVERN-1.1"}]}
-    }
+    frameworks_dict = {"nist_ai_rmf": {"name": "NIST AI RMF", "controls": [{"id": "GOVERN-1.1"}]}}
     evidence_index = {"sha256:abc": {"source_url": "https://x"}}
     rendered_at = "2026-05-03T12:34:56Z"
 

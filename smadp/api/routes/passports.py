@@ -41,7 +41,7 @@ def get_passport(
     verdict_dict = verdict_obj.model_dump(mode="json")
 
     try:
-        frameworks_dict = repo.load_frameworks_meta()
+        frameworks_dict = repo.load_frameworks_meta()  # type: ignore[attr-defined]
     except (FileNotFoundError, AttributeError):
         frameworks_dict = {}
 

@@ -12,9 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from smadp.passport.canonical import canonical_passport_sha256
 from smadp.schemas.passport import SigningStrategy, VerificationResult
 
-_META_RE = re.compile(
-    rb'<meta name="(?P<name>[a-z0-9_\-]+)" content="(?P<value>[^"]*)"\s*/?>'
-)
+_META_RE = re.compile(rb'<meta name="(?P<name>[a-z0-9_\-]+)" content="(?P<value>[^"]*)"\s*/?>')
 _PAYLOAD_RE = re.compile(
     rb'<script type="application/json" id="smadp-passport-payload">(?P<payload>.+?)</script>',
     re.DOTALL,
@@ -47,9 +45,7 @@ def verify_passport(html: bytes) -> VerificationResult:
     try:
         SigningStrategy(strategy)
     except ValueError:
-        return VerificationResult(
-            valid=False, reason=f"unknown signing_strategy: {strategy!r}"
-        )
+        return VerificationResult(valid=False, reason=f"unknown signing_strategy: {strategy!r}")
 
     sig_hex = meta.get("smadp-signature-hex", "")
     pub_hex = meta.get("smadp-public-key-hex", "")
@@ -62,9 +58,7 @@ def verify_passport(html: bytes) -> VerificationResult:
 
     payload = _extract_payload(html)
     if payload is None:
-        return VerificationResult(
-            valid=False, reason="missing or malformed payload script"
-        )
+        return VerificationResult(valid=False, reason="missing or malformed payload script")
 
     try:
         recomputed_sha = canonical_passport_sha256(
@@ -74,17 +68,12 @@ def verify_passport(html: bytes) -> VerificationResult:
             rendered_at=payload.get("rendered_at", ""),
         )
     except Exception as exc:
-        return VerificationResult(
-            valid=False, reason=f"payload re-canonicalization failed: {exc}"
-        )
+        return VerificationResult(valid=False, reason=f"payload re-canonicalization failed: {exc}")
 
     if recomputed_sha != declared_sha:
         return VerificationResult(
             valid=False,
-            reason=(
-                f"canonical sha mismatch: declared={declared_sha} "
-                f"recomputed={recomputed_sha}"
-            ),
+            reason=(f"canonical sha mismatch: declared={declared_sha} recomputed={recomputed_sha}"),
         )
 
     # Signature is over declared_sha (the canonical sha string); rebuild and verify.
@@ -94,9 +83,7 @@ def verify_passport(html: bytes) -> VerificationResult:
         pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub.verify(sig_bytes, declared_sha.encode("utf-8"))
     except (ValueError, InvalidSignature) as exc:
-        return VerificationResult(
-            valid=False, reason=f"signature verification failed: {exc}"
-        )
+        return VerificationResult(valid=False, reason=f"signature verification failed: {exc}")
 
     return VerificationResult(valid=True, reason=None)
 

@@ -6,14 +6,12 @@ compares the rest byte-for-byte.
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 import pytest
 
 from smadp.passport.render import _render_unsigned
-
 
 _VOLATILE_META = [
     b"smadp-signature-hex",
@@ -31,7 +29,7 @@ def _strip_volatile(html: bytes) -> bytes:
     for name in _VOLATILE_META:
         out = re.sub(
             rb'(name="' + re.escape(name) + rb'" content=")[^"]*(")',
-            rb'\g<1>\g<2>',
+            rb"\g<1>\g<2>",
             out,
         )
     return out
