@@ -176,3 +176,13 @@ __all__ = [
     "process_one_pending",
     "run_loop",
 ]
+
+
+def main() -> None:
+    """``python -m smadp.webhooks.worker`` — runs forever."""
+    log.info("webhooks.worker.starting")
+    run_loop()
+
+
+if __name__ == "__main__":
+    main()
