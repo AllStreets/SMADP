@@ -82,6 +82,69 @@ jobs:
           "
           python -m smadp.cli passport verify "${{ runner.temp }}/smadp-passport-ci/ci.html"
 
+      - name: Smoke — webhook full lifecycle
+        env:
+          SMADP_CACHE_DIR: ${{ runner.temp }}/smadp-webhook-ci
+          SMADP_KEK_MASTER: "0000000000000000000000000000000000000000000000000000000000000000"
+        run: |
+          python - <<'PY'
+          import threading
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+          received = []
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  length = int(self.headers.get('content-length', 0))
+                  body = self.rfile.read(length)
+                  received.append({
+                      'sig': self.headers.get('X-SMADP-Signature'),
+                      'event': self.headers.get('X-SMADP-Event-Type'),
+                      'delivery_id': self.headers.get('X-SMADP-Delivery-Id'),
+                      'body_len': len(body),
+                  })
+                  self.send_response(200)
+                  self.end_headers()
+
+              def log_message(self, *a, **k):
+                  return
+
+          server = HTTPServer(('127.0.0.1', 0), Handler)
+          port = server.server_address[1]
+          t = threading.Thread(target=server.serve_forever, daemon=True)
+          t.start()
+
+          from smadp.config import Config
+          from smadp.passport.render import render_passport
+          from smadp.schemas.passport import SigningStrategy
+          from smadp.schemas.tenancy import Plan
+          from smadp.schemas.webhooks import EventType
+          from smadp.tenancy import keys, store as tenancy
+          from smadp.webhooks import deliveries, store, worker
+
+          cfg = Config()
+          ws = tenancy.create_workspace(name='ci', plan=Plan.PUBLIC, config=cfg)
+          keys.upload_signing_key(workspace_id=ws.id, private_key=Ed25519PrivateKey.generate(), config=cfg)
+          store.create_subscription(
+              workspace_id=ws.id, url=f'http://127.0.0.1:{port}/wh',
+              event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+          )
+          render_passport(
+              verdict={'verdict_id':'vdt_ci','pair':['a/x','b/y'],'headline':'ci','composite_score':0.5,'framework_mappings':{}},
+              frameworks={}, evidence_index={}, evidence_blobs={},
+              signing_strategy=SigningStrategy.BYOK,
+              workspace_id=ws.id, rendered_at='2026-05-03T00:00:00Z', config=cfg,
+          )
+          assert worker.process_one_pending(config=cfg) is True
+          rows = list(deliveries.iter_all(config=cfg))
+          assert rows[0].status.value == 'delivered', rows[0].status.value
+          assert received and received[0]['event'] == 'passport.generated'
+          assert received[0]['sig'].startswith('sha256=')
+          print('OK: webhook delivered to', f'http://127.0.0.1:{port}/wh')
+          server.shutdown()
+          PY
+
       - name: Catalog lint (smadp lint)
         run: smadp lint --catalog catalog
 
