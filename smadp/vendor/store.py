@@ -11,13 +11,19 @@ import secrets
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Final
 
 import structlog
 
 from smadp.config import Config, load_config
+from smadp.schemas.dispute import (
+    Dispute,
+    DisputeDecision,
+    DisputeStatus,
+    RequestedOutcome,
+)
 from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimStatus,
@@ -57,6 +63,22 @@ CREATE TABLE IF NOT EXISTS vendor_responses (
 );
 CREATE INDEX IF NOT EXISTS vendor_responses_verdict
     ON vendor_responses(workspace_id, verdict_id);
+CREATE TABLE IF NOT EXISTS disputes (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    verdict_id TEXT NOT NULL,
+    vendor_user_id TEXT NOT NULL,
+    argument_md TEXT NOT NULL,
+    requested_outcome TEXT NOT NULL,
+    status TEXT NOT NULL,
+    decision_rationale_md TEXT,
+    filed_at TEXT NOT NULL,
+    triaged_at TEXT,
+    resolved_at TEXT,
+    sla_breached_at TEXT
+);
+CREATE INDEX IF NOT EXISTS disputes_verdict
+    ON disputes(workspace_id, verdict_id, status);
 """
 
 
@@ -355,13 +377,215 @@ def list_responses(
         conn.close()
 
 
+_BUSINESS_DAYS_SLA: Final[int] = 5
+
+
+def _generate_dispute_id(now: datetime) -> str:
+    ts = now.strftime("%Y%m%d%H%M%S")
+    suffix = secrets.token_hex(3)
+    return f"dsp_{ts}_{suffix}"
+
+
+def _add_business_days(start: datetime, days: int) -> datetime:
+    """Add N business days (Mon-Fri); skips weekends, ignores holidays."""
+    result = start
+    added = 0
+    while added < days:
+        result = result + timedelta(days=1)
+        if result.weekday() < 5:  # Mon=0..Fri=4
+            added += 1
+    return result
+
+
+_VALID_TRANSITIONS: Final[dict[tuple[DisputeStatus, DisputeDecision], DisputeStatus]] = {
+    (DisputeStatus.TRIAGE, DisputeDecision.SPAM): DisputeStatus.SPAM,
+    (DisputeStatus.TRIAGE, DisputeDecision.SUBSTANTIVE): DisputeStatus.PENDING_REVIEW,
+    (DisputeStatus.PENDING_REVIEW, DisputeDecision.REEVAL): DisputeStatus.RESOLVED_REEVAL,
+    (DisputeStatus.PENDING_REVIEW, DisputeDecision.STANDS): DisputeStatus.RESOLVED_STANDS,
+}
+
+
+def _row_to_dispute(row: sqlite3.Row) -> Dispute:
+    return Dispute(
+        id=row["id"],
+        workspace_id=row["workspace_id"],
+        verdict_id=row["verdict_id"],
+        vendor_user_id=row["vendor_user_id"],
+        argument_md=row["argument_md"],
+        requested_outcome=RequestedOutcome(row["requested_outcome"]),
+        status=DisputeStatus(row["status"]),
+        decision_rationale_md=row["decision_rationale_md"],
+        filed_at=_from_iso(row["filed_at"]),
+        triaged_at=_from_iso(row["triaged_at"]),
+        resolved_at=_from_iso(row["resolved_at"]),
+        sla_breached_at=_from_iso(row["sla_breached_at"]),
+    )
+
+
+def file_dispute(
+    *,
+    workspace_id: str,
+    verdict_id: str,
+    vendor_user_id: str,
+    argument_md: str,
+    requested_outcome: RequestedOutcome,
+    config: Config | None = None,
+) -> Dispute:
+    cfg = config or load_config()
+    now = utcnow()
+    dispute_id = _generate_dispute_id(now)
+    now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT INTO disputes"
+                "(id, workspace_id, verdict_id, vendor_user_id, argument_md,"
+                " requested_outcome, status, decision_rationale_md,"
+                " filed_at, triaged_at, resolved_at, sla_breached_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, 'triage', NULL, ?, NULL, NULL, NULL)",
+                (
+                    dispute_id,
+                    workspace_id,
+                    verdict_id,
+                    vendor_user_id,
+                    argument_md,
+                    requested_outcome.value,
+                    now_iso,
+                ),
+            )
+        log.info(
+            "vendor.dispute.filed",
+            workspace_id=workspace_id,
+            verdict_id=verdict_id,
+            dispute_id=dispute_id,
+        )
+        return get_dispute(dispute_id=dispute_id, config=cfg)
+    finally:
+        conn.close()
+
+
+def get_dispute(*, dispute_id: str, config: Config | None = None) -> Dispute:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute("SELECT * FROM disputes WHERE id = ?", (dispute_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise KeyError(f"unknown dispute: {dispute_id!r}")
+        return _row_to_dispute(row)
+    finally:
+        conn.close()
+
+
+def list_disputes(
+    *,
+    workspace_id: str,
+    verdict_id: str | None = None,
+    config: Config | None = None,
+) -> list[Dispute]:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        if verdict_id is None:
+            cur = conn.execute(
+                "SELECT * FROM disputes WHERE workspace_id = ? ORDER BY filed_at DESC",
+                (workspace_id,),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT * FROM disputes WHERE workspace_id = ? AND verdict_id = ?"
+                " ORDER BY filed_at DESC",
+                (workspace_id, verdict_id),
+            )
+        return [_row_to_dispute(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_dispute_status(
+    *,
+    dispute_id: str,
+    decision: DisputeDecision,
+    rationale_md: str | None,
+    config: Config | None = None,
+) -> Dispute:
+    cfg = config or load_config()
+    current = get_dispute(dispute_id=dispute_id, config=cfg)
+    target = _VALID_TRANSITIONS.get((current.status, decision))
+    if target is None:
+        raise ValueError(
+            f"invalid dispute transition: {current.status.value} → {decision.value}"
+        )
+    if target in {DisputeStatus.RESOLVED_REEVAL, DisputeStatus.RESOLVED_STANDS}:
+        if not rationale_md or not rationale_md.strip():
+            raise ValueError("rationale_md required for resolution")
+    now = utcnow()
+    now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+    triaged_at = current.triaged_at
+    sla_breached_at = current.sla_breached_at
+    resolved_at = current.resolved_at
+    if current.status == DisputeStatus.TRIAGE:
+        triaged_at = now
+        if target == DisputeStatus.PENDING_REVIEW:
+            sla_breached_at = _add_business_days(now, _BUSINESS_DAYS_SLA)
+        if target == DisputeStatus.SPAM:
+            resolved_at = now
+    elif target in {DisputeStatus.RESOLVED_REEVAL, DisputeStatus.RESOLVED_STANDS}:
+        resolved_at = now
+
+    triaged_iso = (
+        triaged_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+        if triaged_at
+        else None
+    )
+    sla_iso = (
+        sla_breached_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+        if sla_breached_at
+        else None
+    )
+    resolved_iso = (
+        resolved_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+        if resolved_at
+        else None
+    )
+
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "UPDATE disputes SET status = ?, decision_rationale_md = COALESCE(?, decision_rationale_md),"
+                " triaged_at = ?, sla_breached_at = ?, resolved_at = ?"
+                " WHERE id = ?",
+                (target.value, rationale_md, triaged_iso, sla_iso, resolved_iso, dispute_id),
+            )
+        log.info(
+            "vendor.dispute.transitioned",
+            dispute_id=dispute_id,
+            from_status=current.status.value,
+            to_status=target.value,
+            decision=decision.value,
+        )
+        return get_dispute(dispute_id=dispute_id, config=cfg)
+    finally:
+        conn.close()
+
+
 __all__ = [
     "create_claim",
+    "file_dispute",
     "find_verified_claim",
     "get_claim",
+    "get_dispute",
     "list_claims",
+    "list_disputes",
     "list_responses",
     "mark_claim_verified",
     "post_response",
     "revoke_claim",
+    "update_dispute_status",
 ]
