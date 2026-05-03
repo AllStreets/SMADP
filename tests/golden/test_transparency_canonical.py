@@ -6,7 +6,7 @@ existing transparency log. The expected bytes here are the contract.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from smadp.schemas.transparency import SignedEvent
 from smadp.transparency.journal import _canonical_payload, _canonical_signing_input
@@ -24,7 +24,7 @@ def test_canonical_signing_input_byte_stable():
         id=42,
         event_type="verdict.created",
         payload={"verdict_id": "vdt_x", "score": 0.31},
-        ts=datetime(2026, 5, 3, 12, 34, 56, 789000, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 3, 12, 34, 56, 789000, tzinfo=UTC),
         prev_hash="sha256:" + "0" * 64,
         signature="aabbccdd",
     )
@@ -45,7 +45,7 @@ def test_canonical_signing_input_omits_signature_and_rekor():
         id=1,
         event_type="x",
         payload={},
-        ts=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 3, tzinfo=UTC),
         prev_hash="sha256:" + "0" * 64,
         signature="aa",
         rekor_uuid="should-not-appear",

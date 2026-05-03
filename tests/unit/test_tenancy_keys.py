@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from smadp.config import Config
@@ -26,9 +27,7 @@ def workspace_id(cfg: Config) -> str:
 
 def test_upload_and_load_byok_key(cfg: Config, workspace_id: str):
     priv = Ed25519PrivateKey.generate()
-    keys.upload_signing_key(
-        workspace_id=workspace_id, private_key=priv, config=cfg
-    )
+    keys.upload_signing_key(workspace_id=workspace_id, private_key=priv, config=cfg)
     loaded = keys.load_signing_key(workspace_id=workspace_id, config=cfg)
     assert loaded is not None
     # Ed25519 signatures are deterministic; same key + same message = same sig.
@@ -54,10 +53,8 @@ def test_corrupted_ciphertext_fails(cfg: Config, workspace_id: str):
     plaintext = b"x"
     nonce, ciphertext = keys._encrypt(plaintext, workspace_id=workspace_id, config=cfg)
     bad = bytes([ciphertext[0] ^ 0xFF]) + ciphertext[1:]
-    with pytest.raises(Exception):  # InvalidTag from cryptography
-        keys._decrypt(
-            nonce=nonce, ciphertext=bad, workspace_id=workspace_id, config=cfg
-        )
+    with pytest.raises(InvalidTag):
+        keys._decrypt(nonce=nonce, ciphertext=bad, workspace_id=workspace_id, config=cfg)
 
 
 def test_kek_master_required(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

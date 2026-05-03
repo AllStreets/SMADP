@@ -33,12 +33,8 @@ def test_list_events_empty(client: TestClient):
 
 def test_list_events_returns_appended(client: TestClient, cfg: Config):
     key = Ed25519PrivateKey.generate()
-    journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.b", payload={"k": 2}, signing_key=key, config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg)
+    journal.append_event(event_type="x.b", payload={"k": 2}, signing_key=key, config=cfg)
     r = client.get("/api/transparency/events")
     assert r.status_code == 200
     body = r.json()
@@ -48,9 +44,7 @@ def test_list_events_returns_appended(client: TestClient, cfg: Config):
 
 def test_get_event_by_id(client: TestClient, cfg: Config):
     key = Ed25519PrivateKey.generate()
-    journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=key, config=cfg)
     r = client.get("/api/transparency/events/1")
     assert r.status_code == 200
     assert r.json()["event_type"] == "x.a"

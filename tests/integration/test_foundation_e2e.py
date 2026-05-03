@@ -11,7 +11,6 @@ Walks the full Plan 1 surface in one test:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -35,9 +34,7 @@ def test_foundation_end_to_end(cfg: Config, tmp_path: Path):
     client = TestClient(create_app(cfg))
 
     # 1. Create workspace.
-    ws = client.post(
-        "/api/workspaces", json={"name": "Acme", "plan": "private"}
-    ).json()
+    ws = client.post("/api/workspaces", json={"name": "Acme", "plan": "private"}).json()
 
     # 2. Upload BYOK signing key (programmatic — no API for this in Plan 1).
     priv = Ed25519PrivateKey.generate()

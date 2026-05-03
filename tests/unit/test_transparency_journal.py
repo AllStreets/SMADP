@@ -35,12 +35,8 @@ def test_append_event_returns_event_with_id(cfg: Config, signing_key):
 
 
 def test_append_event_chain_links_prev_hash(cfg: Config, signing_key):
-    a = journal.append_event(
-        event_type="x.a", payload={}, signing_key=signing_key, config=cfg
-    )
-    b = journal.append_event(
-        event_type="x.b", payload={}, signing_key=signing_key, config=cfg
-    )
+    a = journal.append_event(event_type="x.a", payload={}, signing_key=signing_key, config=cfg)
+    b = journal.append_event(event_type="x.b", payload={}, signing_key=signing_key, config=cfg)
     assert a.prev_hash == "sha256:" + "0" * 64  # genesis
     expected = journal._hash_signature(a.signature)
     assert b.prev_hash == expected
@@ -58,43 +54,29 @@ def test_append_event_signature_verifies(cfg: Config, signing_key):
 
 
 def test_payload_canonicalization_is_stable(cfg: Config, signing_key):
-    ev_a = journal.append_event(
+    journal.append_event(
         event_type="x", payload={"a": 1, "b": 2}, signing_key=signing_key, config=cfg
     )
-    ev_b = journal.append_event(
+    journal.append_event(
         event_type="x", payload={"b": 2, "a": 1}, signing_key=signing_key, config=cfg
     )
-    sig_input_a = journal._canonical_signing_input(ev_a)
-    sig_input_b = journal._canonical_signing_input(ev_b)
     assert journal._canonical_payload({"a": 1, "b": 2}) == journal._canonical_payload(
         {"b": 2, "a": 1}
     )
 
 
 def test_verify_chain_passes_on_clean_log(cfg: Config, signing_key):
-    journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.c", payload={"k": 3}, signing_key=signing_key, config=cfg
-    )
-    result = journal.verify_chain(
-        public_key=signing_key.public_key(), config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg)
+    journal.append_event(event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg)
+    journal.append_event(event_type="x.c", payload={"k": 3}, signing_key=signing_key, config=cfg)
+    result = journal.verify_chain(public_key=signing_key.public_key(), config=cfg)
     assert result.valid is True
     assert result.first_break is None
 
 
 def test_verify_chain_detects_payload_tamper(cfg: Config, signing_key):
-    journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg)
+    journal.append_event(event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg)
     # Corrupt row 1's payload directly.
     conn = journal._connect(cfg)
     try:
@@ -108,12 +90,8 @@ def test_verify_chain_detects_payload_tamper(cfg: Config, signing_key):
 
 
 def test_verify_chain_detects_prev_hash_break(cfg: Config, signing_key):
-    journal.append_event(
-        event_type="x.a", payload={}, signing_key=signing_key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.b", payload={}, signing_key=signing_key, config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={}, signing_key=signing_key, config=cfg)
+    journal.append_event(event_type="x.b", payload={}, signing_key=signing_key, config=cfg)
     conn = journal._connect(cfg)
     try:
         conn.execute(
@@ -134,12 +112,8 @@ def test_verify_chain_handles_empty_log(cfg: Config, signing_key):
 
 
 def test_iter_events(cfg: Config, signing_key):
-    journal.append_event(
-        event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg
-    )
-    journal.append_event(
-        event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg
-    )
+    journal.append_event(event_type="x.a", payload={"k": 1}, signing_key=signing_key, config=cfg)
+    journal.append_event(event_type="x.b", payload={"k": 2}, signing_key=signing_key, config=cfg)
     rows = list(journal.iter_events(config=cfg))
     assert len(rows) == 2
     assert [r.event_type for r in rows] == ["x.a", "x.b"]

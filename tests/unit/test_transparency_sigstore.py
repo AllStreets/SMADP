@@ -23,9 +23,7 @@ def key() -> Ed25519PrivateKey:
 
 
 def test_submit_to_rekor_stub_returns_none(cfg: Config, key):
-    ev = journal.append_event(
-        event_type="x", payload={}, signing_key=key, config=cfg
-    )
+    ev = journal.append_event(event_type="x", payload={}, signing_key=key, config=cfg)
     result = sigstore.submit_to_rekor(event_id=ev.id, config=cfg)
     assert result is None  # stub: real submission deferred
 

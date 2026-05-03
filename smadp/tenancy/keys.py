@@ -56,13 +56,9 @@ def _ensure_keys_schema(conn: sqlite3.Connection) -> None:
 def _master_kek() -> bytes:
     raw = os.environ.get(KEK_ENV)
     if not raw:
-        raise RuntimeError(
-            f"{KEK_ENV} is not set; cannot encrypt/decrypt BYOK signing keys."
-        )
+        raise RuntimeError(f"{KEK_ENV} is not set; cannot encrypt/decrypt BYOK signing keys.")
     if len(raw) != 64:
-        raise RuntimeError(
-            f"{KEK_ENV} must be 64 hex chars (32 bytes), got {len(raw)} chars."
-        )
+        raise RuntimeError(f"{KEK_ENV} must be 64 hex chars (32 bytes), got {len(raw)} chars.")
     try:
         return bytes.fromhex(raw)
     except ValueError as e:
@@ -140,8 +136,7 @@ def load_signing_key(
         _ensure_schema(conn)
         _ensure_keys_schema(conn)
         cur = conn.execute(
-            "SELECT nonce, private_key_encrypted FROM signing_keys "
-            "WHERE workspace_id = ?",
+            "SELECT nonce, private_key_encrypted FROM signing_keys WHERE workspace_id = ?",
             (workspace_id,),
         )
         row = cur.fetchone()
@@ -205,9 +200,7 @@ def rotate_signing_key(
         conn.close()
 
 
-def get_rotated_from(
-    *, workspace_id: str, config: Config | None = None
-) -> str | None:
+def get_rotated_from(*, workspace_id: str, config: Config | None = None) -> str | None:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:
@@ -223,9 +216,7 @@ def get_rotated_from(
         conn.close()
 
 
-def get_public_key(
-    *, workspace_id: str, config: Config | None = None
-) -> Ed25519PublicKey | None:
+def get_public_key(*, workspace_id: str, config: Config | None = None) -> Ed25519PublicKey | None:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +15,7 @@ def test_workspace_minimal_fields():
         id="ws_01HXAMPLE",
         name="Acme Corp",
         plan="public",
-        created_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 3, tzinfo=UTC),
     )
     assert ws.id == "ws_01HXAMPLE"
     assert ws.plan == "public"
@@ -27,7 +27,7 @@ def test_workspace_rejects_extra_fields():
             id="ws_01HXAMPLE",
             name="Acme Corp",
             plan="public",
-            created_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 3, tzinfo=UTC),
             extra_field="boom",
         )
 
@@ -38,7 +38,7 @@ def test_workspace_id_pattern():
             id="not-an-id",
             name="Acme",
             plan="public",
-            created_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 3, tzinfo=UTC),
         )
 
 
@@ -50,7 +50,7 @@ def test_plan_enum():
             id="ws_01HXAMPLE",
             name="Acme",
             plan="enterprise",
-            created_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 3, tzinfo=UTC),
         )
 
 

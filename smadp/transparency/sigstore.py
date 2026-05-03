@@ -37,9 +37,7 @@ def list_pending_submissions(*, config: Config | None = None) -> list[SignedEven
     return [ev for ev in iter_events(config=cfg) if ev.rekor_uuid is None]
 
 
-def mark_submitted(
-    *, event_id: int, rekor_uuid: str, config: Config | None = None
-) -> None:
+def mark_submitted(*, event_id: int, rekor_uuid: str, config: Config | None = None) -> None:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:
@@ -49,9 +47,7 @@ def mark_submitted(
             (rekor_uuid, event_id),
         )
         if cur.rowcount == 0:
-            raise KeyError(
-                f"No pending event with id {event_id!r}; already submitted or absent."
-            )
+            raise KeyError(f"No pending event with id {event_id!r}; already submitted or absent.")
         log.info(
             "transparency.sigstore.submitted",
             event_id=event_id,

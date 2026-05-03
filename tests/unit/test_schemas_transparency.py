@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +15,7 @@ def test_signed_event_round_trip():
         id=1,
         event_type="verdict.created",
         payload={"verdict_id": "vdt_01"},
-        ts=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        ts=datetime(2026, 5, 3, tzinfo=UTC),
         prev_hash="sha256:" + "0" * 64,
         signature="aabbccdd",
         rekor_uuid=None,
@@ -32,7 +32,7 @@ def test_signed_event_extra_forbidden():
             id=1,
             event_type="x",
             payload={},
-            ts=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            ts=datetime(2026, 5, 3, tzinfo=UTC),
             prev_hash="sha256:" + "0" * 64,
             signature="aa",
             rekor_uuid=None,
@@ -46,7 +46,7 @@ def test_signed_event_prev_hash_pattern():
             id=1,
             event_type="x",
             payload={},
-            ts=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            ts=datetime(2026, 5, 3, tzinfo=UTC),
             prev_hash="not-a-hash",
             signature="aa",
             rekor_uuid=None,

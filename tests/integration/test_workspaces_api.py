@@ -31,9 +31,7 @@ def test_create_workspace(client: TestClient):
 
 
 def test_get_workspace(client: TestClient):
-    created = client.post(
-        "/api/workspaces", json={"name": "X", "plan": "public"}
-    ).json()
+    created = client.post("/api/workspaces", json={"name": "X", "plan": "public"}).json()
     r = client.get(f"/api/workspaces/{created['id']}")
     assert r.status_code == 200
     assert r.json() == created

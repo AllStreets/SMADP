@@ -22,9 +22,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 
 def _write_pubkey(tmp_path: Path, key: Ed25519PrivateKey) -> Path:
     p = tmp_path / "pub.hex"
-    pub_bytes = key.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    )
+    pub_bytes = key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
     p.write_text(pub_bytes.hex())
     return p
 
@@ -36,16 +34,12 @@ def test_verify_command_passes_clean_log(tmp_path: Path, cfg: Config):
     pub = _write_pubkey(tmp_path, key)
 
     runner = CliRunner()
-    result = runner.invoke(
-        cli, ["transparency", "verify", "--public-key", str(pub)]
-    )
+    result = runner.invoke(cli, ["transparency", "verify", "--public-key", str(pub)])
     assert result.exit_code == 0
     assert "OK" in result.output
 
 
-def test_verify_command_fails_tampered_log(
-    tmp_path: Path, cfg: Config, monkeypatch
-):
+def test_verify_command_fails_tampered_log(tmp_path: Path, cfg: Config, monkeypatch):
     key = Ed25519PrivateKey.generate()
     journal.append_event(event_type="x.a", payload={}, signing_key=key, config=cfg)
     # Tamper:
@@ -58,9 +52,7 @@ def test_verify_command_fails_tampered_log(
 
     pub = _write_pubkey(tmp_path, key)
     runner = CliRunner()
-    result = runner.invoke(
-        cli, ["transparency", "verify", "--public-key", str(pub)]
-    )
+    result = runner.invoke(cli, ["transparency", "verify", "--public-key", str(pub)])
     assert result.exit_code != 0
     assert "BREAK" in result.output or "invalid" in result.output.lower()
 
@@ -69,7 +61,5 @@ def test_verify_command_empty_log_passes(tmp_path: Path, cfg: Config):
     key = Ed25519PrivateKey.generate()
     pub = _write_pubkey(tmp_path, key)
     runner = CliRunner()
-    result = runner.invoke(
-        cli, ["transparency", "verify", "--public-key", str(pub)]
-    )
+    result = runner.invoke(cli, ["transparency", "verify", "--public-key", str(pub)])
     assert result.exit_code == 0

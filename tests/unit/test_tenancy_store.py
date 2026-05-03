@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from smadp.config import Config
+from smadp.schemas.tenancy import Plan, Role
 from smadp.tenancy import store
 
 
@@ -21,8 +22,7 @@ def test_schema_creates_tables(cfg: Config):
     try:
         store._ensure_schema(conn)
         names = {
-            row[0]
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert "workspaces" in names
         assert "workspace_members" in names
@@ -34,11 +34,6 @@ def test_db_path_under_cache_dir(cfg: Config):
     p = store._db_path(cfg)
     assert p == cfg.cache_dir / "tenancy.db"
     assert p.parent.exists()
-
-
-from datetime import datetime
-
-from smadp.schemas.tenancy import Plan, Workspace
 
 
 def test_create_and_get_workspace(cfg: Config):
@@ -72,18 +67,14 @@ def test_delete_workspace_cascades(cfg: Config):
 def test_workspace_id_format(cfg: Config):
     """Workspace IDs must match ws_<8+ uppercase alnum>."""
     import re
+
     ws = store.create_workspace(name="Y", plan=Plan.PRIVATE, config=cfg)
     assert re.match(r"^ws_[A-Z0-9]{8,}$", ws.id)
 
 
-from smadp.schemas.tenancy import Member, Role
-
-
 def test_add_and_get_member(cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
-    m = store.add_member(
-        workspace_id=ws.id, user_id="u_USER0001", role=Role.EDITOR, config=cfg
-    )
+    m = store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.EDITOR, config=cfg)
     assert m.role == Role.EDITOR
     fetched = store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
     assert fetched == Role.EDITOR
@@ -99,19 +90,14 @@ def test_add_member_idempotent_upserts_role(cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
     store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.VIEWER, config=cfg)
     store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.ADMIN, config=cfg)
-    assert (
-        store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
-        == Role.ADMIN
-    )
+    assert store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg) == Role.ADMIN
 
 
 def test_remove_member(cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
     store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg)
     store.remove_member(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
-    assert (
-        store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg) is None
-    )
+    assert store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg) is None
 
 
 def test_list_members(cfg: Config):

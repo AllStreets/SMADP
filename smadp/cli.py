@@ -635,6 +635,7 @@ def search(ctx: click.Context, query: str, limit: int) -> None:
 
 cli.add_command(transparency_group)
 
+
 # ----------------------------------------------------------------------- entry
 def main() -> None:
     """Entry point declared in pyproject.toml."""

@@ -237,8 +237,7 @@ def list_members(
     try:
         _ensure_schema(conn)
         cur = conn.execute(
-            "SELECT * FROM workspace_members WHERE workspace_id = ? "
-            "ORDER BY user_id ASC",
+            "SELECT * FROM workspace_members WHERE workspace_id = ? ORDER BY user_id ASC",
             (workspace_id,),
         )
         return [_row_to_member(r) for r in cur.fetchall()]

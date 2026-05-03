@@ -26,7 +26,7 @@ from smadp.tenancy import store
 
 def _config_from_request(request: Request) -> Config:
     cfg = getattr(request.app.state, "config", None)
-    if cfg is None:
+    if not isinstance(cfg, Config):
         raise HTTPException(
             status_code=500,
             detail="App state missing 'config' — wire it via app.state.config = Config().",

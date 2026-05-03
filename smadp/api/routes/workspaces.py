@@ -63,9 +63,7 @@ def add_member(workspace_id: str, body: AddMemberBody) -> Member:
         store.get_workspace(workspace_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    return store.add_member(
-        workspace_id=workspace_id, user_id=body.user_id, role=body.role
-    )
+    return store.add_member(workspace_id=workspace_id, user_id=body.user_id, role=body.role)
 
 
 @router.get("/{workspace_id}/members", response_model=list[Member])

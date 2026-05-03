@@ -88,9 +88,9 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
 
 
 def _canonical_payload(payload: dict[str, Any]) -> bytes:
-    return json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def _canonical_signing_input(ev: SignedEvent) -> bytes:
@@ -102,9 +102,9 @@ def _canonical_signing_input(ev: SignedEvent) -> bytes:
         "ts": ev.ts.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "prev_hash": ev.prev_hash,
     }
-    return json.dumps(
-        blob, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    return json.dumps(blob, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def _hash_signature(hex_sig: str) -> str:
@@ -125,9 +125,7 @@ def append_event(
     try:
         _ensure_schema(conn)
         with _transaction(conn):
-            cur = conn.execute(
-                "SELECT signature FROM signed_events ORDER BY id DESC LIMIT 1"
-            )
+            cur = conn.execute("SELECT signature FROM signed_events ORDER BY id DESC LIMIT 1")
             tail = cur.fetchone()
             prev_hash = _hash_signature(tail["signature"]) if tail else GENESIS_PREV_HASH
 
@@ -135,9 +133,13 @@ def append_event(
                 "INSERT INTO signed_events"
                 "(event_type, payload, ts, prev_hash, signature) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (event_type, _canonical_payload(payload).decode("utf-8"),
-                 utcnow().isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-                 prev_hash, ""),  # placeholder signature
+                (
+                    event_type,
+                    _canonical_payload(payload).decode("utf-8"),
+                    utcnow().isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                    prev_hash,
+                    "",
+                ),  # placeholder signature
             )
             new_id = cur.lastrowid
             assert new_id is not None
@@ -227,9 +229,7 @@ def verify_chain(
             )
         # 2. signature
         try:
-            public_key.verify(
-                bytes.fromhex(ev.signature), _canonical_signing_input(ev)
-            )
+            public_key.verify(bytes.fromhex(ev.signature), _canonical_signing_input(ev))
         except (InvalidSignature, ValueError) as e:
             return VerificationReport(
                 valid=False,

@@ -37,9 +37,7 @@ def app(cfg: Config) -> FastAPI:
 
 def test_current_workspace_resolves_from_header(app, cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
-    store.add_member(
-        workspace_id=ws.id, user_id="u_USER0001", role=Role.VIEWER, config=cfg
-    )
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.VIEWER, config=cfg)
     client = TestClient(app)
     r = client.get(
         "/probe",
@@ -66,9 +64,7 @@ def test_unknown_workspace_404(app, cfg: Config):
 
 def test_require_role_passes_when_role_meets_threshold(app, cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PRIVATE, config=cfg)
-    store.add_member(
-        workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg
-    )
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg)
     client = TestClient(app)
     r = client.get(
         "/admin-only",
@@ -79,9 +75,7 @@ def test_require_role_passes_when_role_meets_threshold(app, cfg: Config):
 
 def test_require_role_blocks_lower_role(app, cfg: Config):
     ws = store.create_workspace(name="A", plan=Plan.PRIVATE, config=cfg)
-    store.add_member(
-        workspace_id=ws.id, user_id="u_USER0001", role=Role.EDITOR, config=cfg
-    )
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.EDITOR, config=cfg)
     client = TestClient(app)
     r = client.get(
         "/admin-only",

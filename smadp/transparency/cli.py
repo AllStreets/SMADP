@@ -45,9 +45,7 @@ def verify(public_key_path: Path, since: str | None) -> None:
         console.print("[green]OK[/green] — transparency chain intact.")
         sys.exit(0)
     else:
-        console.print(
-            f"[red]BREAK[/red] at event id {report.first_break}: {report.reason}"
-        )
+        console.print(f"[red]BREAK[/red] at event id {report.first_break}: {report.reason}")
         sys.exit(1)
 
 

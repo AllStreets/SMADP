@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from functools import total_ordering
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -13,13 +13,13 @@ WORKSPACE_ID_RE = re.compile(r"^ws_[A-Z0-9]{8,}$")
 USER_ID_RE = re.compile(r"^u_[A-Z0-9]{8,}$")
 
 
-class Plan(str, Enum):
+class Plan(StrEnum):
     PUBLIC = "public"
     PRIVATE = "private"
 
 
 @total_ordering
-class Role(str, Enum):
+class Role(StrEnum):
     VIEWER = "viewer"
     EDITOR = "editor"
     ADMIN = "admin"
