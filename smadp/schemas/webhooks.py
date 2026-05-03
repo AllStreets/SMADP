@@ -8,7 +8,7 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SUBSCRIPTION_ID_RE = re.compile(r"^sub_[A-Z0-9]{8,}$")
 DELIVERY_ID_RE = re.compile(r"^wd_[0-9]{14}_[0-9a-f]{6}$")
@@ -23,6 +23,13 @@ class EventType(StrEnum):
     FRAMEWORK_COVERAGE_CHANGED = "framework_coverage.changed"
     PASSPORT_GENERATED = "passport.generated"
     PASSPORT_REVOKED = "passport.revoked"
+
+
+class IntegrationKind(StrEnum):
+    GENERIC = "generic"
+    VANTA = "vanta"
+    DRATA = "drata"
+    SLACK = "slack"
 
 
 class DeliveryStatus(StrEnum):
@@ -42,6 +49,8 @@ class Subscription(BaseModel):
     event_types: list[EventType]
     active: bool
     created_at: datetime
+    integration_kind: IntegrationKind = IntegrationKind.GENERIC
+    integration_config: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
@@ -150,6 +159,7 @@ class WebhookEnvelope(BaseModel):
 __all__ = [
     "DeliveryStatus",
     "EventType",
+    "IntegrationKind",
     "Subscription",
     "WebhookDelivery",
     "WebhookEnvelope",

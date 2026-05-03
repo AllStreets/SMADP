@@ -135,3 +135,45 @@ def test_webhook_envelope_round_trip():
     )
     again = WebhookEnvelope.model_validate(env.model_dump(mode="json"))
     assert again == env
+
+
+def test_integration_kind_values_locked():
+    from smadp.schemas.webhooks import IntegrationKind
+
+    assert {k.value for k in IntegrationKind} == {"generic", "vanta", "drata", "slack"}
+
+
+def test_subscription_default_integration_is_generic():
+    from datetime import UTC, datetime
+
+    from smadp.schemas.webhooks import EventType, IntegrationKind, Subscription
+
+    sub = Subscription(
+        id="sub_AB12CD34",
+        workspace_id="ws_ABCD1234",
+        url="https://example.com/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        active=True,
+        created_at=datetime.now(UTC),
+    )
+    assert sub.integration_kind == IntegrationKind.GENERIC
+    assert sub.integration_config == {}
+
+
+def test_subscription_accepts_native_integration():
+    from datetime import UTC, datetime
+
+    from smadp.schemas.webhooks import EventType, IntegrationKind, Subscription
+
+    sub = Subscription(
+        id="sub_AB12CD34",
+        workspace_id="ws_ABCD1234",
+        url="https://hooks.slack.com/services/abc/def",
+        event_types=[EventType.PASSPORT_GENERATED],
+        active=True,
+        created_at=datetime.now(UTC),
+        integration_kind=IntegrationKind.SLACK,
+        integration_config={"channel": "#smadp-alerts"},
+    )
+    assert sub.integration_kind == IntegrationKind.SLACK
+    assert sub.integration_config == {"channel": "#smadp-alerts"}
