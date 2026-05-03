@@ -1,0 +1,278 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import SeverityBar from '../../components/SeverityBar.astro';
+import EvidenceLevelBadge from '../../components/EvidenceLevelBadge.astro';
+import RiskBadge from '../../components/RiskBadge.astro';
+import FrameworkBadge from '../../components/FrameworkBadge.astro';
+import CitationTooltip from '../../components/CitationTooltip.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import {
+  getVerdicts,
+  getVerdictById,
+  getProfile,
+  compositeColor,
+  riskMeta,
+} from '../../data/catalog';
+import { RISK_ORDER } from '../../data/types';
+import type { RiskId } from '../../data/types';
+
+export function getStaticPaths() {
+  return getVerdicts().map((v) => ({ params: { id: v.verdict_id } }));
+}
+
+const { id } = Astro.params;
+const verdict = getVerdictById(id as string);
+if (!verdict) return Astro.redirect('/verdicts');
+
+const a = getProfile(verdict.pair[0]);
+const b = getProfile(verdict.pair[1]);
+const aName = a?.name ?? verdict.pair[0];
+const bName = b?.name ?? verdict.pair[1];
+const score = verdict.composite_score;
+const scoreColor = compositeColor(score);
+const confidencePct = Math.round(verdict.confidence * 100);
+---
+
+<Layout title={`${aName} × ${bName} — Verdict — SMADP`} description={verdict.headline}>
+  <!-- Header -->
+  <section class="container-page mt-8">
+    <a href="/verdicts" class="font-mono text-xs text-ink-400 hover:text-brand-300">← all verdicts</a>
+
+    <div class="mt-6 rounded-2xl border border-white/10 bg-gradient-to-br from-ink-900/60 to-ink-950/60 p-8 shadow-glow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-6">
+        <div class="min-w-0">
+          <span class="heading-eyebrow">Pairwise verdict</span>
+          <h1 class="h1 mt-3 text-white">
+            {a ? <a class="hover:text-brand-200" href={`/agents/${a.slug}`}>{aName}</a> : aName}
+            <span class="text-ink-500"> × </span>
+            {b ? <a class="hover:text-brand-200" href={`/agents/${b.slug}`}>{bName}</a> : bName}
+          </h1>
+          <p class="lead mt-4 max-w-3xl">{verdict.headline}</p>
+
+          <div class="mt-5 flex flex-wrap items-center gap-3">
+            <EvidenceLevelBadge level={verdict.evidence_level} size="md" />
+            <span class="pill">model: <span class="ml-1 text-cyber-400">{verdict.model.name}</span></span>
+            <span class="pill">rubric: <span class="ml-1 text-brand-300">{verdict.model.rubric_version}</span></span>
+            <span class="pill">{verdict.generated_at.slice(0, 10)}</span>
+          </div>
+        </div>
+
+        <div class="grid w-full max-w-xs grid-cols-2 gap-3 sm:w-auto">
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Composite</div>
+            <div
+              class="mt-1 font-display text-4xl font-extrabold leading-none"
+              style={`color:${scoreColor};`}
+            >
+              {score.toFixed(2)}
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">lower is safer</div>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Confidence</div>
+            <div class="mt-1 font-display text-4xl font-extrabold leading-none text-cyber-400">
+              {confidencePct}%
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">judge confidence</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sub-verdicts -->
+  <section class="container-page mt-12">
+    <h2 class="h2 text-white">Per-risk sub-verdicts</h2>
+    <p class="mt-2 text-sm text-ink-400">
+      Each risk is evaluated independently. Severity bars are authoritative; the
+      composite is informational and sortable.
+    </p>
+
+    <div class="mt-8 space-y-4">
+      {RISK_ORDER.map((rk: RiskId) => {
+        const sv = verdict.sub_verdicts[rk];
+        const meta = riskMeta(rk);
+        return (
+          <article class="card overflow-hidden">
+            <header class="flex flex-wrap items-start justify-between gap-4">
+              <div class="flex items-start gap-4">
+                <RiskBadge risk={rk} size="md" />
+                <div>
+                  <h3 class="font-display text-lg font-semibold text-white">
+                    {meta?.name ?? rk}
+                  </h3>
+                  {meta && (
+                    <p class="mt-1 text-xs text-ink-500">
+                      weight {meta.weight.toFixed(2)} of composite
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div class="w-full max-w-xs">
+                <SeverityBar severity={sv.severity} />
+              </div>
+            </header>
+
+            <p class="mt-5 text-sm leading-relaxed text-ink-200">
+              {sv.rationale}
+              {sv.citations.length > 0 && (
+                <span class="ml-1 inline-flex flex-wrap gap-1 align-baseline">
+                  {sv.citations.map((c, idx) => (
+                    <CitationTooltip citation={c} label={`[${idx + 1}]`} />
+                  ))}
+                </span>
+              )}
+            </p>
+
+            {sv.conditions.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-amber-400">
+                  Safe under conditions
+                </div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.conditions.map((c) => <li>{c}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {sv.mitigations.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-emerald-400">
+                  Mitigations
+                </div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.mitigations.map((m) => <li>{m}</li>)}
+                </ul>
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  </section>
+
+  <!-- Framework mappings -->
+  {Object.keys(verdict.framework_mappings).length > 0 && (
+    <section class="container-page mt-12">
+      <div class="card">
+        <h2 class="h3 text-white">Framework mappings</h2>
+        <p class="mt-1 text-sm text-ink-400">
+          Controls these sub-verdicts touch across NIST AI RMF, ISO/IEC 42001, and
+          the OWASP LLM Top 10.
+        </p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          {Object.entries(verdict.framework_mappings).flatMap(([fw, ids]) =>
+            ids.map((cid) => (
+              <FrameworkBadge framework={fw} control={cid} href={`/frameworks#${cid}`} />
+            )),
+          )}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- Sandbox runs -->
+  <section class="container-page mt-12">
+    <div class="card">
+      <h2 class="h3 text-white">Sandbox validation</h2>
+      {verdict.sandbox_runs.length === 0 ? (
+        <div
+          class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200"
+        >
+          No sandbox runs yet. This verdict's <span class="font-mono">evidence_level</span>
+          is <span class="font-mono">{verdict.evidence_level}</span>. Sandbox validation
+          is available for open-source pairs in v1; closed-source agents stay at
+          <span class="font-mono">docs-only</span>.
+        </div>
+      ) : (
+        <table class="table-zebra mt-5 w-full text-sm">
+          <thead class="text-left font-mono text-[11px] uppercase tracking-wider text-ink-400">
+            <tr>
+              <th class="px-3 py-2">Run</th>
+              <th class="px-3 py-2">Started</th>
+              <th class="px-3 py-2">Outcome</th>
+              <th class="px-3 py-2">Scenario</th>
+              <th class="px-3 py-2">Transcript</th>
+            </tr>
+          </thead>
+          <tbody>
+            {verdict.sandbox_runs.map((r) => (
+              <tr class="border-t border-white/5">
+                <td class="px-3 py-2 font-mono text-xs text-ink-200">{r.run_id}</td>
+                <td class="px-3 py-2 font-mono text-xs text-ink-300">{r.started_at.slice(0, 19).replace('T', ' ')}</td>
+                <td class="px-3 py-2">
+                  <span
+                    class="rounded px-2 py-0.5 font-mono text-[11px] uppercase"
+                    style={`color:${
+                      r.outcome === 'pass'
+                        ? '#22C55E'
+                        : r.outcome === 'fail'
+                          ? '#EF4444'
+                          : r.outcome === 'inconclusive'
+                            ? '#F59E0B'
+                            : '#A78BFA'
+                    }; background:${
+                      r.outcome === 'pass'
+                        ? '#22C55E15'
+                        : r.outcome === 'fail'
+                          ? '#EF444415'
+                          : '#F59E0B15'
+                    };`}
+                  >
+                    {r.outcome}
+                  </span>
+                </td>
+                <td class="px-3 py-2 text-ink-300">{r.scenario ?? '—'}</td>
+                <td class="px-3 py-2 font-mono text-[11px] text-ink-500">{r.transcript_ref}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </section>
+
+  <!-- Reproducibility -->
+  <section class="container-page mt-12">
+    <div class="card">
+      <h2 class="h3 text-white">Reproducibility</h2>
+      <p class="mt-1 text-sm text-ink-400">
+        Re-generate this verdict with the same inputs and rubric to verify.
+      </p>
+      <dl class="mt-5 grid gap-3 text-xs sm:grid-cols-2">
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Verdict ID</dt>
+          <dd class="mt-1 break-all font-mono text-brand-300">{verdict.verdict_id}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Rubric URL</dt>
+          <dd class="mt-1 break-all font-mono text-cyber-400">{verdict.reproducibility.rubric_url}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Profile A hash</dt>
+          <dd class="mt-1 break-all font-mono text-ink-200">{verdict.reproducibility.profile_a_hash}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Profile B hash</dt>
+          <dd class="mt-1 break-all font-mono text-ink-200">{verdict.reproducibility.profile_b_hash}</dd>
+        </div>
+        <div class="sm:col-span-2 rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Evidence bundle hash</dt>
+          <dd class="mt-1 break-all font-mono text-ink-200">{verdict.reproducibility.evidence_bundle_hash}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- Raw -->
+  <section class="container-page mt-12">
+    <details class="rounded-xl border border-white/10 bg-ink-900/40">
+      <summary class="cursor-pointer px-5 py-3 font-mono text-xs text-ink-300 hover:text-white">
+        show raw verdict JSON
+      </summary>
+      <div class="border-t border-white/10 p-2">
+        <CodeBlock code={verdict} title={`${verdict.verdict_id}.json`} />
+      </div>
+    </details>
+  </section>
+</Layout>

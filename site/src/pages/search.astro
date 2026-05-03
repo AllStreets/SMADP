@@ -1,0 +1,128 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const apiUrl = import.meta.env.PUBLIC_SMADP_API_URL || 'http://localhost:8000';
+---
+
+<Layout title="Search — SMADP">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">Find anything</span>
+    <h1 class="h1 mt-3 text-white">Search</h1>
+    <p class="lead mt-4 max-w-2xl">
+      Full-text across every profile and verdict. Server-side via
+      <code class="font-mono text-brand-300">/api/search?q=</code>.
+    </p>
+  </section>
+
+  <section class="container-page mt-8">
+    <form id="search-form" class="flex items-center gap-2">
+      <div class="relative flex-1">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/>
+          <path d="M20 20l-3.5-3.5"/>
+        </svg>
+        <input
+          id="q"
+          name="q"
+          type="search"
+          autofocus
+          placeholder="claude code, prompt injection, fs:write, NIST MEASURE-2.7…"
+          class="w-full rounded-xl border border-white/10 bg-ink-900/80 pl-11 pr-4 py-3 text-sm text-ink-100 placeholder:text-ink-500 focus:border-brand-500/60"
+        />
+      </div>
+      <button class="btn-primary" type="submit">Search</button>
+    </form>
+
+    <p id="search-status" class="mt-4 text-xs text-ink-400">
+      Type a query and hit return. Results stream from <span class="font-mono">{apiUrl}/api/search</span>.
+    </p>
+
+    <div id="results" class="mt-8 grid gap-3"></div>
+  </section>
+
+  <section class="container-page mt-12">
+    <div class="card">
+      <h2 class="h3 text-white">Search tips</h2>
+      <ul class="mt-3 list-disc list-inside space-y-2 text-sm text-ink-300">
+        <li>Bare terms match across profile names, taglines, sub-verdict rationales, and citations.</li>
+        <li>Prefix with <code class="font-mono text-brand-300">slug:</code> to filter to an agent's catalog entry.</li>
+        <li>Prefix with <code class="font-mono text-brand-300">control:</code> to surface verdicts that touch a framework control.</li>
+      </ul>
+    </div>
+  </section>
+</Layout>
+
+<script define:vars={{ apiUrl }}>
+  const form = document.getElementById('search-form');
+  const q = document.getElementById('q');
+  const status = document.getElementById('search-status');
+  const results = document.getElementById('results');
+
+  if (form && q && results && status) {
+    // Hydrate from ?q=
+    const params = new URLSearchParams(window.location.search);
+    const initial = params.get('q');
+    if (initial) {
+      q.value = initial;
+      run(initial);
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const term = q.value.trim();
+      const url = new URL(window.location.href);
+      url.searchParams.set('q', term);
+      window.history.replaceState({}, '', url);
+      run(term);
+    });
+
+    async function run(term) {
+      if (!term) {
+        results.innerHTML = '';
+        status.textContent = 'enter a query';
+        return;
+      }
+      status.textContent = `searching "${term}"…`;
+      results.innerHTML = '';
+      try {
+        const res = await fetch(`${apiUrl}/api/search?q=${encodeURIComponent(term)}`);
+        if (!res.ok) {
+          status.textContent = `search api returned ${res.status}`;
+          return;
+        }
+        const data = await res.json();
+        const hits = Array.isArray(data) ? data : data.hits || [];
+        status.textContent = `${hits.length} result${hits.length === 1 ? '' : 's'}`;
+        results.innerHTML = hits.map(renderHit).join('');
+      } catch (err) {
+        status.textContent = `network error: ${err.message}. The SMADP API needs to be running at ${apiUrl}.`;
+      }
+    }
+
+    function renderHit(h) {
+      const url = h.url || (h.kind === 'profile'
+        ? `/agents/${h.slug}`
+        : h.kind === 'verdict'
+          ? `/verdicts/${h.verdict_id || h.id}`
+          : '#');
+      const title = escapeHtml(h.title || h.name || h.headline || '(untitled)');
+      const subtitle = escapeHtml(h.subtitle || h.snippet || h.tagline || '');
+      const tag = escapeHtml(h.kind || h.type || 'result');
+      return `
+        <a href="${url}" class="card card-hover block">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-display font-semibold text-white">${title}</span>
+            <span class="pill">${tag}</span>
+          </div>
+          ${subtitle ? `<p class="mt-2 text-sm text-ink-300">${subtitle}</p>` : ''}
+        </a>
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (m) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]
+      ));
+    }
+  }
+</script>

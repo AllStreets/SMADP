@@ -1,0 +1,263 @@
+---
+import {
+  getProfiles,
+  getVerdicts,
+  compositeColor,
+  severityColor,
+} from '../data/catalog';
+import type { RiskId } from '../data/types';
+
+const profiles = getProfiles();
+const verdicts = getVerdicts();
+
+// Build a map keyed by sorted pair "a|b" → verdict.
+const key = (a: string, b: string) => [a, b].sort().join('|');
+const map = new Map(verdicts.map((v) => [key(v.pair[0], v.pair[1]), v]));
+
+// Pre-compute cell payloads for client-side filtering.
+type Cell = {
+  a: string;
+  b: string;
+  composite: number | null;
+  severities: Record<RiskId, number> | null;
+  verdict_id: string | null;
+};
+const cells: Cell[][] = profiles.map((rowP) =>
+  profiles.map((colP) => {
+    if (rowP.slug === colP.slug) {
+      return { a: rowP.slug, b: colP.slug, composite: null, severities: null, verdict_id: null };
+    }
+    const v = map.get(key(rowP.slug, colP.slug));
+    if (!v) return { a: rowP.slug, b: colP.slug, composite: null, severities: null, verdict_id: null };
+    const sevToScore: Record<string, number> = {
+      none: 0,
+      low: 0.2,
+      medium: 0.5,
+      high: 0.8,
+      critical: 1,
+    };
+    const sevs: Record<RiskId, number> = {
+      A_prompt_injection: sevToScore[v.sub_verdicts.A_prompt_injection.severity] ?? 0,
+      B_data_leakage: sevToScore[v.sub_verdicts.B_data_leakage.severity] ?? 0,
+      C_capability_conflict: sevToScore[v.sub_verdicts.C_capability_conflict.severity] ?? 0,
+      D_cascading_error: sevToScore[v.sub_verdicts.D_cascading_error.severity] ?? 0,
+      E_compliance: sevToScore[v.sub_verdicts.E_compliance.severity] ?? 0,
+    };
+    return {
+      a: rowP.slug,
+      b: colP.slug,
+      composite: v.composite_score,
+      severities: sevs,
+      verdict_id: v.verdict_id,
+    };
+  }),
+);
+
+// Serialize for the client island.
+const dataJson = JSON.stringify({
+  profiles: profiles.map((p) => ({ slug: p.slug, name: p.name })),
+  cells,
+});
+---
+
+{
+  profiles.length === 0 ? (
+    <div class="card text-center text-sm text-ink-300">
+      <p>No profiles in the catalog yet.</p>
+      <p class="mt-2 text-ink-500">
+        Once profiles land in <code class="font-mono text-brand-300">catalog/profiles/</code> the
+        matrix will render here automatically on the next build.
+      </p>
+    </div>
+  ) : (
+    <div class="space-y-4">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 class="heading-eyebrow">Compatibility Matrix</h2>
+          <p class="text-ink-300 mt-1 text-sm">
+            Cells colored by composite score (lower is safer). Click a cell to open
+            the full verdict.
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="font-mono text-[11px] uppercase tracking-wider text-ink-400">
+            filter:
+          </label>
+          <select
+            id="matrix-filter"
+            class="rounded-md border border-white/10 bg-ink-900/80 px-2 py-1 text-xs text-ink-100 focus:border-brand-500/60"
+          >
+            <option value="composite">Composite score</option>
+            <option value="A_prompt_injection">A — Prompt injection</option>
+            <option value="B_data_leakage">B — Data leakage</option>
+            <option value="C_capability_conflict">C — Capability conflict</option>
+            <option value="D_cascading_error">D — Cascading error</option>
+            <option value="E_compliance">E — Compliance</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="flex flex-wrap items-center gap-3 text-[11px] text-ink-400">
+        <span>scale</span>
+        <div class="flex items-center gap-0">
+          {[0.0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9].map((s) => (
+            <span
+              class="h-3 w-6"
+              style={`background:${compositeColor(s)};`}
+              title={s.toFixed(2)}
+            />
+          ))}
+        </div>
+        <span class="font-mono">0.00 → 1.00</span>
+        <span class="ml-4 inline-flex items-center gap-1">
+          <span class="inline-block h-3 w-3 rounded border border-white/10"></span>
+          no verdict yet
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <span class="inline-block h-3 w-3 rounded bg-ink-800"></span>
+          self
+        </span>
+      </div>
+
+      <div
+        id="matrix-root"
+        class="scrollbar-thin overflow-auto rounded-xl border border-white/5 bg-ink-900/40 p-4"
+        data-payload={dataJson}
+      >
+        <table class="border-separate border-spacing-1">
+          <thead>
+            <tr>
+              <th class="sticky left-0 z-10 bg-ink-900/80 backdrop-blur"></th>
+              {profiles.map((p) => (
+                <th
+                  class="h-32 align-bottom"
+                  scope="col"
+                  title={p.name}
+                >
+                  <div class="origin-bottom-left -rotate-[55deg] translate-y-1 whitespace-nowrap font-mono text-[11px] text-ink-300">
+                    {p.name}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {profiles.map((rowP, i) => (
+              <tr>
+                <th
+                  scope="row"
+                  class="sticky left-0 z-10 whitespace-nowrap bg-ink-900/80 px-2 text-right font-mono text-[11px] text-ink-300 backdrop-blur"
+                  title={rowP.name}
+                >
+                  {rowP.name}
+                </th>
+                {profiles.map((colP, j) => {
+                  const cell = cells[i]![j]!;
+                  const isDiag = i === j;
+                  if (isDiag) {
+                    return (
+                      <td class="h-7 w-7 rounded bg-ink-800/70" aria-label="self"></td>
+                    );
+                  }
+                  if (cell.composite == null) {
+                    return (
+                      <td
+                        class="h-7 w-7 rounded border border-white/5 bg-ink-900/30"
+                        title={`${rowP.name} × ${colP.name} — no verdict yet`}
+                      ></td>
+                    );
+                  }
+                  const c = compositeColor(cell.composite);
+                  return (
+                    <td
+                      class="matrix-cell h-7 w-7 cursor-pointer rounded transition-transform hover:scale-110"
+                      data-row={i}
+                      data-col={j}
+                      data-vid={cell.verdict_id}
+                      style={`background:${c};`}
+                      title={`${rowP.name} × ${colP.name}: composite ${cell.composite.toFixed(2)}`}
+                    ></td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+<script>
+  type Cell = {
+    a: string;
+    b: string;
+    composite: number | null;
+    severities: Record<string, number> | null;
+    verdict_id: string | null;
+  };
+  type Payload = {
+    profiles: { slug: string; name: string }[];
+    cells: Cell[][];
+  };
+
+  const root = document.getElementById('matrix-root') as HTMLDivElement | null;
+  if (root) {
+    const payload: Payload = JSON.parse(root.dataset.payload || '{}');
+    const filter = document.getElementById('matrix-filter') as HTMLSelectElement | null;
+
+    function compositeColor(score: number): string {
+      const stops: { at: number; rgb: [number, number, number] }[] = [
+        { at: 0.0, rgb: [34, 197, 94] },
+        { at: 0.4, rgb: [245, 158, 11] },
+        { at: 0.7, rgb: [239, 68, 68] },
+        { at: 1.0, rgb: [127, 29, 29] },
+      ];
+      const s = Math.max(0, Math.min(1, score));
+      let lo = stops[0]!,
+        hi = stops[stops.length - 1]!;
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (s >= stops[i]!.at && s <= stops[i + 1]!.at) {
+          lo = stops[i]!;
+          hi = stops[i + 1]!;
+          break;
+        }
+      }
+      const t = (s - lo.at) / (hi.at - lo.at || 1);
+      const r = Math.round(lo.rgb[0] + (hi.rgb[0] - lo.rgb[0]) * t);
+      const g = Math.round(lo.rgb[1] + (hi.rgb[1] - lo.rgb[1]) * t);
+      const b = Math.round(lo.rgb[2] + (hi.rgb[2] - lo.rgb[2]) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function applyFilter(metric: string) {
+      const cells = root!.querySelectorAll<HTMLTableCellElement>('.matrix-cell');
+      cells.forEach((td) => {
+        const i = Number(td.dataset.row);
+        const j = Number(td.dataset.col);
+        const cell = payload.cells[i]?.[j];
+        if (!cell || cell.composite == null) return;
+        let score: number;
+        if (metric === 'composite') {
+          score = cell.composite;
+        } else if (cell.severities) {
+          score = cell.severities[metric] ?? 0;
+        } else {
+          score = 0;
+        }
+        td.style.background = compositeColor(score);
+      });
+    }
+
+    filter?.addEventListener('change', () => applyFilter(filter.value));
+
+    root.addEventListener('click', (e) => {
+      const td = (e.target as HTMLElement).closest<HTMLTableCellElement>('.matrix-cell');
+      if (!td) return;
+      const vid = td.dataset.vid;
+      if (vid) window.location.href = `/verdicts/${vid}`;
+    });
+  }
+</script>

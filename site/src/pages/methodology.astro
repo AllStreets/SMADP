@@ -1,0 +1,166 @@
+---
+import Layout from '../layouts/Layout.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import RiskBadge from '../components/RiskBadge.astro';
+import { getRiskTaxonomy } from '../data/catalog';
+
+const tax = getRiskTaxonomy();
+
+const formula = `composite = 0.30 * sev(B) + 0.25 * sev(C) + 0.20 * sev(D) + 0.15 * sev(E) + 0.10 * sev(A)
+
+where  sev(none) = 0.0   sev(low) = 0.2   sev(medium) = 0.5
+       sev(high) = 0.8   sev(critical) = 1.0`;
+
+const worked = `Pair: claude-code × cursor
+
+Sub-verdicts:
+  A_prompt_injection      low      → 0.2
+  B_data_leakage          medium   → 0.5
+  C_capability_conflict   high     → 0.8
+  D_cascading_error       low      → 0.2
+  E_compliance            low      → 0.2
+
+Composite:
+  0.30*0.5 + 0.25*0.8 + 0.20*0.2 + 0.15*0.2 + 0.10*0.2
+  = 0.150 + 0.200 + 0.040 + 0.030 + 0.020
+  = 0.440  (amber — composable under conditions)`;
+---
+
+<Layout title="Methodology — SMADP">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">How verdicts are produced</span>
+    <h1 class="h1 mt-3 text-white">Methodology</h1>
+    <p class="lead mt-4 max-w-3xl">
+      Three layers of evidence. Each verdict is tagged with the highest layer
+      that supports it. Overclaiming is fatal for a security platform — so the
+      UI is honest about which layer you're seeing.
+    </p>
+  </section>
+
+  <!-- Three layers -->
+  <section class="container-page mt-12">
+    <div class="grid gap-4 md:grid-cols-3">
+      {[
+        {
+          n: '01',
+          color: '#A78BFA',
+          title: 'Static profile',
+          tag: 'always',
+          body:
+            'A structured Safety Profile per agent: capabilities, IO surfaces, network egress, OAuth scopes, data classes, sandboxing model. Hand-verified for the seed catalog; auto-generated and flagged unverified for user submissions.',
+        },
+        {
+          n: '02',
+          color: '#7C3AED',
+          title: 'LLM-judge over profiles + cited evidence',
+          tag: 'always',
+          body:
+            'Claude reasons over both profiles and the evidence bundle to produce per-risk sub-verdicts. Every claim cites a profile field and an evidence ID; every evidence ID is a content-addressed snippet of source material with the source URL preserved.',
+        },
+        {
+          n: '03',
+          color: '#22C55E',
+          title: 'Sandbox validation',
+          tag: 'open-source pairs only · v1',
+          body:
+            'For open-source pairs with MCP adapters, both agents are run in an airtight container (rootless Podman + gVisor runsc, --network none, ephemeral tmpfs, cap-drop ALL) through scenario tasks. Observed behavior either confirms or contradicts the LLM-judge; the verdict is updated.',
+        },
+      ].map((s) => (
+        <div class="card relative overflow-hidden">
+          <div
+            class="absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-20 blur-3xl"
+            style={`background:${s.color};`}
+          ></div>
+          <div class="font-mono text-xs text-ink-500">{s.n}</div>
+          <div class="mt-1 flex items-baseline justify-between gap-3">
+            <h3 class="font-display text-lg font-semibold text-white">{s.title}</h3>
+            <span
+              class="pill"
+              style={`color:${s.color}; border-color:${s.color}55;`}
+            >{s.tag}</span>
+          </div>
+          <p class="mt-4 text-sm text-ink-300 leading-relaxed">{s.body}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Risk taxonomy -->
+  <section class="container-page mt-16">
+    <h2 class="h2 text-white">Risk taxonomy</h2>
+    <p class="mt-2 text-ink-400">Five risk categories, each with its own weight in the composite score.</p>
+
+    <div class="mt-8 space-y-3">
+      {tax.risks.map((r) => (
+        <div class="card flex flex-wrap items-start gap-4">
+          <RiskBadge risk={r.id} size="md" />
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-baseline gap-2">
+              <h3 class="font-display text-lg font-semibold text-white">{r.name}</h3>
+              <span class="pill">weight {r.weight.toFixed(2)}</span>
+            </div>
+            <p class="mt-2 text-sm text-ink-300 leading-relaxed">{r.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Scoring -->
+  <section id="scoring" class="container-page mt-16">
+    <h2 class="h2 text-white">Composite scoring</h2>
+    <p class="mt-2 max-w-2xl text-ink-400">
+      Sub-verdicts are authoritative; the composite is informational and sortable.
+      Lower is safer. B / C / D / E are weighted higher than A — A is always evaluated.
+    </p>
+
+    <div class="mt-6 grid gap-6 md:grid-cols-2">
+      <CodeBlock title="formula" lang="text" code={formula} />
+      <CodeBlock title="worked example" lang="text" code={worked} />
+    </div>
+  </section>
+
+  <!-- Evidence policy -->
+  <section id="evidence-policy" class="container-page mt-16">
+    <h2 class="h2 text-white">Evidence policy</h2>
+    <div class="card mt-6 max-w-3xl space-y-3 text-sm leading-relaxed text-ink-200">
+      <p>
+        <strong class="text-white">No claim without a citation.</strong>
+        Every populated profile field and every sub-verdict rationale must point
+        to a verbatim quote from the agent's documentation, source, or terms of
+        service. Quotes are stored content-addressed under
+        <code class="font-mono text-brand-300">_evidence/sha256-&lt;hash&gt;.json</code>
+        with the source URL preserved.
+      </p>
+      <p>
+        <strong class="text-white">No verdict without reproducibility hashes.</strong>
+        Each verdict carries the rubric URL, both profile hashes, and the evidence
+        bundle hash so anyone can replay the same inputs and confirm the same
+        output.
+      </p>
+      <p>
+        <strong class="text-white">If we cannot prove it, we leave it empty.</strong>
+        Missing fields are honest. Hallucinated fields are not.
+      </p>
+      <p>
+        <strong class="text-white">Honest evidence levels.</strong>
+        A <span class="font-mono text-brand-300">docs-only</span> verdict and a
+        <span class="font-mono text-emerald-400">sandbox-validated</span> verdict
+        look different in the UI on purpose.
+      </p>
+    </div>
+  </section>
+
+  <!-- Closed-source caveat -->
+  <section class="container-page mt-16">
+    <div class="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">
+      <h3 class="h3 text-amber-200">Closed-source asymmetry is honest</h3>
+      <p class="mt-3 max-w-3xl text-sm text-amber-100/80">
+        v1 cannot sandbox Claude Code, Cursor, ChatGPT Desktop, etc. We say so
+        prominently. Capability adapters (driving the closed-source agent's API +
+        CLI binary inside an airtight container) land in v2. Until then,
+        closed-source pairs stay at <span class="font-mono">docs-only</span>.
+      </p>
+    </div>
+  </section>
+</Layout>
