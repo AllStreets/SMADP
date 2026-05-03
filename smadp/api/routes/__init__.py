@@ -7,6 +7,7 @@ from smadp.api.routes import (
     frameworks,
     health,
     meta,
+    passports,
     sandbox,
     search,
     submit,
@@ -28,6 +29,7 @@ ROUTERS = [
     sandbox.router,
     workspaces.router,
     transparency.router,
+    passports.router,
 ]
 
 __all__ = ["ROUTERS"]
