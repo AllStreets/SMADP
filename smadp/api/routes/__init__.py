@@ -15,6 +15,7 @@ from smadp.api.routes import (
     verdicts,
     workspaces,
 )
+from smadp.webhooks import api as webhooks
 
 ROUTERS = [
     health.router,
@@ -30,6 +31,7 @@ ROUTERS = [
     workspaces.router,
     transparency.router,
     passports.router,
+    webhooks.router,
 ]
 
 __all__ = ["ROUTERS"]
