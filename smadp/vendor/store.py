@@ -22,6 +22,7 @@ from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimStatus,
     VendorClaim,
+    VendorResponse,
 )
 from smadp.utils.time import utcnow
 
@@ -46,6 +47,16 @@ CREATE INDEX IF NOT EXISTS vendor_claims_workspace
     ON vendor_claims(workspace_id, agent_id);
 CREATE INDEX IF NOT EXISTS vendor_claims_user
     ON vendor_claims(workspace_id, vendor_user_id, agent_id, status);
+CREATE TABLE IF NOT EXISTS vendor_responses (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    verdict_id TEXT NOT NULL,
+    vendor_user_id TEXT NOT NULL,
+    body_md TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS vendor_responses_verdict
+    ON vendor_responses(workspace_id, verdict_id);
 """
 
 
@@ -266,11 +277,91 @@ def find_verified_claim(
         conn.close()
 
 
+def _generate_response_id(now: datetime) -> str:
+    ts = now.strftime("%Y%m%d%H%M%S")
+    suffix = secrets.token_hex(3)
+    return f"vr_{ts}_{suffix}"
+
+
+def _row_to_response(row: sqlite3.Row) -> VendorResponse:
+    return VendorResponse(
+        id=row["id"],
+        workspace_id=row["workspace_id"],
+        verdict_id=row["verdict_id"],
+        vendor_user_id=row["vendor_user_id"],
+        body_md=row["body_md"],
+        created_at=_from_iso(row["created_at"]),
+    )
+
+
+def post_response(
+    *,
+    workspace_id: str,
+    verdict_id: str,
+    vendor_user_id: str,
+    body_md: str,
+    config: Config | None = None,
+) -> VendorResponse:
+    cfg = config or load_config()
+    now = utcnow()
+    response_id = _generate_response_id(now)
+    now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT INTO vendor_responses"
+                "(id, workspace_id, verdict_id, vendor_user_id, body_md, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (response_id, workspace_id, verdict_id, vendor_user_id, body_md, now_iso),
+            )
+        log.info(
+            "vendor.response.posted",
+            workspace_id=workspace_id,
+            verdict_id=verdict_id,
+            response_id=response_id,
+        )
+        return VendorResponse(
+            id=response_id,
+            workspace_id=workspace_id,
+            verdict_id=verdict_id,
+            vendor_user_id=vendor_user_id,
+            body_md=body_md,
+            created_at=_from_iso(now_iso),
+        )
+    finally:
+        conn.close()
+
+
+def list_responses(
+    *,
+    workspace_id: str,
+    verdict_id: str,
+    config: Config | None = None,
+) -> list[VendorResponse]:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute(
+            "SELECT * FROM vendor_responses"
+            " WHERE workspace_id = ? AND verdict_id = ?"
+            " ORDER BY created_at ASC",
+            (workspace_id, verdict_id),
+        )
+        return [_row_to_response(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 __all__ = [
     "create_claim",
     "find_verified_claim",
     "get_claim",
     "list_claims",
+    "list_responses",
     "mark_claim_verified",
+    "post_response",
     "revoke_claim",
 ]
