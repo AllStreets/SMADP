@@ -99,9 +99,7 @@ def test_every_chronicle_line_matches_schema(
                 doc = json.loads(raw)
                 errs = _iter_errors(chronicle_validator, doc)
                 if errs:
-                    failures.append(
-                        f"{path.name}:{lineno}:\n  - " + "\n  - ".join(errs)
-                    )
+                    failures.append(f"{path.name}:{lineno}:\n  - " + "\n  - ".join(errs))
                 total += 1
     assert total > 0, "no chronicle lines found"
     assert not failures, "schema violations:\n" + "\n".join(failures)

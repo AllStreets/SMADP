@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
-
 from smadp.utils.hashing import sha256_bytes, sha256_canonical_json, sha256_text
 
 
@@ -24,7 +22,7 @@ class TestSha256Bytes:
 
 class TestSha256Text:
     def test_unicode_round_trip(self) -> None:
-        assert sha256_text("héllo") == sha256_bytes("héllo".encode("utf-8"))
+        assert sha256_text("héllo") == sha256_bytes("héllo".encode())
 
     def test_matches_bytes_for_ascii(self) -> None:
         assert sha256_text("abc") == sha256_bytes(b"abc")

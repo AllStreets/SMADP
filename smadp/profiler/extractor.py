@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Iterable
+from typing import ClassVar
 
 import structlog
 
@@ -43,7 +44,7 @@ _HTMLISH_MEDIA_TYPES = {"text/html", "application/xhtml+xml"}
 class _HTMLTextExtractor(HTMLParser):
     """Minimal HTML -> text stripper. Drops <script>/<style>; preserves whitespace."""
 
-    _SKIP_TAGS = {"script", "style", "noscript", "template", "svg"}
+    _SKIP_TAGS: ClassVar[set[str]] = {"script", "style", "noscript", "template", "svg"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -73,7 +74,7 @@ def _normalize_to_text(doc: FetchedDoc) -> str:
         parser = _HTMLTextExtractor()
         try:
             parser.feed(doc.content)
-        except Exception:  # noqa: BLE001 - HTMLParser raises various odd errors
+        except Exception:
             return doc.content
         return parser.text()
     return doc.content
@@ -191,7 +192,7 @@ async def extract_profile(
     docs_urls: list[str],
     evidence: list[Evidence],
     llm: LLMClient,
-    config: Config,  # noqa: ARG001 - reserved for future use (logging/cache)
+    config: Config,
     verified: bool = False,
 ) -> Profile:
     """Call the LLM with the evidence bundle and return a validated Profile."""

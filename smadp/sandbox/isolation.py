@@ -71,10 +71,10 @@ Execution itself happens in :mod:`smadp.sandbox.runner` via
 from __future__ import annotations
 
 import shutil
-import subprocess  # noqa: S404 — used with explicit argv lists, never shell=True
+import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 import structlog
 
@@ -91,7 +91,7 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class RuntimeBackend(str, Enum):
+class RuntimeBackend(StrEnum):
     """Identifies the (engine, runtime) pair the sandbox will use."""
 
     PODMAN_RUNSC = "podman+runsc"
@@ -127,7 +127,7 @@ def _runsc_available_for(engine: str) -> bool:
         return False
     # ``info --format`` is supported by both docker and podman.
     try:
-        proc = subprocess.run(  # noqa: S603 — argv list, no shell
+        proc = subprocess.run(
             [engine, "info", "--format", "{{json .}}"],
             capture_output=True,
             text=True,
@@ -310,13 +310,20 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
     # ---- Hardening flags (every container, every time) -------------------
     argv.extend(
         [
-            "--user", spec.user,
-            "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges",
-            "--pids-limit", str(spec.pids_limit),
-            "--cpus", f"{spec.cpu_limit:.2f}",
-            "--memory", f"{spec.mem_limit_mb}m",
-            "--memory-swap", f"{spec.mem_limit_mb}m",  # disable swap
+            "--user",
+            spec.user,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            str(spec.pids_limit),
+            "--cpus",
+            f"{spec.cpu_limit:.2f}",
+            "--memory",
+            f"{spec.mem_limit_mb}m",
+            "--memory-swap",
+            f"{spec.mem_limit_mb}m",  # disable swap
         ]
     )
     if spec.read_only_root:
@@ -333,7 +340,7 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
     argv.extend(
         [
             "--tmpfs",
-            f"/tmp:rw,noexec,nosuid,nodev,size=64m",  # noqa: S108 — inside container
+            "/tmp:rw,noexec,nosuid,nodev,size=64m",  # noqa: S108 — inside container
         ]
     )
 

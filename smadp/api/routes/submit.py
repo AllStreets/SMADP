@@ -34,7 +34,7 @@ def _run_profile_job(
         # Late import — profiler is built by another subagent and may not be
         # installed in every environment (e.g. minimal API-only container).
         from smadp.profiler.pipeline import build_profile  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         job_store.update(
             job_id,
             status="failed",
@@ -63,7 +63,7 @@ def _run_profile_job(
             status="succeeded",
             result={"slug": profile.slug, "path": str(path)},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         job_store.update(
             job_id,
             status="failed",

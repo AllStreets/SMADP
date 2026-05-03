@@ -43,9 +43,7 @@ def test_every_sha_matches_quote_text(evidence_records: list[tuple[Path, dict]])
     for path, data in evidence_records:
         expected = sha256_text(data["quote"])
         if data["sha256"] != expected:
-            mismatches.append(
-                f"{path.name}: stored={data['sha256']} expected={expected}"
-            )
+            mismatches.append(f"{path.name}: stored={data['sha256']} expected={expected}")
     assert not mismatches, (
         f"{len(mismatches)} evidence files have hash != sha256(quote):\n"
         + "\n".join(mismatches[:5])

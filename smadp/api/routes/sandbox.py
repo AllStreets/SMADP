@@ -94,7 +94,7 @@ async def enqueue_run(request: Request, payload: SandboxRunRequest) -> SandboxRu
         record = sandbox_queue.enqueue_sandbox_run(  # type: ignore[attr-defined]
             slug_a=a, slug_b=b, scenario=payload.scenario
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not isinstance(record, dict):
         record = {"run_id": str(record), "pair": [a, b], "scenario": payload.scenario}
@@ -114,7 +114,7 @@ async def list_runs(request: Request, limit: int = 50) -> SandboxRunListResponse
         records = list(sandbox_queue.iter_runs(limit=limit))  # type: ignore[attr-defined]
     except TypeError:
         records = list(sandbox_queue.iter_runs())  # type: ignore[attr-defined]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return SandboxRunListResponse(items=[_to_summary(r) for r in records[:limit]])
 
@@ -130,7 +130,7 @@ async def get_run(request: Request, run_id: str) -> SandboxRunSummary:
         raise HTTPException(status_code=503, detail="sandbox subsystem not installed")
     try:
         record = sandbox_queue.get_run_status(run_id)  # type: ignore[attr-defined]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if record is None:
         raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
@@ -158,16 +158,12 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
         while True:
             try:
                 record = sandbox_queue.get_run_status(run_id)  # type: ignore[attr-defined]
-            except Exception as exc:  # noqa: BLE001
-                await websocket.send_text(
-                    json.dumps({"event": "error", "detail": str(exc)})
-                )
+            except Exception as exc:
+                await websocket.send_text(json.dumps({"event": "error", "detail": str(exc)}))
                 await websocket.close(code=1011)
                 return
             if record is None:
-                await websocket.send_text(
-                    json.dumps({"event": "not_found", "run_id": run_id})
-                )
+                await websocket.send_text(json.dumps({"event": "not_found", "run_id": run_id}))
                 await websocket.close(code=1000)
                 return
             payload = json.dumps(record, default=str, sort_keys=True)

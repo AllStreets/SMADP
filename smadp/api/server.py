@@ -242,4 +242,4 @@ app = create_app()
 
 
 # Re-export for convenience.
-__all__ = ["create_app", "JobStore", "TokenBucket", "RUBRIC_VERSION", "SCHEMA_VERSION"]
+__all__ = ["RUBRIC_VERSION", "SCHEMA_VERSION", "JobStore", "TokenBucket", "create_app"]

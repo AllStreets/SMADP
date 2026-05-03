@@ -7,7 +7,7 @@ functions, no I/O, no logging.
 
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from smadp.schemas.verdict import Severity, SubVerdicts
 

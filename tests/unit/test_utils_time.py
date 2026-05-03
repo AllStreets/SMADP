@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import timezone
+from datetime import UTC
 
 from smadp.utils.time import utcnow, utcnow_iso
 
@@ -15,7 +15,7 @@ def test_utcnow_is_aware_and_utc() -> None:
     assert now.tzinfo is not None
     # Compare offsets, not the timezone object identity, since pytz/zoneinfo
     # both yield offset-zero objects but aren't ``is`` equal to ``timezone.utc``.
-    assert now.utcoffset() == timezone.utc.utcoffset(now)
+    assert now.utcoffset() == UTC.utcoffset(now)
 
 
 def test_utcnow_iso_ends_with_z() -> None:

@@ -148,17 +148,13 @@ def profile(
             existing = repo.load_profile(slug)
             console.print(f"[cyan]found existing profile:[/] {slug} ({existing.name})")
         except NotFoundError:
-            err_console.print(
-                f"[red]no profile {slug!r} on disk and no URL provided[/]"
-            )
+            err_console.print(f"[red]no profile {slug!r} on disk and no URL provided[/]")
             ctx.exit(2)
 
     try:
         from smadp.profiler.pipeline import build_profile  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
-        err_console.print(
-            f"[red]profiler unavailable:[/] {type(exc).__name__}: {exc}"
-        )
+    except Exception as exc:
+        err_console.print(f"[red]profiler unavailable:[/] {type(exc).__name__}: {exc}")
         err_console.print(
             "[yellow]install the profiler subsystem (smadp.profiler) to generate profiles[/]"
         )
@@ -176,7 +172,7 @@ def profile(
                 slug=fallback_slug,
                 verified=not unverified,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             err_console.print(f"[red]profile build failed:[/] {exc}")
             ctx.exit(1)
             return
@@ -220,8 +216,10 @@ def verdict(ctx: click.Context, slug_a: str, slug_b: str, regenerate: bool) -> N
         return
 
     try:
-        from smadp.analyzer.pipeline import generate_verdict as _gv  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
+        from smadp.analyzer.pipeline import (
+            generate_verdict as _gv,  # type: ignore[import-not-found]
+        )
+    except Exception as exc:
         err_console.print(f"[red]analyzer unavailable:[/] {type(exc).__name__}: {exc}")
         ctx.exit(1)
         return
@@ -324,9 +322,7 @@ def _render_lint_report(report: LintReport, cfg: Config) -> None:
     console.print(table)
     err_count = len(report.errors)
     warn_count = len(report.warnings)
-    console.print(
-        f"[bold]summary:[/] [red]{err_count} errors[/], [yellow]{warn_count} warnings[/]"
-    )
+    console.print(f"[bold]summary:[/] [red]{err_count} errors[/], [yellow]{warn_count} warnings[/]")
 
 
 # --------------------------------------------------------------------- submit
@@ -413,10 +409,10 @@ def evaluate(ctx: click.Context, agents: tuple[str, ...], scenario: str | None) 
                         details={"scenario": scenario},
                     )
                     status = "generated"
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     table.add_row(
                         f"{a} <> {b}",
-                        f"[red]error[/]",
+                        "[red]error[/]",
                         "-",
                         f"[red]{exc}[/]",
                     )
@@ -447,10 +443,7 @@ def serve(ctx: click.Context, port: int, host: str, reload: bool) -> None:
         err_console.print("[red]uvicorn is not installed[/]")
         ctx.exit(1)
         return
-    console.print(
-        f"[bold green]SMADP API[/] starting on http://{host}:{port}  "
-        f"(reload={reload})"
-    )
+    console.print(f"[bold green]SMADP API[/] starting on http://{host}:{port}  (reload={reload})")
     uvicorn.run(
         "smadp.api.server:create_app",
         host=host,
@@ -483,14 +476,16 @@ def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str | No
             return
     try:
         from smadp.sandbox.queue import enqueue_sandbox_run  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
         ctx.exit(1)
         return
     record = enqueue_sandbox_run(slug_a=a, slug_b=b, scenario=scenario)  # type: ignore[misc]
     if isinstance(record, dict):
-        console.print(f"[green]queued[/] run_id={record.get('run_id')} "
-                      f"pair={a} <> {b} scenario={scenario or '-'}")
+        console.print(
+            f"[green]queued[/] run_id={record.get('run_id')} "
+            f"pair={a} <> {b} scenario={scenario or '-'}"
+        )
     else:
         console.print(f"[green]queued[/] run_id={record} pair={a} <> {b}")
 
@@ -501,8 +496,11 @@ def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str | No
 def sandbox_status(ctx: click.Context, run_id: str | None) -> None:
     """Show queue state, or one run's status if run_id provided."""
     try:
-        from smadp.sandbox.queue import get_run_status, list_pending  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
+        from smadp.sandbox.queue import (  # type: ignore[import-not-found]
+            get_run_status,
+            list_pending,
+        )
+    except Exception as exc:
         err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
         ctx.exit(1)
         return
@@ -539,7 +537,7 @@ def sandbox_runs(ctx: click.Context, limit: int) -> None:
     """List recent sandbox runs (any status)."""
     try:
         from smadp.sandbox.queue import iter_runs  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
         ctx.exit(1)
         return

@@ -104,7 +104,9 @@ class Transcript:
 
     @classmethod
     def from_jsonl(cls, run_id: str, path: Path, text: str) -> Transcript:
-        events = [TranscriptEvent.from_json_line(line) for line in text.splitlines() if line.strip()]
+        events = [
+            TranscriptEvent.from_json_line(line) for line in text.splitlines() if line.strip()
+        ]
         return cls(run_id=run_id, path=path, events=events)
 
     @classmethod

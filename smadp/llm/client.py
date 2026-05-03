@@ -218,9 +218,7 @@ class LLMClient:
                     temperature=0.0,
                     system=cast(Any, system),
                     tools=cast(Any, [tool]),
-                    tool_choice=cast(
-                        Any, {"type": "tool", "name": tool_choice_name}
-                    ),
+                    tool_choice=cast(Any, {"type": "tool", "name": tool_choice_name}),
                     messages=[{"role": "user", "content": cast(Any, user_blocks)}],
                 )
             except APIStatusError as exc:

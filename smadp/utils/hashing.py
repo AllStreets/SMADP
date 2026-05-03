@@ -17,5 +17,7 @@ def sha256_text(data: str) -> str:
 
 def sha256_canonical_json(obj: Any) -> str:
     """Hash a JSON-serializable object after canonicalization (sorted keys, no spaces)."""
-    canonical = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    canonical = json.dumps(
+        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
     return sha256_text(canonical)

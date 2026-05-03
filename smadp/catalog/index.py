@@ -47,10 +47,7 @@ class CatalogIndex:
     def _has_fts5(self, conn: sqlite3.Connection) -> bool:
         try:
             with closing(conn.cursor()) as cur:
-                cur.execute(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_probe "
-                    "USING fts5(x);"
-                )
+                cur.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_probe USING fts5(x);")
                 cur.execute("DROP TABLE _fts5_probe;")
             return True
         except sqlite3.OperationalError:
@@ -104,8 +101,7 @@ class CatalogIndex:
                     ]
                     cap = profile.capabilities
                     cap_terms = [
-                        name for name, on in cap.model_dump().items()
-                        if isinstance(on, bool) and on
+                        name for name, on in cap.model_dump().items() if isinstance(on, bool) and on
                     ]
                     body_parts.append(" ".join(cap_terms))
                     body = " ".join(p for p in body_parts if p).strip()
@@ -213,7 +209,7 @@ class CatalogIndex:
             ]
 
 
-_FTS5_SPECIALS = set('"\'(){}[]:!*+-')
+_FTS5_SPECIALS = set("\"'(){}[]:!*+-")
 
 
 def _sanitize_fts5(query: str) -> str:

@@ -40,7 +40,9 @@ async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateRespon
     # Try the analyzer; if unavailable, return cached verdicts where they exist.
     generate_verdict = None
     try:
-        from smadp.analyzer.pipeline import generate_verdict as _gv  # type: ignore[import-not-found]
+        from smadp.analyzer.pipeline import (
+            generate_verdict as _gv,  # type: ignore[import-not-found]
+        )
 
         generate_verdict = _gv
     except Exception:
@@ -75,7 +77,7 @@ async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateRespon
                     verdict_id=verdict.verdict_id,
                     details={"scenario": payload.scenario},
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 results.append(
                     EvaluatePairResult(
                         pair=[a, b],
@@ -84,8 +86,6 @@ async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateRespon
                     )
                 )
                 continue
-        results.append(
-            EvaluatePairResult(pair=[a, b], verdict=verdict.model_dump(mode="json"))
-        )
+        results.append(EvaluatePairResult(pair=[a, b], verdict=verdict.model_dump(mode="json")))
 
     return EvaluateResponse(pairs=results)

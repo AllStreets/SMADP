@@ -46,9 +46,7 @@ log = structlog.get_logger(__name__)
 
 RunState = Literal["pending", "running", "completed", "failed"]
 
-_VALID_STATES: Final[frozenset[str]] = frozenset(
-    {"pending", "running", "completed", "failed"}
-)
+_VALID_STATES: Final[frozenset[str]] = frozenset({"pending", "running", "completed", "failed"})
 
 _SCHEMA_SQL: Final[str] = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -187,18 +185,14 @@ def enqueue_sandbox_run(
     a_sorted, b_sorted = sort_pair(a_norm, b_norm)
 
     if scenario not in list_builtin_scenarios():
-        raise ValueError(
-            f"Unknown scenario {scenario!r}. Available: {list_builtin_scenarios()}"
-        )
+        raise ValueError(f"Unknown scenario {scenario!r}. Available: {list_builtin_scenarios()}")
 
     # Defense in depth: even though slugs/scenario should never be a secret,
     # reject if any *input* string smells like a real key. The actual env
     # values are screened again at the runner.
     for v in (slug_a, slug_b, scenario):
         if looks_like_real_secret(v):
-            raise UnsafeSecretError(
-                "Refusing to enqueue: input contains a real-secret pattern."
-            )
+            raise UnsafeSecretError("Refusing to enqueue: input contains a real-secret pattern.")
 
     run_id = _generate_run_id(a_sorted, b_sorted)
     now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -265,9 +259,7 @@ def list_pending(*, config: Config | None = None) -> list[SandboxRun]:
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
-        cur = conn.execute(
-            "SELECT * FROM runs WHERE state = 'pending' ORDER BY created_at ASC"
-        )
+        cur = conn.execute("SELECT * FROM runs WHERE state = 'pending' ORDER BY created_at ASC")
         return [_row_to_sandbox_run(row) for row in cur.fetchall()]
     finally:
         conn.close()
@@ -290,8 +282,7 @@ def claim_next_pending(*, config: Config | None = None) -> SandboxRun | None:
         _ensure_schema(conn)
         with _transaction(conn):
             cur = conn.execute(
-                "SELECT * FROM runs WHERE state = 'pending' "
-                "ORDER BY created_at ASC LIMIT 1"
+                "SELECT * FROM runs WHERE state = 'pending' ORDER BY created_at ASC LIMIT 1"
             )
             row = cur.fetchone()
             if row is None:
@@ -316,7 +307,14 @@ def mark_completed(
     transcript_path: str,
     config: Config | None = None,
 ) -> None:
-    _update_terminal(run_id, "completed", outcome=outcome, transcript_path=transcript_path, error=None, config=config)
+    _update_terminal(
+        run_id,
+        "completed",
+        outcome=outcome,
+        transcript_path=transcript_path,
+        error=None,
+        config=config,
+    )
 
 
 def mark_failed(
@@ -326,7 +324,14 @@ def mark_failed(
     transcript_path: str | None = None,
     config: Config | None = None,
 ) -> None:
-    _update_terminal(run_id, "failed", outcome="errored", transcript_path=transcript_path, error=error, config=config)
+    _update_terminal(
+        run_id,
+        "failed",
+        outcome="errored",
+        transcript_path=transcript_path,
+        error=error,
+        config=config,
+    )
 
 
 def _update_terminal(

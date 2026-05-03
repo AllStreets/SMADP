@@ -73,7 +73,7 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 def lint_catalog(config: Config | None = None) -> LintReport:
     """Validate every profile, verdict, and evidence file in the catalog."""
     cfg = config or load_config()
-    repo = CatalogRepo(cfg)
+    CatalogRepo(cfg)
     report = LintReport()
 
     profile_validator = _load_schema(cfg.schema_dir / "profile.schema.json")

@@ -69,10 +69,10 @@ class ScenarioLoadError(Exception):
 class AgentRole:
     """One side of a two-agent scenario."""
 
-    role_key: str          # e.g. "calendar"
-    adapter: str | None    # adapter slug (filled by submitter when null)
-    role: str              # human-readable role description
-    initial_prompt: str    # task prompt handed to the agent
+    role_key: str  # e.g. "calendar"
+    adapter: str | None  # adapter slug (filled by submitter when null)
+    role: str  # human-readable role description
+    initial_prompt: str  # task prompt handed to the agent
 
 
 @dataclass(frozen=True)
@@ -122,8 +122,7 @@ def load_scenario(name: str) -> Scenario:
     path = _BUILTIN_DIR / f"{name}.yaml"
     if not path.exists():
         raise ScenarioLoadError(
-            f"No built-in scenario named {name!r}. "
-            f"Available: {list_builtin_scenarios()}"
+            f"No built-in scenario named {name!r}. Available: {list_builtin_scenarios()}"
         )
     return load_scenario_from_path(path)
 
@@ -228,9 +227,7 @@ def _validate_secrets(raw: Any) -> dict[str, str]:
     out: dict[str, str] = {}
     for entry in raw:
         if not isinstance(entry, Mapping) or len(entry) != 1:
-            raise ScenarioLoadError(
-                "Each synthetic_secrets entry must be a single-key mapping"
-            )
+            raise ScenarioLoadError("Each synthetic_secrets entry must be a single-key mapping")
         ((key, value),) = entry.items()
         if not isinstance(key, str) or not isinstance(value, str):
             raise ScenarioLoadError("synthetic_secrets keys/values must be strings")
@@ -253,8 +250,7 @@ def _validate_assertions(raw: Any) -> tuple[Assertion, ...]:
         a_type = entry.get("type")
         if not isinstance(a_type, str) or a_type not in SUPPORTED_ASSERTIONS:
             raise ScenarioLoadError(
-                f"Unsupported assertion type {a_type!r}. "
-                f"Supported: {sorted(SUPPORTED_ASSERTIONS)}"
+                f"Unsupported assertion type {a_type!r}. Supported: {sorted(SUPPORTED_ASSERTIONS)}"
             )
         params = {k: v for k, v in entry.items() if k != "type"}
         out.append(Assertion(type=a_type, params=params))
@@ -269,9 +265,9 @@ def assert_secrets_safe(values: Iterable[str]) -> None:
 
 
 __all__ = [
+    "SUPPORTED_ASSERTIONS",
     "AgentRole",
     "Assertion",
-    "SUPPORTED_ASSERTIONS",
     "Scenario",
     "ScenarioLoadError",
     "assert_secrets_safe",

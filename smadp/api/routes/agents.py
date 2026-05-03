@@ -88,7 +88,9 @@ def _summarize_verdict(verdict: Verdict) -> VerdictSummary:
 async def list_agents(
     request: Request,
     category: Annotated[str | None, Query(description="Filter by category id")] = None,
-    source_type: Annotated[str | None, Query(description="open-source | closed-source | source-available")] = None,
+    source_type: Annotated[
+        str | None, Query(description="open-source | closed-source | source-available")
+    ] = None,
     status: Annotated[str | None, Query(description="verification status")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

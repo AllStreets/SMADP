@@ -42,13 +42,19 @@ class Config:
     repo_root: Path = field(default_factory=_detect_repo_root)
     catalog_dir: Path = field(init=False)
     cache_dir: Path = field(init=False)
-    anthropic_api_key: str | None = field(default_factory=lambda: os.environ.get(ANTHROPIC_API_KEY_ENV))
+    anthropic_api_key: str | None = field(
+        default_factory=lambda: os.environ.get(ANTHROPIC_API_KEY_ENV)
+    )
     model_id: str = DEFAULT_MODEL_ID
     model_name: str = DEFAULT_MODEL_NAME
 
     def __post_init__(self) -> None:
         catalog_override = os.environ.get(CATALOG_ENV)
-        catalog = Path(catalog_override).expanduser().resolve() if catalog_override else self.repo_root / "catalog"
+        catalog = (
+            Path(catalog_override).expanduser().resolve()
+            if catalog_override
+            else self.repo_root / "catalog"
+        )
         cache_override = os.environ.get(CACHE_DIR_ENV)
         cache = (
             Path(cache_override).expanduser().resolve()

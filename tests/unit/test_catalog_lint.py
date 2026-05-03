@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from smadp.catalog.lint import lint_catalog
 from smadp.config import Config
 

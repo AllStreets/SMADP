@@ -11,7 +11,7 @@ The pipeline orchestrates:
 
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import structlog
 
@@ -93,7 +93,7 @@ async def generate_verdict(
     client = llm or LLMClient(config=cfg)
     try:
         judge_output = await judge_bundle(bundle, llm=client)
-    except Exception as exc:  # noqa: BLE001 - re-raised as AnalyzerError
+    except Exception as exc:
         raise AnalyzerError(f"Judge call failed: {exc}") from exc
 
     score = composite_score(judge_output.sub_verdicts)
@@ -164,7 +164,7 @@ async def generate_verdict(
 
     try:
         verdict = Verdict.model_validate(payload)
-    except Exception as exc:  # noqa: BLE001 - pydantic ValidationError
+    except Exception as exc:
         raise AnalyzerError(f"Verdict failed schema validation: {exc}") from exc
 
     logger.info(

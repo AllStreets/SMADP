@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
@@ -30,8 +30,8 @@ class Chronicle:
     # ------------------------------------------------------------------ paths
     def _file_for(self, ts: datetime) -> Path:
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        ts_utc = ts.astimezone(timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
+        ts_utc = ts.astimezone(UTC)
         date_str = ts_utc.strftime("%Y-%m-%d")
         return self.config.chronicle_dir / f"{date_str}.jsonl"
 
@@ -128,5 +128,5 @@ class Chronicle:
 
 def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt

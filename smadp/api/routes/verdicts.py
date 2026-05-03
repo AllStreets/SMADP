@@ -52,7 +52,9 @@ def _summarize(verdict: Verdict) -> VerdictSummary:
 async def list_verdicts(
     request: Request,
     evidence_level: Annotated[str | None, Query(description="evidence level filter")] = None,
-    min_severity: Annotated[str | None, Query(description="minimum severity across any sub-verdict")] = None,
+    min_severity: Annotated[
+        str | None, Query(description="minimum severity across any sub-verdict")
+    ] = None,
     risk: Annotated[
         str | None,
         Query(

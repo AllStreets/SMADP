@@ -10,9 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 EVIDENCE_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
-VERDICT_ID_RE = re.compile(
-    r"^v_\d{4}-\d{2}-\d{2}_[a-z0-9-]+__[a-z0-9-]+_[a-f0-9]{4,8}$"
-)
+VERDICT_ID_RE = re.compile(r"^v_\d{4}-\d{2}-\d{2}_[a-z0-9-]+__[a-z0-9-]+_[a-f0-9]{4,8}$")
 
 Severity = Literal["none", "low", "medium", "high", "critical"]
 EvidenceLevel = Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"]
@@ -36,7 +34,9 @@ class Citation(BaseModel):
     @model_validator(mode="after")
     def _at_least_one(self) -> Citation:
         if not self.profile_field and not self.evidence_ref and not self.quote:
-            raise ValueError("Citation must have at least one of profile_field, evidence_ref, or quote")
+            raise ValueError(
+                "Citation must have at least one of profile_field, evidence_ref, or quote"
+            )
         return self
 
 

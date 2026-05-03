@@ -10,10 +10,10 @@ from smadp.analyzer.scoring import (
 )
 
 __all__ = [
-    "AnalyzerError",
-    "JudgeBundle",
     "SEVERITY_SCORES",
     "WEIGHTS",
+    "AnalyzerError",
+    "JudgeBundle",
     "build_bundle",
     "composite_score",
     "generate_verdict",

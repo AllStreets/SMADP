@@ -127,7 +127,7 @@ def _load_evidence(evidence_dir: Path, sha: str) -> Evidence | None:
         return None
     try:
         return Evidence.model_validate(payload)
-    except Exception as exc:  # noqa: BLE001 - pydantic ValidationError surfaces here
+    except Exception as exc:
         logger.warning("citations.invalid_evidence_file", sha=sha, error=str(exc))
         return None
 
@@ -220,9 +220,7 @@ async def _refetch_and_verify(
         for (url, evs), result in zip(urls.items(), results, strict=True):
             if isinstance(result, BaseException):
                 for ev in evs:
-                    issues.append(
-                        f"refetch failed for sha256:{ev.sha256} ({url}): {result}"
-                    )
+                    issues.append(f"refetch failed for sha256:{ev.sha256} ({url}): {result}")
                 continue
             try:
                 result.raise_for_status()
@@ -235,9 +233,7 @@ async def _refetch_and_verify(
             body_norm = _normalize_for_match(result.text)
             for ev in evs:
                 if _normalize_for_match(ev.quote) not in body_norm:
-                    issues.append(
-                        f"quote for sha256:{ev.sha256} no longer appears at {url}"
-                    )
+                    issues.append(f"quote for sha256:{ev.sha256} no longer appears at {url}")
     finally:
         if owns_client:
             await client.aclose()

@@ -20,8 +20,12 @@ router = APIRouter(tags=["chronicle"])
 )
 async def get_chronicle(
     request: Request,
-    since: Annotated[datetime | None, Query(description="ISO datetime lower bound (inclusive)")] = None,
-    until: Annotated[datetime | None, Query(description="ISO datetime upper bound (inclusive)")] = None,
+    since: Annotated[
+        datetime | None, Query(description="ISO datetime lower bound (inclusive)")
+    ] = None,
+    until: Annotated[
+        datetime | None, Query(description="ISO datetime upper bound (inclusive)")
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ChronicleResponse:

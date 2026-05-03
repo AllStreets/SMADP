@@ -32,19 +32,19 @@ from typing import Final
 # detection rules (GitHub secret scanning, gitleaks, trufflehog). We err on
 # the side of catching too much.
 _REAL_SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),                # OpenAI / Anthropic-ish
-    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),          # Anthropic API key
-    re.compile(r"ghp_[A-Za-z0-9]{30,}"),               # GitHub personal token
-    re.compile(r"gho_[A-Za-z0-9]{30,}"),               # GitHub OAuth
-    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),       # GitHub fine-grained
-    re.compile(r"AKIA[0-9A-Z]{16}"),                   # AWS access key id
-    re.compile(r"ASIA[0-9A-Z]{16}"),                   # AWS session key id
-    re.compile(r"AIza[0-9A-Za-z_-]{30,}"),             # Google API key
-    re.compile(r"ya29\.[0-9A-Za-z_-]{30,}"),           # Google OAuth token
-    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),       # Slack tokens
-    re.compile(r"glpat-[A-Za-z0-9_-]{20,}"),           # GitLab PAT
-    re.compile(r"hf_[A-Za-z0-9]{30,}"),                # HuggingFace token
-    re.compile(r"npm_[A-Za-z0-9]{30,}"),               # NPM token
+    re.compile(r"sk-[A-Za-z0-9]{20,}"),  # OpenAI / Anthropic-ish
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),  # Anthropic API key
+    re.compile(r"ghp_[A-Za-z0-9]{30,}"),  # GitHub personal token
+    re.compile(r"gho_[A-Za-z0-9]{30,}"),  # GitHub OAuth
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),  # GitHub fine-grained
+    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key id
+    re.compile(r"ASIA[0-9A-Z]{16}"),  # AWS session key id
+    re.compile(r"AIza[0-9A-Za-z_-]{30,}"),  # Google API key
+    re.compile(r"ya29\.[0-9A-Za-z_-]{30,}"),  # Google OAuth token
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),  # Slack tokens
+    re.compile(r"glpat-[A-Za-z0-9_-]{20,}"),  # GitLab PAT
+    re.compile(r"hf_[A-Za-z0-9]{30,}"),  # HuggingFace token
+    re.compile(r"npm_[A-Za-z0-9]{30,}"),  # NPM token
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),  # PEM private keys
 )
 
@@ -92,9 +92,7 @@ def assert_safe_secrets(env: dict[str, str]) -> None:
 # Image allowlist
 # ---------------------------------------------------------------------------
 
-_IMAGE_DIGEST_RE = re.compile(
-    r"^[a-z0-9./_-]+(?::[a-zA-Z0-9._-]+)?@sha256:[0-9a-f]{64}$"
-)
+_IMAGE_DIGEST_RE = re.compile(r"^[a-z0-9./_-]+(?::[a-zA-Z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 
 # Approved base images keyed by adapter slug. The digest values below are
 # placeholders (all-zero) for v1 development; ops MUST replace them with real,
@@ -169,9 +167,7 @@ def lookup_image_for_adapter(adapter_slug: str) -> str:
 # A scenario may request egress to specific endpoints (e.g. the agent's
 # inference API). We require fully-qualified hostnames and reject wildcards
 # more permissive than a single suffix label.
-_HOSTNAME_RE = re.compile(
-    r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$"
-)
+_HOSTNAME_RE = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$")
 
 
 def validate_egress_endpoint(endpoint: str) -> bool:
@@ -223,8 +219,8 @@ __all__ = [
     "assert_image_approved",
     "assert_safe_secrets",
     "is_safe_secret",
-    "lookup_image_for_adapter",
     "looks_like_real_secret",
+    "lookup_image_for_adapter",
     "validate_egress_endpoint",
     "validate_image_digest",
 ]

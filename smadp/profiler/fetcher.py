@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable
 
 import httpx
 import structlog
@@ -32,12 +32,8 @@ logger = structlog.get_logger(__name__)
 DEFAULT_USER_AGENT = "smadp-profiler/0.1 (+https://github.com/AllStreets/SMADP)"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
-_GITHUB_REPO_RE = re.compile(
-    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/#?]+)(?:/.*)?$"
-)
-_HF_MODEL_RE = re.compile(
-    r"^https?://huggingface\.co/(?P<owner>[^/]+)/(?P<model>[^/#?]+)(?:/.*)?$"
-)
+_GITHUB_REPO_RE = re.compile(r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/#?]+)(?:/.*)?$")
+_HF_MODEL_RE = re.compile(r"^https?://huggingface\.co/(?P<owner>[^/]+)/(?P<model>[^/#?]+)(?:/.*)?$")
 
 
 @dataclass(frozen=True)

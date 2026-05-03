@@ -18,17 +18,19 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 class Problem(BaseModel):
     """RFC-7807 Problem JSON."""
 
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {
-                "type": "https://smadp.dev/problems/not-found",
-                "title": "Not Found",
-                "status": 404,
-                "detail": "profile not found: claude-code",
-                "instance": "/api/agents/claude-code",
-            }
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "type": "https://smadp.dev/problems/not-found",
+                    "title": "Not Found",
+                    "status": 404,
+                    "detail": "profile not found: claude-code",
+                    "instance": "/api/agents/claude-code",
+                }
+            ]
+        }
+    )
 
     type: str = "about:blank"
     title: str
@@ -47,20 +49,22 @@ class Page(BaseModel):
 class ProfileSummary(BaseModel):
     """A trimmed-down profile representation for list endpoints."""
 
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {
-                "slug": "claude-code",
-                "name": "Claude Code",
-                "tagline": "Anthropic's official CLI for Claude.",
-                "vendor": "anthropic",
-                "category": "coding",
-                "source_type": "closed-source",
-                "verification_status": "verified",
-                "last_refreshed_at": "2026-05-02T00:00:00Z",
-            }
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "slug": "claude-code",
+                    "name": "Claude Code",
+                    "tagline": "Anthropic's official CLI for Claude.",
+                    "vendor": "anthropic",
+                    "category": "coding",
+                    "source_type": "closed-source",
+                    "verification_status": "verified",
+                    "last_refreshed_at": "2026-05-02T00:00:00Z",
+                }
+            ]
+        }
+    )
 
     slug: str
     name: str
@@ -79,20 +83,22 @@ class ProfileListResponse(BaseModel):
 
 # -------------------------------------------------------------------- verdicts
 class VerdictSummary(BaseModel):
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {
-                "pair": ["claude-code", "cursor"],
-                "verdict_id": "v_2026-05-02_claude-code__cursor_a1b2",
-                "headline": "High-risk capability overlap on shared filesystem.",
-                "evidence_level": "docs-only",
-                "composite_score": 0.71,
-                "confidence": 0.62,
-                "max_severity": "high",
-                "generated_at": "2026-05-02T00:00:00Z",
-            }
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "pair": ["claude-code", "cursor"],
+                    "verdict_id": "v_2026-05-02_claude-code__cursor_a1b2",
+                    "headline": "High-risk capability overlap on shared filesystem.",
+                    "evidence_level": "docs-only",
+                    "composite_score": 0.71,
+                    "confidence": 0.62,
+                    "max_severity": "high",
+                    "generated_at": "2026-05-02T00:00:00Z",
+                }
+            ]
+        }
+    )
 
     pair: list[str]
     verdict_id: str
@@ -111,15 +117,17 @@ class VerdictListResponse(BaseModel):
 
 # ---------------------------------------------------------------------- submit
 class SubmitAgentRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {
-                "urls": ["https://github.com/some-org/some-agent"],
-                "name": "Some Agent",
-                "slug": "some-agent",
-            }
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "urls": ["https://github.com/some-org/some-agent"],
+                    "name": "Some Agent",
+                    "slug": "some-agent",
+                }
+            ]
+        }
+    )
 
     urls: list[HttpUrl] = Field(min_length=1, max_length=10)
     name: str | None = None
@@ -138,14 +146,16 @@ class JobStatus(BaseModel):
 
 # -------------------------------------------------------------------- evaluate
 class EvaluateRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {
-                "agents": ["claude-code", "cursor", "windsurf"],
-                "scenario": "shared-workspace",
-            }
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "agents": ["claude-code", "cursor", "windsurf"],
+                    "scenario": "shared-workspace",
+                }
+            ]
+        }
+    )
 
     agents: list[str] = Field(min_length=2, max_length=12)
     scenario: str | None = None
@@ -215,11 +225,11 @@ class ChronicleResponse(BaseModel):
 
 # ------------------------------------------------------------------ sandbox
 class SandboxRunRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={
-        "examples": [
-            {"agents": ["claude-code", "cursor"], "scenario": "shared-workspace"}
-        ]
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"agents": ["claude-code", "cursor"], "scenario": "shared-workspace"}]
+        }
+    )
 
     agents: list[str] = Field(min_length=2, max_length=2)
     scenario: str | None = None
