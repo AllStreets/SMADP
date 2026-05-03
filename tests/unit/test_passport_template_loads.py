@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from smadp.passport.render import _jinja_env
+from smadp.passport.render import _icons_for_template, _jinja_env
 
 
 def test_passport_template_loads_and_parses():
     env = _jinja_env()
     tpl = env.get_template("passport.html.j2")
     out = tpl.render(
-        verdict={"verdict_id": "vdt_X", "headline": "Test"},
+        verdict={
+            "verdict_id": "vdt_X",
+            "headline": "Test",
+            "framework_mappings": {},
+        },
         frameworks={},
         evidence_index={},
         metadata_json="{}",
@@ -22,7 +26,7 @@ def test_passport_template_loads_and_parses():
         rekor_log_index="",
         transparency_event_id=1,
         transparency_status="local",
-        icons={"shield": "<svg></svg>"},
+        icons=_icons_for_template(),
         evidence_blobs_b64="e30=",
     )
     assert "<!DOCTYPE html>" in out
