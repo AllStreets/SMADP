@@ -57,6 +57,26 @@ def _config_from_ctx(ctx: click.Context) -> Config:
     return cfg
 
 
+def _scoped_setenv(ctx: click.Context, key: str, value: str) -> None:
+    """Set an env var for the duration of this Click invocation only.
+
+    Without this scoping, --catalog would leak across invocations in the same
+    process (e.g. in pytest where every CliRunner.invoke shares os.environ).
+    """
+    import os
+
+    previous = os.environ.get(key)
+    os.environ[key] = value
+
+    def _restore() -> None:
+        if previous is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous
+
+    ctx.call_on_close(_restore)
+
+
 # --------------------------------------------------------------------- root cmd
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -74,9 +94,7 @@ def _config_from_ctx(ctx: click.Context) -> Config:
 def cli(ctx: click.Context, catalog_path: Path | None) -> None:
     ctx.ensure_object(dict)
     if catalog_path is not None:
-        import os
-
-        os.environ["SMADP_CATALOG"] = str(catalog_path.resolve())
+        _scoped_setenv(ctx, "SMADP_CATALOG", str(catalog_path.resolve()))
     ctx.obj["config"] = load_config()
 
 
@@ -100,9 +118,7 @@ def version() -> None:
 def init(ctx: click.Context, catalog_path: Path | None) -> None:
     """Initialize a new catalog directory tree."""
     if catalog_path is not None:
-        import os
-
-        os.environ["SMADP_CATALOG"] = str(catalog_path.resolve())
+        _scoped_setenv(ctx, "SMADP_CATALOG", str(catalog_path.resolve()))
     cfg = load_config()
     cfg.ensure_dirs()
     console.print(f"[green]initialized catalog at[/] {cfg.catalog_dir}")
@@ -261,9 +277,7 @@ def _render_verdict(verdict_obj: Any) -> None:
 def validate(ctx: click.Context, catalog_path: Path | None) -> None:
     """Schema + cross-reference check the entire catalog."""
     if catalog_path is not None:
-        import os
-
-        os.environ["SMADP_CATALOG"] = str(catalog_path.resolve())
+        _scoped_setenv(ctx, "SMADP_CATALOG", str(catalog_path.resolve()))
     cfg = load_config()
     report = lint_catalog(cfg)
     _render_lint_report(report, cfg)
