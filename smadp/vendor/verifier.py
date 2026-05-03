@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dns.exception
+import dns.resolver
 import hmac
 import time
 from typing import Final
@@ -63,6 +65,46 @@ def verify_repo(*, claim: VendorClaim, evidence: RepoEvidence) -> ClaimVerificat
     return ClaimVerification(verified=False, detail=detail)
 
 
+_DNS_LIFETIME_S: Final[float] = 10.0
+_DNS_PREFIX: Final[str] = "_smadp-owner."
+
+
+def _resolve_txt(name: str):
+    """Indirection for monkeypatching in tests."""
+    resolver = dns.resolver.Resolver(configure=True)
+    resolver.lifetime = _DNS_LIFETIME_S
+    resolver.timeout = _DNS_LIFETIME_S
+    return resolver.resolve(name, "TXT")
+
+
+def verify_dns(*, claim: VendorClaim, evidence: DnsEvidence) -> ClaimVerification:
+    name = _DNS_PREFIX + evidence.domain
+    try:
+        answers = _resolve_txt(name)
+    except dns.resolver.NXDOMAIN:
+        return ClaimVerification(verified=False, detail=f"NXDOMAIN for {name}")
+    except dns.resolver.NoAnswer:
+        return ClaimVerification(verified=False, detail=f"NoAnswer for {name}")
+    except dns.exception.Timeout:
+        return ClaimVerification(verified=False, detail=f"Timeout resolving {name}")
+    except dns.exception.DNSException as exc:
+        return ClaimVerification(
+            verified=False, detail=f"DNS error for {name}: {exc.__class__.__name__}"
+        )
+    for rdata in answers:
+        for chunk in rdata.strings:
+            value = chunk.decode("utf-8", errors="replace").strip()
+            if hmac.compare_digest(value, claim.token):
+                return ClaimVerification(
+                    verified=True, detail=f"DNS TXT match at {evidence.domain}"
+                )
+    return ClaimVerification(
+        verified=False,
+        detail=f"DNS TXT mismatch at {evidence.domain} (no chunk matched token)",
+    )
+
+
 __all__ = [
     "verify_repo",
+    "verify_dns",
 ]
