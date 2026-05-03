@@ -105,3 +105,31 @@ def test_delete_unknown_subscription_returns_404(client: TestClient, workspace_i
         headers={"X-SMADP-Workspace": workspace_id},
     )
     assert r.status_code == 404
+
+
+def test_create_subscription_with_native_integration(client: TestClient, workspace_id: str):
+    r = client.post(
+        "/api/webhooks/subscriptions",
+        json={
+            "url": "https://hooks.slack.com/services/abc/def",
+            "event_types": ["passport.generated"],
+            "integration_kind": "slack",
+            "integration_config": {"channel": "#smadp-alerts"},
+        },
+        headers={"X-SMADP-Workspace": workspace_id, "X-SMADP-User": "u"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["subscription"]["integration_kind"] == "slack"
+    assert body["subscription"]["integration_config"] == {"channel": "#smadp-alerts"}
+
+
+def test_create_subscription_default_integration_generic(client: TestClient, workspace_id: str):
+    r = client.post(
+        "/api/webhooks/subscriptions",
+        json={"url": "https://example.com/wh", "event_types": ["passport.generated"]},
+        headers={"X-SMADP-Workspace": workspace_id, "X-SMADP-User": "u"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["subscription"]["integration_kind"] == "generic"

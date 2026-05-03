@@ -6,10 +6,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from smadp.schemas.tenancy import Workspace
-from smadp.schemas.webhooks import EventType, Subscription
+from smadp.schemas.webhooks import EventType, IntegrationKind, Subscription
 from smadp.tenancy.deps import current_workspace
 from smadp.webhooks import store
 
@@ -21,6 +21,8 @@ class _CreateSubscriptionBody(BaseModel):
 
     url: str
     event_types: list[EventType]
+    integration_kind: IntegrationKind = IntegrationKind.GENERIC
+    integration_config: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("url")
     @classmethod
@@ -60,6 +62,8 @@ def create_subscription(
         workspace_id=workspace.id,
         url=body.url,
         event_types=body.event_types,
+        integration_kind=body.integration_kind,
+        integration_config=body.integration_config,
     )
     return _CreateSubscriptionResponse(subscription=sub, secret=secret)
 
