@@ -15,6 +15,7 @@ from smadp.api.routes import (
     verdicts,
     workspaces,
 )
+from smadp.vendor import api as vendor
 from smadp.webhooks import api as webhooks
 
 ROUTERS = [
@@ -31,6 +32,7 @@ ROUTERS = [
     workspaces.router,
     transparency.router,
     passports.router,
+    vendor.router,
     webhooks.router,
 ]
 
