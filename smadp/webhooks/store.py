@@ -20,7 +20,7 @@ import structlog
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from smadp.config import Config, load_config
-from smadp.schemas.webhooks import EventType, Subscription
+from smadp.schemas.webhooks import EventType, IntegrationKind, Subscription
 from smadp.tenancy.keys import _derive_dek
 from smadp.utils.time import utcnow
 
@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     active INTEGER NOT NULL,          -- 0/1
     nonce BLOB NOT NULL,
     secret_encrypted BLOB NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    integration_kind TEXT NOT NULL DEFAULT 'generic',
+    integration_config TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS subscriptions_workspace
     ON subscriptions(workspace_id, active);
@@ -59,6 +61,15 @@ def _connect(config: Config) -> sqlite3.Connection:
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(subscriptions)")}
+    if "integration_kind" not in cols:
+        conn.execute(
+            "ALTER TABLE subscriptions ADD COLUMN integration_kind TEXT NOT NULL DEFAULT 'generic'"
+        )
+    if "integration_config" not in cols:
+        conn.execute(
+            "ALTER TABLE subscriptions ADD COLUMN integration_config TEXT NOT NULL DEFAULT '{}'"
+        )
 
 
 @contextmanager
@@ -106,6 +117,8 @@ def _row_to_subscription(row: sqlite3.Row) -> Subscription:
         event_types=[EventType(v) for v in json.loads(row["event_types"])],
         active=bool(row["active"]),
         created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
+        integration_kind=IntegrationKind(row["integration_kind"]),
+        integration_config=json.loads(row["integration_config"]),
     )
 
 
@@ -115,6 +128,8 @@ def create_subscription(
     url: str,
     event_types: list[EventType],
     config: Config | None = None,
+    integration_kind: IntegrationKind = IntegrationKind.GENERIC,
+    integration_config: dict | None = None,
 ) -> tuple[Subscription, str]:
     """Insert a new subscription; return (subscription, plaintext_secret).
 
@@ -128,6 +143,7 @@ def create_subscription(
     nonce, encrypted = _encrypt(secret.encode("utf-8"), workspace_id=workspace_id)
     now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
     types_json = json.dumps([t.value for t in event_types], sort_keys=True)
+    config_json = json.dumps(integration_config or {}, sort_keys=True)
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
@@ -135,15 +151,20 @@ def create_subscription(
             conn.execute(
                 "INSERT INTO subscriptions"
                 "(id, workspace_id, url, event_types, active, nonce,"
-                " secret_encrypted, created_at)"
-                " VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
-                (sub_id, workspace_id, url, types_json, nonce, encrypted, now_iso),
+                " secret_encrypted, created_at, integration_kind, integration_config)"
+                " VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+                (
+                    sub_id, workspace_id, url, types_json,
+                    nonce, encrypted, now_iso,
+                    integration_kind.value, config_json,
+                ),
             )
         log.info(
             "webhooks.subscription.created",
             workspace_id=workspace_id,
             subscription_id=sub_id,
             url=url,
+            integration_kind=integration_kind.value,
         )
         return (
             Subscription(
@@ -153,6 +174,8 @@ def create_subscription(
                 event_types=event_types,
                 active=True,
                 created_at=datetime.fromisoformat(now_iso.replace("Z", "+00:00")),
+                integration_kind=integration_kind,
+                integration_config=integration_config or {},
             ),
             secret,
         )

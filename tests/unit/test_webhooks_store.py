@@ -123,3 +123,34 @@ def test_get_subscription_unknown_raises(cfg: Config):
 def test_load_secret_unknown_raises(cfg: Config):
     with pytest.raises(KeyError):
         store.load_subscription_secret(subscription_id="sub_NOPE0000", config=cfg)
+
+
+def test_create_subscription_with_native_integration(cfg: Config, workspace_id: str):
+    from smadp.schemas.webhooks import IntegrationKind
+
+    sub, _ = store.create_subscription(
+        workspace_id=workspace_id,
+        url="https://hooks.slack.com/services/abc/def",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
+        integration_kind=IntegrationKind.SLACK,
+        integration_config={"channel": "#smadp-alerts"},
+    )
+    assert sub.integration_kind == IntegrationKind.SLACK
+    assert sub.integration_config == {"channel": "#smadp-alerts"}
+    loaded = store.get_subscription(subscription_id=sub.id, config=cfg)
+    assert loaded.integration_kind == IntegrationKind.SLACK
+    assert loaded.integration_config == {"channel": "#smadp-alerts"}
+
+
+def test_create_subscription_default_is_generic(cfg: Config, workspace_id: str):
+    from smadp.schemas.webhooks import IntegrationKind
+
+    sub, _ = store.create_subscription(
+        workspace_id=workspace_id,
+        url="https://example.com/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
+    )
+    assert sub.integration_kind == IntegrationKind.GENERIC
+    assert sub.integration_config == {}
