@@ -7,15 +7,19 @@ for timestamps. The DB lives at ``<cache_dir>/tenancy.db``.
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Final
 
 import structlog
 
 from smadp.config import Config, load_config
+from smadp.schemas.tenancy import Plan, Workspace
+from smadp.utils.time import utcnow
 
 log = structlog.get_logger(__name__)
 
@@ -69,4 +73,86 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
         conn.execute("COMMIT;")
 
 
-__all__: list[str] = []
+def _generate_workspace_id() -> str:
+    """Sortable, case-insensitive base32-ish id: ws_<8 uppercase alphanum>."""
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    return "ws_" + "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+def _row_to_workspace(row: sqlite3.Row) -> Workspace:
+    return Workspace(
+        id=row["id"],
+        name=row["name"],
+        plan=Plan(row["plan"]),
+        created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
+    )
+
+
+def create_workspace(
+    *,
+    name: str,
+    plan: Plan,
+    config: Config | None = None,
+) -> Workspace:
+    cfg = config or load_config()
+    ws_id = _generate_workspace_id()
+    now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT INTO workspaces(id, name, plan, created_at) VALUES (?, ?, ?, ?)",
+                (ws_id, name, plan.value, now_iso),
+            )
+        log.info("tenancy.workspace.created", workspace_id=ws_id, plan=plan.value)
+        return get_workspace(ws_id, config=cfg)
+    finally:
+        conn.close()
+
+
+def get_workspace(workspace_id: str, *, config: Config | None = None) -> Workspace:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise KeyError(f"No workspace with id {workspace_id!r}")
+        return _row_to_workspace(row)
+    finally:
+        conn.close()
+
+
+def list_workspaces(*, config: Config | None = None) -> list[Workspace]:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute("SELECT * FROM workspaces ORDER BY rowid ASC")
+        return [_row_to_workspace(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_workspace(workspace_id: str, *, config: Config | None = None) -> None:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
+            if cur.rowcount == 0:
+                raise KeyError(f"No workspace with id {workspace_id!r}")
+        log.info("tenancy.workspace.deleted", workspace_id=workspace_id)
+    finally:
+        conn.close()
+
+
+__all__ = [
+    "create_workspace",
+    "delete_workspace",
+    "get_workspace",
+    "list_workspaces",
+]
