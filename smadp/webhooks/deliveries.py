@@ -11,6 +11,7 @@ Time is read via the module-level ``_now()`` helper so tests can monkeypatch it.
 from __future__ import annotations
 
 import secrets
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     next_attempt_at TEXT NOT NULL,
     last_error TEXT,
     created_at TEXT NOT NULL,
-    delivered_at TEXT
+    delivered_at TEXT,
+    headers_overlay TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS webhook_deliveries_pending
     ON webhook_deliveries(status, next_attempt_at);
@@ -62,6 +64,11 @@ def _connect(config: Config) -> sqlite3.Connection:
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(webhook_deliveries)")}
+    if "headers_overlay" not in cols:
+        conn.execute(
+            "ALTER TABLE webhook_deliveries ADD COLUMN headers_overlay TEXT NOT NULL DEFAULT '{}'"
+        )
 
 
 @contextmanager
@@ -108,6 +115,7 @@ def _row_to_delivery(row: sqlite3.Row) -> WebhookDelivery:
             if row["delivered_at"]
             else None
         ),
+        headers_overlay=json.loads(row["headers_overlay"]),
     )
 
 
@@ -117,12 +125,14 @@ def enqueue(
     event_id: str,
     event_type: EventType,
     body: bytes,
+    headers_overlay: dict[str, str] | None = None,
     config: Config | None = None,
 ) -> str:
     """Insert a pending delivery row; return its id. ``next_attempt_at = now``."""
     cfg = config or load_config()
     now = _now()
     delivery_id = _generate_delivery_id(now)
+    overlay_json = json.dumps(headers_overlay or {}, sort_keys=True)
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
@@ -130,8 +140,8 @@ def enqueue(
             conn.execute(
                 "INSERT INTO webhook_deliveries"
                 "(id, subscription_id, event_id, event_type, body, status, attempts,"
-                " next_attempt_at, last_error, created_at, delivered_at)"
-                " VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL)",
+                " next_attempt_at, last_error, created_at, delivered_at, headers_overlay)"
+                " VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL, ?)",
                 (
                     delivery_id,
                     subscription_id,
@@ -140,6 +150,7 @@ def enqueue(
                     body,
                     _isoformat(now),
                     _isoformat(now),
+                    overlay_json,
                 ),
             )
         log.info(

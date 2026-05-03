@@ -100,6 +100,7 @@ class WebhookDelivery(BaseModel):
     last_error: str | None
     created_at: datetime
     delivered_at: datetime | None
+    headers_overlay: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod

@@ -14,7 +14,8 @@ from typing import Any
 import structlog
 
 from smadp.config import Config, load_config
-from smadp.schemas.webhooks import EventType
+from smadp.integrations import get_adapter
+from smadp.schemas.webhooks import EventType, IntegrationKind
 from smadp.utils.time import utcnow
 from smadp.webhooks import deliveries, store
 from smadp.webhooks.envelope import build_envelope, canonical_envelope_bytes
@@ -65,15 +66,30 @@ def dispatch_event(
         data=payload,
         signature_meta=signature_meta,
     )
-    body = canonical_envelope_bytes(envelope)
-
     enqueued = 0
     for sub in matches:
+        if sub.integration_kind == IntegrationKind.GENERIC:
+            body = canonical_envelope_bytes(envelope)
+            headers_overlay: dict[str, str] = {}
+        else:
+            adapter = get_adapter(sub.integration_kind)
+            try:
+                body = adapter.translate(envelope, config=sub.integration_config)
+                headers_overlay = adapter.headers(envelope, config=sub.integration_config)
+            except ValueError as exc:
+                log.warning(
+                    "webhooks.dispatch.adapter_misconfig",
+                    subscription_id=sub.id,
+                    integration_kind=sub.integration_kind.value,
+                    error=str(exc),
+                )
+                continue
         deliveries.enqueue(
             subscription_id=sub.id,
             event_id=event_id,
             event_type=event_type,
             body=body,
+            headers_overlay=headers_overlay,
             config=cfg,
         )
         enqueued += 1
