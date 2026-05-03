@@ -10,6 +10,7 @@ from smadp.api.routes import (
     sandbox,
     search,
     submit,
+    transparency,
     verdicts,
     workspaces,
 )
@@ -26,6 +27,7 @@ ROUTERS = [
     chronicle.router,
     sandbox.router,
     workspaces.router,
+    transparency.router,
 ]
 
 __all__ = ["ROUTERS"]
