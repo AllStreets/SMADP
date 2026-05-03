@@ -25,6 +25,7 @@ from smadp.catalog.index import CatalogIndex
 from smadp.catalog.lint import LintReport, lint_catalog
 from smadp.catalog.repo import CatalogRepo, NotFoundError
 from smadp.config import Config, load_config
+from smadp.transparency.cli import transparency_group
 from smadp.utils.slug import normalize_slug, sort_pair
 
 console = Console()
@@ -631,6 +632,8 @@ def search(ctx: click.Context, query: str, limit: int) -> None:
         table.add_row(h.kind, h.ref, h.title, h.snippet)
     console.print(table)
 
+
+cli.add_command(transparency_group)
 
 # ----------------------------------------------------------------------- entry
 def main() -> None:
