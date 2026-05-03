@@ -18,7 +18,7 @@ from typing import Final
 import structlog
 
 from smadp.config import Config, load_config
-from smadp.schemas.tenancy import Plan, Workspace
+from smadp.schemas.tenancy import Member, Plan, Role, Workspace
 from smadp.utils.time import utcnow
 
 log = structlog.get_logger(__name__)
@@ -150,9 +150,109 @@ def delete_workspace(workspace_id: str, *, config: Config | None = None) -> None
         conn.close()
 
 
+def _row_to_member(row: sqlite3.Row) -> Member:
+    return Member(
+        workspace_id=row["workspace_id"],
+        user_id=row["user_id"],
+        role=Role(row["role"]),
+    )
+
+
+def add_member(
+    *,
+    workspace_id: str,
+    user_id: str,
+    role: Role,
+    config: Config | None = None,
+) -> Member:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT INTO workspace_members(workspace_id, user_id, role) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = excluded.role",
+                (workspace_id, user_id, role.value),
+            )
+        log.info(
+            "tenancy.member.upserted",
+            workspace_id=workspace_id,
+            user_id=user_id,
+            role=role.value,
+        )
+        return Member(workspace_id=workspace_id, user_id=user_id, role=role)
+    finally:
+        conn.close()
+
+
+def get_member_role(
+    *,
+    workspace_id: str,
+    user_id: str,
+    config: Config | None = None,
+) -> Role | None:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute(
+            "SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+            (workspace_id, user_id),
+        )
+        row = cur.fetchone()
+        return Role(row["role"]) if row else None
+    finally:
+        conn.close()
+
+
+def remove_member(
+    *,
+    workspace_id: str,
+    user_id: str,
+    config: Config | None = None,
+) -> None:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+                (workspace_id, user_id),
+            )
+        log.info("tenancy.member.removed", workspace_id=workspace_id, user_id=user_id)
+    finally:
+        conn.close()
+
+
+def list_members(
+    *,
+    workspace_id: str,
+    config: Config | None = None,
+) -> list[Member]:
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute(
+            "SELECT * FROM workspace_members WHERE workspace_id = ? "
+            "ORDER BY user_id ASC",
+            (workspace_id,),
+        )
+        return [_row_to_member(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 __all__ = [
+    "add_member",
     "create_workspace",
     "delete_workspace",
+    "get_member_role",
     "get_workspace",
+    "list_members",
     "list_workspaces",
+    "remove_member",
 ]

@@ -74,3 +74,65 @@ def test_workspace_id_format(cfg: Config):
     import re
     ws = store.create_workspace(name="Y", plan=Plan.PRIVATE, config=cfg)
     assert re.match(r"^ws_[A-Z0-9]{8,}$", ws.id)
+
+
+from smadp.schemas.tenancy import Member, Role
+
+
+def test_add_and_get_member(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    m = store.add_member(
+        workspace_id=ws.id, user_id="u_USER0001", role=Role.EDITOR, config=cfg
+    )
+    assert m.role == Role.EDITOR
+    fetched = store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
+    assert fetched == Role.EDITOR
+
+
+def test_get_missing_member_returns_none(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    role = store.get_member_role(workspace_id=ws.id, user_id="u_NOPE0001", config=cfg)
+    assert role is None
+
+
+def test_add_member_idempotent_upserts_role(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.VIEWER, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.ADMIN, config=cfg)
+    assert (
+        store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
+        == Role.ADMIN
+    )
+
+
+def test_remove_member(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg)
+    store.remove_member(workspace_id=ws.id, user_id="u_USER0001", config=cfg)
+    assert (
+        store.get_member_role(workspace_id=ws.id, user_id="u_USER0001", config=cfg) is None
+    )
+
+
+def test_list_members(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0002", role=Role.VIEWER, config=cfg)
+    listed = store.list_members(workspace_id=ws.id, config=cfg)
+    assert {m.user_id for m in listed} == {"u_USER0001", "u_USER0002"}
+
+
+def test_member_cascade_on_workspace_delete(cfg: Config):
+    ws = store.create_workspace(name="A", plan=Plan.PUBLIC, config=cfg)
+    store.add_member(workspace_id=ws.id, user_id="u_USER0001", role=Role.OWNER, config=cfg)
+    store.delete_workspace(ws.id, config=cfg)
+    # Workspace gone; member rows should be gone too thanks to ON DELETE CASCADE.
+    conn = store._connect(cfg)
+    try:
+        store._ensure_schema(conn)
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = ?", (ws.id,)
+        )
+        assert cur.fetchone()[0] == 0
+    finally:
+        conn.close()
