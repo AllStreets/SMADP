@@ -166,7 +166,138 @@ def iter_all(*, config: Config | None = None) -> Iterator[WebhookDelivery]:
         conn.close()
 
 
+def claim_pending(*, config: Config | None = None) -> WebhookDelivery | None:
+    """Atomically claim the oldest pending row whose ``next_attempt_at <= now``.
+
+    Marks the row ``running`` and bumps ``attempts``. Returns the row, or
+    ``None`` if no eligible row exists. Two concurrent workers cannot
+    return the same row (``BEGIN IMMEDIATE`` serializes the SELECT+UPDATE).
+    """
+    cfg = config or load_config()
+    now = _now()
+    now_iso = _isoformat(now)
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "SELECT id FROM webhook_deliveries"
+                " WHERE status = 'pending' AND next_attempt_at <= ?"
+                " ORDER BY next_attempt_at ASC, id ASC LIMIT 1",
+                (now_iso,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            delivery_id = row["id"]
+            conn.execute(
+                "UPDATE webhook_deliveries"
+                " SET status = 'running', attempts = attempts + 1"
+                " WHERE id = ? AND status = 'pending'",
+                (delivery_id,),
+            )
+            cur = conn.execute(
+                "SELECT * FROM webhook_deliveries WHERE id = ?", (delivery_id,)
+            )
+            return _row_to_delivery(cur.fetchone())
+    finally:
+        conn.close()
+
+
+def mark_delivered(*, delivery_id: str, config: Config | None = None) -> None:
+    cfg = config or load_config()
+    now_iso = _isoformat(_now())
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE webhook_deliveries"
+                " SET status = 'delivered', delivered_at = ?, last_error = NULL"
+                " WHERE id = ?",
+                (now_iso, delivery_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown delivery: {delivery_id!r}")
+        log.info("webhooks.delivery.delivered", delivery_id=delivery_id)
+    finally:
+        conn.close()
+
+
+def mark_failed(*, delivery_id: str, error: str, config: Config | None = None) -> None:
+    """Terminal: 4xx response — no retry."""
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE webhook_deliveries SET status = 'failed', last_error = ? WHERE id = ?",
+                (error, delivery_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown delivery: {delivery_id!r}")
+        log.info("webhooks.delivery.failed", delivery_id=delivery_id, error=error)
+    finally:
+        conn.close()
+
+
+def mark_exhausted(*, delivery_id: str, error: str, config: Config | None = None) -> None:
+    """Terminal: retry budget exceeded."""
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE webhook_deliveries SET status = 'exhausted', last_error = ? WHERE id = ?",
+                (error, delivery_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown delivery: {delivery_id!r}")
+        log.info("webhooks.delivery.exhausted", delivery_id=delivery_id, error=error)
+    finally:
+        conn.close()
+
+
+def reschedule_pending(
+    *,
+    delivery_id: str,
+    next_attempt_at: datetime,
+    error: str,
+    config: Config | None = None,
+) -> None:
+    """Re-arm a running row as pending with a future attempt time."""
+    cfg = config or load_config()
+    next_iso = _isoformat(next_attempt_at)
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE webhook_deliveries"
+                " SET status = 'pending', next_attempt_at = ?, last_error = ?"
+                " WHERE id = ?",
+                (next_iso, error, delivery_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown delivery: {delivery_id!r}")
+        log.info(
+            "webhooks.delivery.rescheduled",
+            delivery_id=delivery_id,
+            next_attempt_at=next_iso,
+            error=error,
+        )
+    finally:
+        conn.close()
+
+
 __all__ = [
+    "claim_pending",
     "enqueue",
     "iter_all",
+    "mark_delivered",
+    "mark_exhausted",
+    "mark_failed",
+    "reschedule_pending",
 ]

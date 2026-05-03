@@ -82,3 +82,138 @@ def test_iter_all_orders_by_id(cfg: Config, subscription_id: str):
         )
     fetched = [r.id for r in deliveries.iter_all(config=cfg)]
     assert fetched == ids
+
+
+def test_claim_pending_marks_row_running(cfg: Config, subscription_id: str):
+    delivery_id = deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    claimed = deliveries.claim_pending(config=cfg)
+    assert claimed is not None
+    assert claimed.id == delivery_id
+    assert claimed.status == DeliveryStatus.RUNNING
+    assert claimed.attempts == 1
+
+
+def test_claim_pending_returns_none_when_empty(cfg: Config):
+    assert deliveries.claim_pending(config=cfg) is None
+
+
+def test_claim_pending_skips_future_rows(
+    cfg: Config, subscription_id: str, monkeypatch: pytest.MonkeyPatch
+):
+    """Rows whose next_attempt_at is in the future are not claimable."""
+    from datetime import timedelta
+
+    far_future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(deliveries, "_now", lambda: far_future - timedelta(days=1))
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    monkeypatch.setattr(deliveries, "_now", lambda: datetime(2050, 1, 1, tzinfo=timezone.utc))
+    assert deliveries.claim_pending(config=cfg) is None
+
+
+def test_claim_pending_does_not_double_claim(cfg: Config, subscription_id: str):
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    a = deliveries.claim_pending(config=cfg)
+    b = deliveries.claim_pending(config=cfg)
+    assert a is not None
+    assert b is None  # second claim sees no pending
+
+
+def test_mark_delivered_sets_status_and_delivered_at(cfg: Config, subscription_id: str):
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    claimed = deliveries.claim_pending(config=cfg)
+    assert claimed is not None
+    deliveries.mark_delivered(delivery_id=claimed.id, config=cfg)
+    rows = list(deliveries.iter_all(config=cfg))
+    assert rows[0].status == DeliveryStatus.DELIVERED
+    assert rows[0].delivered_at is not None
+
+
+def test_mark_failed_sets_status_and_error(cfg: Config, subscription_id: str):
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    claimed = deliveries.claim_pending(config=cfg)
+    assert claimed is not None
+    deliveries.mark_failed(delivery_id=claimed.id, error="HTTP 400 bad request", config=cfg)
+    rows = list(deliveries.iter_all(config=cfg))
+    assert rows[0].status == DeliveryStatus.FAILED
+    assert rows[0].last_error == "HTTP 400 bad request"
+
+
+def test_mark_exhausted_writes_status(cfg: Config, subscription_id: str):
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    claimed = deliveries.claim_pending(config=cfg)
+    assert claimed is not None
+    deliveries.mark_exhausted(delivery_id=claimed.id, error="HTTP 503 forever", config=cfg)
+    rows = list(deliveries.iter_all(config=cfg))
+    assert rows[0].status == DeliveryStatus.EXHAUSTED
+    assert rows[0].last_error == "HTTP 503 forever"
+
+
+def test_reschedule_pending_arms_for_future_attempt(
+    cfg: Config, subscription_id: str, monkeypatch: pytest.MonkeyPatch
+):
+    """After a 5xx, the worker re-arms a row with next_attempt_at in the future."""
+    from datetime import timedelta
+
+    monkeypatch.setattr(
+        deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    )
+    deliveries.enqueue(
+        subscription_id=subscription_id,
+        event_id="evt_20260503120000_abc123",
+        event_type=EventType.PASSPORT_GENERATED,
+        body=b"{}",
+        config=cfg,
+    )
+    claimed = deliveries.claim_pending(config=cfg)
+    assert claimed is not None
+    next_at = datetime(2026, 5, 3, 12, 0, 4, tzinfo=timezone.utc)
+    deliveries.reschedule_pending(
+        delivery_id=claimed.id,
+        next_attempt_at=next_at,
+        error="HTTP 503",
+        config=cfg,
+    )
+    # Now claim should still find nothing — current_now < next_attempt_at.
+    assert deliveries.claim_pending(config=cfg) is None
+    monkeypatch.setattr(
+        deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 5, tzinfo=timezone.utc)
+    )
+    rearmed = deliveries.claim_pending(config=cfg)
+    assert rearmed is not None
+    assert rearmed.attempts == 2
