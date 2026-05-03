@@ -18,6 +18,8 @@ from smadp.schemas.passport import SigningStrategy
 from smadp.tenancy import keys
 from smadp.transparency import journal
 from smadp.transparency import sigstore as _sigstore
+from smadp.webhooks import dispatcher
+from smadp.schemas.webhooks import EventType as _WebhookEventType
 
 
 def _jinja_env() -> Environment:
@@ -142,6 +144,24 @@ def render_passport(
             "signing_strategy": signing_strategy.value,
         },
         signing_key=signing_key,
+        config=cfg,
+    )
+
+    # Fire passport.generated webhook to all matching subscriptions.
+    # The transparency event id is the binding between log and webhook.
+    dispatcher.dispatch_event(
+        event_type=_WebhookEventType.PASSPORT_GENERATED,
+        payload={
+            "verdict_id": verdict.get("verdict_id"),
+            "workspace_id": workspace_id,
+            "canonical_sha256": canonical_sha,
+            "signing_strategy": signing_strategy.value,
+        },
+        workspace_id=workspace_id,
+        signature_meta={
+            "transparency_log_id": transparency_event.id,
+            "prev_event_hash": transparency_event.prev_hash,
+        },
         config=cfg,
     )
 
