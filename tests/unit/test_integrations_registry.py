@@ -23,7 +23,7 @@ def _envelope() -> WebhookEnvelope:
 
 def test_registry_has_all_kinds():
     # Tasks 15-17 register vanta/drata/slack; this test re-runs after each.
-    registered = {IntegrationKind.GENERIC}
+    registered = {IntegrationKind.GENERIC, IntegrationKind.VANTA}
     for kind in registered:
         adapter = get_adapter(kind)
         assert adapter.kind == kind
