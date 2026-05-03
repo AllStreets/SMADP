@@ -18,6 +18,7 @@ REPO_ROOT_ENV = "SMADP_REPO_ROOT"
 CATALOG_ENV = "SMADP_CATALOG"
 CACHE_DIR_ENV = "SMADP_CACHE_DIR"
 ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+PUBLIC_BASE_URL_ENV = "SMADP_PUBLIC_BASE_URL"
 
 PROFILE_FIELDS_REQUIRING_EVIDENCE = (
     "capabilities",
@@ -37,6 +38,18 @@ def _detect_repo_root() -> Path:
     return here
 
 
+def _validate_public_base_url(url: str) -> str:
+    """Validate that url is https:// or http://localhost*."""
+    url_lower = url.lower()
+    if url_lower.startswith("https://"):
+        return url
+    if url_lower.startswith("http://localhost"):
+        return url
+    raise ValueError(
+        "public_base_url must start with https:// or http://localhost"
+    )
+
+
 @dataclass(frozen=True)
 class Config:
     repo_root: Path = field(default_factory=_detect_repo_root)
@@ -47,6 +60,11 @@ class Config:
     )
     model_id: str = DEFAULT_MODEL_ID
     model_name: str = DEFAULT_MODEL_NAME
+    public_base_url: str = field(
+        default_factory=lambda: _validate_public_base_url(
+            os.environ.get(PUBLIC_BASE_URL_ENV, "http://localhost:8000")
+        )
+    )
 
     def __post_init__(self) -> None:
         catalog_override = os.environ.get(CATALOG_ENV)

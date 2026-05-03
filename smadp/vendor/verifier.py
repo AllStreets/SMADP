@@ -104,7 +104,41 @@ def verify_dns(*, claim: VendorClaim, evidence: DnsEvidence) -> ClaimVerificatio
     )
 
 
+def verify_email(*, claim: VendorClaim, evidence: TokenEvidence) -> ClaimVerification:
+    if hmac.compare_digest(evidence.token, claim.token):
+        return ClaimVerification(verified=True, detail="email token match")
+    return ClaimVerification(verified=False, detail="email token mismatch")
+
+
+def build_email_magic_link(*, public_base_url: str, claim_id: str, token: str) -> str:
+    base = public_base_url.rstrip("/")
+    return f"{base}/vendor/claims/{claim_id}/verify?token={token}"
+
+
+def verify(
+    *,
+    claim: VendorClaim,
+    evidence: RepoEvidence | DnsEvidence | TokenEvidence,
+) -> ClaimVerification:
+    if claim.method == ClaimMethod.REPO:
+        if not isinstance(evidence, RepoEvidence):
+            raise ValueError("evidence type must be RepoEvidence for method=repo")
+        return verify_repo(claim=claim, evidence=evidence)
+    if claim.method == ClaimMethod.DNS:
+        if not isinstance(evidence, DnsEvidence):
+            raise ValueError("evidence type must be DnsEvidence for method=dns")
+        return verify_dns(claim=claim, evidence=evidence)
+    if claim.method == ClaimMethod.EMAIL:
+        if not isinstance(evidence, TokenEvidence):
+            raise ValueError("evidence type must be TokenEvidence for method=email")
+        return verify_email(claim=claim, evidence=evidence)
+    raise ValueError(f"unknown claim method: {claim.method!r}")
+
+
 __all__ = [
     "verify_repo",
     "verify_dns",
+    "verify_email",
+    "verify",
+    "build_email_magic_link",
 ]
