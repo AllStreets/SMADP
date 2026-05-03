@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -46,7 +46,7 @@ def test_subscription_id_pattern_enforced():
             url="https://example.com/wh",
             event_types=[EventType.PASSPORT_GENERATED],
             active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
 
@@ -58,7 +58,7 @@ def test_subscription_url_must_be_https_or_localhost():
             url="ftp://example.com/wh",
             event_types=[EventType.PASSPORT_GENERATED],
             active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
 
@@ -70,7 +70,7 @@ def test_subscription_accepts_http_localhost_for_dev():
         url="http://localhost:9000/wh",
         event_types=[EventType.PASSPORT_GENERATED],
         active=True,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     with pytest.raises(ValidationError):
         Subscription(
@@ -79,7 +79,7 @@ def test_subscription_accepts_http_localhost_for_dev():
             url="http://example.com/wh",
             event_types=[EventType.PASSPORT_GENERATED],
             active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
 
@@ -91,7 +91,7 @@ def test_subscription_event_types_must_be_nonempty():
             url="https://example.com/wh",
             event_types=[],
             active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
 
@@ -105,9 +105,9 @@ def test_webhook_delivery_id_pattern_enforced():
             body=b'{"x":1}',
             status=DeliveryStatus.PENDING,
             attempts=0,
-            next_attempt_at=datetime.now(timezone.utc),
+            next_attempt_at=datetime.now(UTC),
             last_error=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             delivered_at=None,
         )
 
@@ -117,7 +117,7 @@ def test_webhook_envelope_requires_required_keys():
         WebhookEnvelope(
             id="evt_20260503120000_abc123",
             type=EventType.PASSPORT_GENERATED,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             workspace_id="ws_ABCD1234",
             data={"verdict_id": "vdt_X"},
             signature_meta={},  # missing transparency_log_id
@@ -128,7 +128,7 @@ def test_webhook_envelope_round_trip():
     env = WebhookEnvelope(
         id="evt_20260503120000_abc123",
         type=EventType.PASSPORT_GENERATED,
-        created_at=datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC),
         workspace_id="ws_ABCD1234",
         data={"verdict_id": "vdt_X"},
         signature_meta={"transparency_log_id": 7, "prev_event_hash": "sha256:" + "0" * 64},

@@ -16,7 +16,8 @@ from smadp.passport.render import render_passport
 from smadp.schemas.passport import SigningStrategy
 from smadp.schemas.tenancy import Plan
 from smadp.schemas.webhooks import DeliveryStatus, EventType
-from smadp.tenancy import keys, store as tenancy
+from smadp.tenancy import keys
+from smadp.tenancy import store as tenancy
 from smadp.webhooks import deliveries, store, worker
 
 
@@ -36,9 +37,11 @@ def test_full_lifecycle_subscribe_render_deliver(cfg: Config):
     )
 
     # 2. subscribe
-    sub, secret = store.create_subscription(
-        workspace_id=ws.id, url="https://hook/x",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+    _sub, secret = store.create_subscription(
+        workspace_id=ws.id,
+        url="https://hook/x",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
 
     # 3. mock the subscriber
@@ -84,9 +87,12 @@ def test_full_lifecycle_subscribe_render_deliver(cfg: Config):
     assert rows_after[0].delivered_at is not None
 
     # 7. signature matches
-    expected = "sha256=" + hmac.new(
-        secret.encode("utf-8"), captured["body"].encode("utf-8"), hashlib.sha256
-    ).hexdigest()
+    expected = (
+        "sha256="
+        + hmac.new(
+            secret.encode("utf-8"), captured["body"].encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    )
     assert captured["sig"] == expected
     assert captured["event_type"] == "passport.generated"
     assert captured["delivery_id"].startswith("wd_")

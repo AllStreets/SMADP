@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -27,21 +26,24 @@ def workspace_id(cfg: Config) -> str:
     return ws.id
 
 
-def test_dispatch_event_inserts_one_row_per_matching_subscription(
-    cfg: Config, workspace_id: str
-):
+def test_dispatch_event_inserts_one_row_per_matching_subscription(cfg: Config, workspace_id: str):
     sub_a, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     sub_b, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://b/wh",
+        workspace_id=workspace_id,
+        url="https://b/wh",
         event_types=[EventType.PASSPORT_GENERATED, EventType.VERDICT_UPDATED],
         config=cfg,
     )
     sub_c, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://c/wh",
-        event_types=[EventType.VERDICT_UPDATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://c/wh",
+        event_types=[EventType.VERDICT_UPDATED],
+        config=cfg,
     )
     n = dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,
@@ -57,9 +59,7 @@ def test_dispatch_event_inserts_one_row_per_matching_subscription(
     assert sub_c.id not in sub_ids_in_rows
 
 
-def test_dispatch_event_inserts_zero_when_no_subscriptions(
-    cfg: Config, workspace_id: str
-):
+def test_dispatch_event_inserts_zero_when_no_subscriptions(cfg: Config, workspace_id: str):
     n = dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,
         payload={"verdict_id": "vdt_X"},
@@ -71,12 +71,12 @@ def test_dispatch_event_inserts_zero_when_no_subscriptions(
     assert list(deliveries.iter_all(config=cfg)) == []
 
 
-def test_dispatch_event_skips_inactive_subscriptions(
-    cfg: Config, workspace_id: str
-):
+def test_dispatch_event_skips_inactive_subscriptions(cfg: Config, workspace_id: str):
     sub, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     store.deactivate_subscription(subscription_id=sub.id, config=cfg)
     n = dispatcher.dispatch_event(
@@ -89,15 +89,15 @@ def test_dispatch_event_skips_inactive_subscriptions(
     assert n == 0
 
 
-def test_dispatch_event_writes_canonical_envelope_bytes(
-    cfg: Config, workspace_id: str
-):
+def test_dispatch_event_writes_canonical_envelope_bytes(cfg: Config, workspace_id: str):
     """The body stored in webhook_deliveries equals canonical envelope bytes."""
     import json
 
     store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,
@@ -119,16 +119,24 @@ def test_dispatch_event_id_is_unique_across_calls(cfg: Config, workspace_id: str
     import json
 
     store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
-        event_type=EventType.PASSPORT_GENERATED, payload={}, workspace_id=workspace_id,
-        signature_meta={"transparency_log_id": 1}, config=cfg,
+        event_type=EventType.PASSPORT_GENERATED,
+        payload={},
+        workspace_id=workspace_id,
+        signature_meta={"transparency_log_id": 1},
+        config=cfg,
     )
     dispatcher.dispatch_event(
-        event_type=EventType.PASSPORT_GENERATED, payload={}, workspace_id=workspace_id,
-        signature_meta={"transparency_log_id": 2}, config=cfg,
+        event_type=EventType.PASSPORT_GENERATED,
+        payload={},
+        workspace_id=workspace_id,
+        signature_meta={"transparency_log_id": 2},
+        config=cfg,
     )
     ids = {json.loads(r.body)["id"] for r in deliveries.iter_all(config=cfg)}
     assert len(ids) == 2

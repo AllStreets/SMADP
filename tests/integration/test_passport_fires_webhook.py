@@ -12,7 +12,8 @@ from smadp.passport.render import render_passport
 from smadp.schemas.passport import SigningStrategy
 from smadp.schemas.tenancy import Plan
 from smadp.schemas.webhooks import DeliveryStatus, EventType
-from smadp.tenancy import keys, store as tenancy
+from smadp.tenancy import keys
+from smadp.tenancy import store as tenancy
 from smadp.webhooks import deliveries, store
 
 
@@ -36,12 +37,16 @@ def test_render_passport_enqueues_one_delivery_per_matching_subscription(
     cfg: Config, workspace_id: str
 ):
     store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     store.create_subscription(
-        workspace_id=workspace_id, url="https://b/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://b/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     render_passport(
         verdict={
@@ -65,9 +70,7 @@ def test_render_passport_enqueues_one_delivery_per_matching_subscription(
     assert {r.status for r in rows} == {DeliveryStatus.PENDING}
 
 
-def test_render_passport_with_no_subscriptions_writes_zero_rows(
-    cfg: Config, workspace_id: str
-):
+def test_render_passport_with_no_subscriptions_writes_zero_rows(cfg: Config, workspace_id: str):
     render_passport(
         verdict={
             "verdict_id": "vdt_X",

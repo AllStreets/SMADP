@@ -30,9 +30,7 @@ class _CreateSubscriptionBody(BaseModel):
             return v
         if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}:
             return v
-        raise ValueError(
-            "Subscription URL must be https:// (or http://localhost for dev)"
-        )
+        raise ValueError("Subscription URL must be https:// (or http://localhost for dev)")
 
     @field_validator("event_types")
     @classmethod

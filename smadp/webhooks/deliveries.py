@@ -196,9 +196,7 @@ def claim_pending(*, config: Config | None = None) -> WebhookDelivery | None:
                 " WHERE id = ? AND status = 'pending'",
                 (delivery_id,),
             )
-            cur = conn.execute(
-                "SELECT * FROM webhook_deliveries WHERE id = ?", (delivery_id,)
-            )
+            cur = conn.execute("SELECT * FROM webhook_deliveries WHERE id = ?", (delivery_id,))
             return _row_to_delivery(cur.fetchone())
     finally:
         conn.close()

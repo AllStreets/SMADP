@@ -15,11 +15,11 @@ from smadp.passport.canonical import canonical_passport_sha256
 from smadp.passport.icons import LUCIDE_ICONS, render_icon
 from smadp.passport.sign import sign_unsigned_html
 from smadp.schemas.passport import SigningStrategy
+from smadp.schemas.webhooks import EventType as _WebhookEventType
 from smadp.tenancy import keys
 from smadp.transparency import journal
 from smadp.transparency import sigstore as _sigstore
 from smadp.webhooks import dispatcher
-from smadp.schemas.webhooks import EventType as _WebhookEventType
 
 
 def _jinja_env() -> Environment:

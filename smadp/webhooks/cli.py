@@ -22,6 +22,7 @@ def webhook_group() -> None:
 
 # --- subscriptions ---------------------------------------------------------
 
+
 @webhook_group.group(name="subscriptions")
 def subscriptions_group() -> None:
     """Create / list / delete webhook subscriptions."""
@@ -90,6 +91,7 @@ def subscriptions_delete(subscription_id: str) -> None:
 
 # --- deliveries ------------------------------------------------------------
 
+
 @webhook_group.group(name="deliveries")
 def deliveries_group() -> None:
     """Inspect webhook delivery rows."""
@@ -123,6 +125,7 @@ def deliveries_ls(limit: int) -> None:
 
 
 # --- worker ----------------------------------------------------------------
+
 
 @webhook_group.command(name="worker")
 @click.option("--once", is_flag=True, help="Process one pending row, then exit.")

@@ -52,12 +52,16 @@ def test_load_subscription_secret_roundtrip(cfg: Config, workspace_id: str):
 
 def test_list_subscriptions_for_workspace(cfg: Config, workspace_id: str):
     a, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     b, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://b/wh",
-        event_types=[EventType.VERDICT_UPDATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://b/wh",
+        event_types=[EventType.VERDICT_UPDATED],
+        config=cfg,
     )
     ids = {s.id for s in store.list_subscriptions(workspace_id=workspace_id, config=cfg)}
     assert ids == {a.id, b.id}
@@ -65,13 +69,16 @@ def test_list_subscriptions_for_workspace(cfg: Config, workspace_id: str):
 
 def test_match_subscriptions_by_event_type(cfg: Config, workspace_id: str):
     a, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
+        workspace_id=workspace_id,
+        url="https://a/wh",
         event_types=[EventType.PASSPORT_GENERATED, EventType.VERDICT_UPDATED],
         config=cfg,
     )
-    b, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://b/wh",
-        event_types=[EventType.VERDICT_UPDATED], config=cfg,
+    _b, _ = store.create_subscription(
+        workspace_id=workspace_id,
+        url="https://b/wh",
+        event_types=[EventType.VERDICT_UPDATED],
+        config=cfg,
     )
     matches = store.match_subscriptions(
         workspace_id=workspace_id,
@@ -83,8 +90,10 @@ def test_match_subscriptions_by_event_type(cfg: Config, workspace_id: str):
 
 def test_match_subscriptions_skips_inactive(cfg: Config, workspace_id: str):
     a, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://a/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://a/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     store.deactivate_subscription(subscription_id=a.id, config=cfg)
     matches = store.match_subscriptions(
@@ -97,8 +106,10 @@ def test_match_subscriptions_skips_inactive(cfg: Config, workspace_id: str):
 
 def test_get_subscription_by_id(cfg: Config, workspace_id: str):
     sub, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://x/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://x/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     loaded = store.get_subscription(subscription_id=sub.id, config=cfg)
     assert loaded == sub

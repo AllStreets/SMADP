@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from smadp.schemas.webhooks import EventType
 from smadp.webhooks.envelope import (
@@ -19,7 +19,7 @@ def test_canonical_bytes_are_sorted_and_compact():
     env = build_envelope(
         event_id="evt_20260503120000_abc123",
         event_type=EventType.PASSPORT_GENERATED,
-        created_at=datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC),
         workspace_id="ws_ABCD1234",
         data={"z": 1, "a": 2},
         signature_meta={"transparency_log_id": 7},
@@ -44,14 +44,14 @@ def test_canonical_bytes_are_sorted_and_compact():
 
 
 def test_canonical_bytes_byte_stable_across_calls():
-    args = dict(
-        event_id="evt_20260503120000_abc123",
-        event_type=EventType.PASSPORT_GENERATED,
-        created_at=datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc),
-        workspace_id="ws_ABCD1234",
-        data={"a": 1, "b": [1, 2, {"c": 3}]},
-        signature_meta={"transparency_log_id": 7, "prev_event_hash": "sha256:" + "0" * 64},
-    )
+    args = {
+        "event_id": "evt_20260503120000_abc123",
+        "event_type": EventType.PASSPORT_GENERATED,
+        "created_at": datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC),
+        "workspace_id": "ws_ABCD1234",
+        "data": {"a": 1, "b": [1, 2, {"c": 3}]},
+        "signature_meta": {"transparency_log_id": 7, "prev_event_hash": "sha256:" + "0" * 64},
+    }
     a = canonical_envelope_bytes(build_envelope(**args))
     b = canonical_envelope_bytes(build_envelope(**args))
     assert a == b

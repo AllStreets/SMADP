@@ -33,27 +33,32 @@ def test_subscriptions_create_and_ls(cfg: Config, workspace_id: str):
     res = runner.invoke(
         cli,
         [
-            "webhook", "subscriptions", "create",
-            "--workspace", workspace_id,
-            "--url", "https://example.com/wh",
-            "--event", "passport.generated",
+            "webhook",
+            "subscriptions",
+            "create",
+            "--workspace",
+            workspace_id,
+            "--url",
+            "https://example.com/wh",
+            "--event",
+            "passport.generated",
         ],
     )
     assert res.exit_code == 0, res.output
     assert "sub_" in res.output
     assert "secret:" in res.output  # secret printed once
 
-    ls = runner.invoke(
-        cli, ["webhook", "subscriptions", "ls", "--workspace", workspace_id]
-    )
+    ls = runner.invoke(cli, ["webhook", "subscriptions", "ls", "--workspace", workspace_id])
     assert ls.exit_code == 0, ls.output
     assert "https://example.com/wh" in ls.output
 
 
 def test_subscriptions_delete(cfg: Config, workspace_id: str):
     sub, _ = store.create_subscription(
-        workspace_id=workspace_id, url="https://example.com/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://example.com/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     runner = CliRunner()
     res = runner.invoke(cli, ["webhook", "subscriptions", "delete", sub.id])
@@ -62,8 +67,10 @@ def test_subscriptions_delete(cfg: Config, workspace_id: str):
 
 def test_deliveries_ls_shows_pending_rows(cfg: Config, workspace_id: str):
     store.create_subscription(
-        workspace_id=workspace_id, url="https://example.com/wh",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=workspace_id,
+        url="https://example.com/wh",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,

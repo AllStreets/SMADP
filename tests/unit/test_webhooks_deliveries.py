@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -65,7 +65,7 @@ def test_enqueue_next_attempt_at_is_now_or_past(cfg: Config, subscription_id: st
         config=cfg,
     )
     rows = list(deliveries.iter_all(config=cfg))
-    assert rows[0].next_attempt_at <= datetime.now(timezone.utc)
+    assert rows[0].next_attempt_at <= datetime.now(UTC)
 
 
 def test_iter_all_orders_by_id(cfg: Config, subscription_id: str):
@@ -109,7 +109,7 @@ def test_claim_pending_skips_future_rows(
     """Rows whose next_attempt_at is in the future are not claimable."""
     from datetime import timedelta
 
-    far_future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    far_future = datetime(2099, 1, 1, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: far_future - timedelta(days=1))
     deliveries.enqueue(
         subscription_id=subscription_id,
@@ -118,7 +118,7 @@ def test_claim_pending_skips_future_rows(
         body=b"{}",
         config=cfg,
     )
-    monkeypatch.setattr(deliveries, "_now", lambda: datetime(2050, 1, 1, tzinfo=timezone.utc))
+    monkeypatch.setattr(deliveries, "_now", lambda: datetime(2050, 1, 1, tzinfo=UTC))
     assert deliveries.claim_pending(config=cfg) is None
 
 
@@ -188,11 +188,8 @@ def test_reschedule_pending_arms_for_future_attempt(
     cfg: Config, subscription_id: str, monkeypatch: pytest.MonkeyPatch
 ):
     """After a 5xx, the worker re-arms a row with next_attempt_at in the future."""
-    from datetime import timedelta
 
-    monkeypatch.setattr(
-        deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
-    )
+    monkeypatch.setattr(deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC))
     deliveries.enqueue(
         subscription_id=subscription_id,
         event_id="evt_20260503120000_abc123",
@@ -202,7 +199,7 @@ def test_reschedule_pending_arms_for_future_attempt(
     )
     claimed = deliveries.claim_pending(config=cfg)
     assert claimed is not None
-    next_at = datetime(2026, 5, 3, 12, 0, 4, tzinfo=timezone.utc)
+    next_at = datetime(2026, 5, 3, 12, 0, 4, tzinfo=UTC)
     deliveries.reschedule_pending(
         delivery_id=claimed.id,
         next_attempt_at=next_at,
@@ -211,9 +208,7 @@ def test_reschedule_pending_arms_for_future_attempt(
     )
     # Now claim should still find nothing — current_now < next_attempt_at.
     assert deliveries.claim_pending(config=cfg) is None
-    monkeypatch.setattr(
-        deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 5, tzinfo=timezone.utc)
-    )
+    monkeypatch.setattr(deliveries, "_now", lambda: datetime(2026, 5, 3, 12, 0, 5, tzinfo=UTC))
     rearmed = deliveries.claim_pending(config=cfg)
     assert rearmed is not None
     assert rearmed.attempts == 2

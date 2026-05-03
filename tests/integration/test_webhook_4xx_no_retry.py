@@ -12,7 +12,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from smadp.config import Config
 from smadp.schemas.tenancy import Plan
 from smadp.schemas.webhooks import DeliveryStatus, EventType
-from smadp.tenancy import keys, store as tenancy
+from smadp.tenancy import keys
+from smadp.tenancy import store as tenancy
 from smadp.webhooks import deliveries, dispatcher, store, worker
 
 
@@ -30,8 +31,10 @@ def test_400_marks_failed_no_retry(cfg: Config):
         workspace_id=ws.id, private_key=Ed25519PrivateKey.generate(), config=cfg
     )
     store.create_subscription(
-        workspace_id=ws.id, url="https://hook/x",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=ws.id,
+        url="https://hook/x",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,

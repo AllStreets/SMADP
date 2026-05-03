@@ -93,9 +93,7 @@ def process_one_pending(*, config: Config | None = None) -> bool:
     return True
 
 
-def _handle_failure(
-    *, cfg: Config, delivery_id: str, attempts_done: int, error: str
-) -> None:
+def _handle_failure(*, cfg: Config, delivery_id: str, attempts_done: int, error: str) -> None:
     """Either reschedule pending or mark exhausted + write transparency event."""
     if attempts_done >= _MAX_ATTEMPTS:
         deliveries.mark_exhausted(delivery_id=delivery_id, error=error, config=cfg)
@@ -111,9 +109,7 @@ def _handle_failure(
     )
 
 
-def _emit_exhausted_transparency_event(
-    *, cfg: Config, delivery_id: str, error: str
-) -> None:
+def _emit_exhausted_transparency_event(*, cfg: Config, delivery_id: str, error: str) -> None:
     """Sign with the FIRST workspace's BYOK key (delivery's owning workspace).
 
     We look up the subscription → workspace, then load that workspace's BYOK key.

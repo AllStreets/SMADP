@@ -174,9 +174,7 @@ def get_subscription(*, subscription_id: str, config: Config | None = None) -> S
         conn.close()
 
 
-def list_subscriptions(
-    *, workspace_id: str, config: Config | None = None
-) -> list[Subscription]:
+def list_subscriptions(*, workspace_id: str, config: Config | None = None) -> list[Subscription]:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:
@@ -215,9 +213,7 @@ def match_subscriptions(
         conn.close()
 
 
-def deactivate_subscription(
-    *, subscription_id: str, config: Config | None = None
-) -> None:
+def deactivate_subscription(*, subscription_id: str, config: Config | None = None) -> None:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:
@@ -233,9 +229,7 @@ def deactivate_subscription(
         conn.close()
 
 
-def load_subscription_secret(
-    *, subscription_id: str, config: Config | None = None
-) -> str:
+def load_subscription_secret(*, subscription_id: str, config: Config | None = None) -> str:
     cfg = config or load_config()
     conn = _connect(cfg)
     try:

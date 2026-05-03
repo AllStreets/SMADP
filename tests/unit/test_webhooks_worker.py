@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -15,7 +15,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from smadp.config import Config
 from smadp.schemas.tenancy import Plan
 from smadp.schemas.webhooks import DeliveryStatus, EventType
-from smadp.tenancy import keys, store as tenancy
+from smadp.tenancy import keys
+from smadp.tenancy import store as tenancy
 from smadp.webhooks import deliveries, dispatcher, store, worker
 
 
@@ -24,7 +25,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     monkeypatch.setenv("SMADP_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)
     # Monkeypatch time to a base value so tests can control it from there
-    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: base)
     monkeypatch.setattr(worker, "_now", lambda: base)
     return Config()
@@ -40,9 +41,11 @@ def workspace_id(cfg: Config) -> str:
 
 
 def _enqueue_one(cfg: Config, workspace_id: str, url: str = "https://hook/x") -> str:
-    sub, secret = store.create_subscription(
-        workspace_id=workspace_id, url=url,
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+    _sub, secret = store.create_subscription(
+        workspace_id=workspace_id,
+        url=url,
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,
@@ -80,9 +83,12 @@ def test_process_one_pending_2xx_marks_delivered(cfg: Config, workspace_id: str)
     # Header sanity:
     assert captured["event_type"] == "passport.generated"
     assert captured["delivery_id"].startswith("wd_")
-    expected = "sha256=" + hmac.new(
-        secret.encode("utf-8"), captured["body"].encode("utf-8"), hashlib.sha256
-    ).hexdigest()
+    expected = (
+        "sha256="
+        + hmac.new(
+            secret.encode("utf-8"), captured["body"].encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    )
     assert captured["sig"] == expected
 
 
@@ -102,7 +108,7 @@ def test_process_one_pending_5xx_reschedules_with_backoff(
 ):
     _enqueue_one(cfg, workspace_id)
     respx.post("https://hook/x").mock(return_value=httpx.Response(503))
-    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: base)
     monkeypatch.setattr(worker, "_now", lambda: base)
     assert worker.process_one_pending(config=cfg) is True
@@ -120,12 +126,12 @@ def test_process_one_pending_5xx_then_5xx_doubles_backoff(
     """attempts=2 → 4s backoff."""
     _enqueue_one(cfg, workspace_id)
     respx.post("https://hook/x").mock(return_value=httpx.Response(503))
-    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: base)
     monkeypatch.setattr(worker, "_now", lambda: base)
     worker.process_one_pending(config=cfg)
     # Bump time past the first backoff.
-    later = datetime(2026, 5, 3, 12, 0, 30, tzinfo=timezone.utc)
+    later = datetime(2026, 5, 3, 12, 0, 30, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: later)
     monkeypatch.setattr(worker, "_now", lambda: later)
     worker.process_one_pending(config=cfg)
@@ -145,7 +151,7 @@ def test_process_one_pending_after_max_attempts_marks_exhausted(
 
     _enqueue_one(cfg, workspace_id)
     respx.post("https://hook/x").mock(return_value=httpx.Response(503))
-    cur = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    cur = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
 
     def _set_now(dt: datetime) -> None:
         monkeypatch.setattr(deliveries, "_now", lambda: dt)
@@ -171,7 +177,7 @@ def test_process_one_pending_network_error_treated_as_5xx(
 ):
     _enqueue_one(cfg, workspace_id)
     respx.post("https://hook/x").mock(side_effect=httpx.ConnectError("boom"))
-    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: base)
     monkeypatch.setattr(worker, "_now", lambda: base)
     assert worker.process_one_pending(config=cfg) is True

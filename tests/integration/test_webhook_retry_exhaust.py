@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from smadp.config import Config
 from smadp.schemas.tenancy import Plan
 from smadp.schemas.webhooks import DeliveryStatus, EventType
-from smadp.tenancy import keys, store as tenancy
+from smadp.tenancy import keys
+from smadp.tenancy import store as tenancy
 from smadp.transparency import journal
 from smadp.webhooks import deliveries, dispatcher, store, worker
 
@@ -23,7 +24,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     monkeypatch.setenv("SMADP_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)
     # Monkeypatch time to a base value so tests can control it from there
-    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
     monkeypatch.setattr(deliveries, "_now", lambda: base)
     monkeypatch.setattr(worker, "_now", lambda: base)
     return Config()
@@ -38,8 +39,10 @@ def test_503_forever_marks_exhausted_and_writes_transparency_event(
         workspace_id=ws.id, private_key=Ed25519PrivateKey.generate(), config=cfg
     )
     store.create_subscription(
-        workspace_id=ws.id, url="https://hook/x",
-        event_types=[EventType.PASSPORT_GENERATED], config=cfg,
+        workspace_id=ws.id,
+        url="https://hook/x",
+        event_types=[EventType.PASSPORT_GENERATED],
+        config=cfg,
     )
     dispatcher.dispatch_event(
         event_type=EventType.PASSPORT_GENERATED,
@@ -50,7 +53,7 @@ def test_503_forever_marks_exhausted_and_writes_transparency_event(
     )
     respx.post("https://hook/x").mock(return_value=httpx.Response(503))
 
-    cur = datetime(2026, 5, 3, 12, 0, 0, tzinfo=timezone.utc)
+    cur = datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
 
     def _set_now(dt: datetime) -> None:
         monkeypatch.setattr(deliveries, "_now", lambda: dt)
