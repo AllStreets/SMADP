@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from smadp.config import Config, load_config
 from smadp.schemas.tenancy import Role, Workspace
+from smadp.schemas.dispute import (
+    Dispute,
+    DisputeDecision,
+    RequestedOutcome,
+)
 from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimVerification,
@@ -17,6 +22,7 @@ from smadp.schemas.vendor import (
     RepoEvidence,
     TokenEvidence,
     VendorClaim,
+    VendorResponse,
 )
 from smadp.tenancy.deps import current_user_id, current_workspace, require_role
 from smadp.vendor import store, verifier
@@ -210,6 +216,124 @@ def revoke_claim(
         raise HTTPException(status_code=404, detail="claim not found in this workspace")
     store.revoke_claim(claim_id=claim_id)
     return store.get_claim(claim_id=claim_id)
+
+
+class _PostResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdict_id: str
+    agent_id: str
+    body_md: str = Field(min_length=1, max_length=8192)
+
+
+@router.post(
+    "/responses",
+    response_model=VendorResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_response(
+    body: _PostResponseBody,
+    workspace: Workspace = Depends(current_workspace),
+    user_id: str = Depends(current_user_id),
+    _role: None = Depends(require_role(Role.EDITOR)),
+) -> Any:
+    found = store.find_verified_claim(
+        workspace_id=workspace.id, vendor_user_id=user_id, agent_id=body.agent_id
+    )
+    if found is None:
+        raise HTTPException(
+            status_code=403, detail="posting requires a verified claim for this agent"
+        )
+    return store.post_response(
+        workspace_id=workspace.id,
+        verdict_id=body.verdict_id,
+        vendor_user_id=user_id,
+        body_md=body.body_md,
+    )
+
+
+@router.get("/responses", response_model=list[VendorResponse])
+def list_responses(
+    verdict_id: str,
+    workspace: Workspace = Depends(current_workspace),
+    _role: None = Depends(require_role(Role.EDITOR)),
+) -> Any:
+    return store.list_responses(workspace_id=workspace.id, verdict_id=verdict_id)
+
+
+class _FileDisputeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdict_id: str
+    agent_id: str
+    argument_md: str = Field(min_length=1, max_length=16384)
+    requested_outcome: RequestedOutcome
+
+
+@router.post(
+    "/disputes",
+    response_model=Dispute,
+    status_code=status.HTTP_201_CREATED,
+)
+def file_dispute(
+    body: _FileDisputeBody,
+    workspace: Workspace = Depends(current_workspace),
+    user_id: str = Depends(current_user_id),
+    _role: None = Depends(require_role(Role.EDITOR)),
+) -> Any:
+    found = store.find_verified_claim(
+        workspace_id=workspace.id, vendor_user_id=user_id, agent_id=body.agent_id
+    )
+    if found is None:
+        raise HTTPException(
+            status_code=403, detail="filing requires a verified claim for this agent"
+        )
+    return store.file_dispute(
+        workspace_id=workspace.id,
+        verdict_id=body.verdict_id,
+        vendor_user_id=user_id,
+        argument_md=body.argument_md,
+        requested_outcome=body.requested_outcome,
+    )
+
+
+@router.get("/disputes", response_model=list[Dispute])
+def list_disputes(
+    verdict_id: str | None = None,
+    workspace: Workspace = Depends(current_workspace),
+    _role: None = Depends(require_role(Role.EDITOR)),
+) -> Any:
+    return store.list_disputes(workspace_id=workspace.id, verdict_id=verdict_id)
+
+
+class _UpdateDisputeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: DisputeDecision
+    rationale_md: str | None = None
+
+
+@router.patch("/disputes/{dispute_id}", response_model=Dispute)
+def update_dispute(
+    dispute_id: str,
+    body: _UpdateDisputeBody,
+    workspace: Workspace = Depends(current_workspace),
+    _role: None = Depends(require_role(Role.ADMIN)),
+) -> Any:
+    try:
+        existing = store.get_dispute(dispute_id=dispute_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if existing.workspace_id != workspace.id:
+        raise HTTPException(status_code=404, detail="dispute not found in this workspace")
+    try:
+        return store.update_dispute_status(
+            dispute_id=dispute_id,
+            decision=body.decision,
+            rationale_md=body.rationale_md,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 __all__ = ["router"]
