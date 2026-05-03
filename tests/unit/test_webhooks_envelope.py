@@ -38,12 +38,9 @@ def test_canonical_bytes_are_sorted_and_compact():
     # Compact: no whitespace.
     assert b" " not in raw
     assert b"\n" not in raw
-    # Top-level keys are sorted.
-    keys_in_order = [
-        s.split(b'":')[0].lstrip(b'{"').rstrip(b'"')
-        for s in raw.split(b',"')
-    ]
-    assert keys_in_order == sorted(keys_in_order)
+    # Top-level keys are sorted (json preserves insertion order in py3.7+).
+    top_level_keys = list(json.loads(raw))
+    assert top_level_keys == sorted(top_level_keys)
 
 
 def test_canonical_bytes_byte_stable_across_calls():
