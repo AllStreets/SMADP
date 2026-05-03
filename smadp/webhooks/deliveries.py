@@ -39,13 +39,10 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     next_attempt_at TEXT NOT NULL,
     last_error TEXT,
     created_at TEXT NOT NULL,
-    delivered_at TEXT,
-    _seq INTEGER NOT NULL UNIQUE
+    delivered_at TEXT
 );
 CREATE INDEX IF NOT EXISTS webhook_deliveries_pending
     ON webhook_deliveries(status, next_attempt_at);
-CREATE INDEX IF NOT EXISTS webhook_deliveries_seq
-    ON webhook_deliveries(_seq);
 """
 
 
@@ -90,7 +87,6 @@ def _isoformat(dt: datetime) -> str:
 
 def _generate_delivery_id(now: datetime) -> str:
     ts = now.strftime("%Y%m%d%H%M%S")
-    # Use 6 random hex chars for unpredictability while maintaining sort order within same second
     suffix = secrets.token_hex(3)
     return f"wd_{ts}_{suffix}"
 
@@ -131,13 +127,11 @@ def enqueue(
     try:
         _ensure_schema(conn)
         with _transaction(conn):
-            cur = conn.execute("SELECT COALESCE(MAX(_seq), 0) FROM webhook_deliveries")
-            next_seq = cur.fetchone()[0] + 1
             conn.execute(
                 "INSERT INTO webhook_deliveries"
                 "(id, subscription_id, event_id, event_type, body, status, attempts,"
-                " next_attempt_at, last_error, created_at, delivered_at, _seq)"
-                " VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL, ?)",
+                " next_attempt_at, last_error, created_at, delivered_at)"
+                " VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL)",
                 (
                     delivery_id,
                     subscription_id,
@@ -146,7 +140,6 @@ def enqueue(
                     body,
                     _isoformat(now),
                     _isoformat(now),
-                    next_seq,
                 ),
             )
         log.info(
@@ -166,7 +159,7 @@ def iter_all(*, config: Config | None = None) -> Iterator[WebhookDelivery]:
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
-        cur = conn.execute("SELECT * FROM webhook_deliveries ORDER BY _seq ASC")
+        cur = conn.execute("SELECT * FROM webhook_deliveries ORDER BY rowid ASC")
         for row in cur.fetchall():
             yield _row_to_delivery(row)
     finally:
