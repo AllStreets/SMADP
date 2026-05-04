@@ -55,7 +55,13 @@ test.describe('SMADP frontend smoke', () => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
     page.on('console', (msg) => {
-      if (msg.type() === 'error') errors.push(msg.text());
+      // The /chains page hydrates fresh chains from /api/chains; in static preview
+      // the backend is offline, which surfaces as a console-logged network error.
+      // Only fail on real JS errors, not expected fetch failures.
+      const text = msg.text();
+      if (msg.type() === 'error' && !text.includes('ERR_CONNECTION_REFUSED')) {
+        errors.push(text);
+      }
     });
 
     await page.goto('/chains');
