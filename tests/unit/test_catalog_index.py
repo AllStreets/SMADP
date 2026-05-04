@@ -17,7 +17,10 @@ def test_rebuild_indexes_all_profiles_and_verdicts(tmp_catalog: Path) -> None:
     count = idx.rebuild()
     assert count > 0
     # We expect at least the profile + verdict counts shipped with seed data.
+    # Profiles include both verified (catalog/profiles/*.json) and unverified
+    # seeds (catalog/profiles/_unverified/*.json) — both indexed.
     profiles = list((tmp_catalog / "profiles").glob("*.json"))
+    profiles += list((tmp_catalog / "profiles" / "_unverified").glob("*.json"))
     verdicts = list((tmp_catalog / "verdicts").glob("*__*.json"))
     assert count == len(profiles) + len(verdicts)
 
