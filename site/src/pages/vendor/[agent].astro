@@ -1,0 +1,237 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Panel from '../../components/Panel.astro';
+import Icon from '../../components/Icon.astro';
+import { getProfiles, getVerdicts } from '../../data/catalog';
+
+export function getStaticPaths() {
+  return getProfiles().map((p) => ({
+    params: { agent: p.slug },
+    props: { profile: p },
+  }));
+}
+
+const { profile } = Astro.props as { profile: ReturnType<typeof getProfiles>[number] };
+const slug = profile.slug;
+const myVerdicts = getVerdicts().filter(
+  (v) => v.pair[0] === slug || v.pair[1] === slug,
+);
+---
+
+<Layout title={`${profile.name} — Vendor — SMADP`} description={`Vendor surface for ${profile.name}.`}>
+  <section class="container-page mt-10">
+    <a href="/agents" class="font-mono text-xs text-ink-400 hover:text-brand-300">← all agents</a>
+    <span class="mt-6 block heading-eyebrow">Claimed vendor surface</span>
+    <h1 class="h1 mt-3 text-white">{profile.name}</h1>
+    <p class="lead mt-3 max-w-3xl">
+      Claim this agent to post responses on its verdicts and file disputes.
+    </p>
+  </section>
+
+  <section class="container-page mt-10 space-y-4" data-vendor-root data-agent-id={slug}>
+    <Panel title="Claim status" icon="check-circle" defaultOpen={true}>
+      <div data-panel="claims">loading…</div>
+      <details class="mt-4">
+        <summary class="cursor-pointer font-mono text-xs text-brand-300">start a new claim</summary>
+        <form class="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]" data-claim-form>
+          <select
+            name="method"
+            class="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+          >
+            <option value="repo">repo file</option>
+            <option value="dns">DNS TXT</option>
+            <option value="email">email magic-link</option>
+          </select>
+          <button type="submit" class="btn-primary">create</button>
+        </form>
+        <pre class="mt-3 hidden whitespace-pre-wrap rounded-lg border border-white/5 bg-ink-950/40 p-3 font-mono text-[11px] text-ink-200" data-claim-instructions></pre>
+      </details>
+    </Panel>
+
+    <Panel title="Vendor responses" icon="briefcase" defaultOpen={true}>
+      <div data-panel="responses">loading…</div>
+    </Panel>
+
+    <Panel title="File a dispute" icon="gavel" defaultOpen={false}>
+      <form class="grid gap-3" data-dispute-form>
+        <label class="text-sm text-ink-300">
+          Verdict
+          <select
+            name="verdict"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+          >
+            {myVerdicts.map((v) => (
+              <option value={v.verdict_id}>{v.pair[0]} × {v.pair[1]}</option>
+            ))}
+          </select>
+        </label>
+        <label class="text-sm text-ink-300">
+          Argument (markdown)
+          <textarea
+            name="argument"
+            rows="6"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
+            placeholder="The verdict overstates risk because..."
+            required
+          ></textarea>
+        </label>
+        <label class="text-sm text-ink-300">
+          Requested outcome
+          <select
+            name="outcome"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+          >
+            <option value="reeval">re-evaluate</option>
+            <option value="amend">amend</option>
+            <option value="withdraw">withdraw</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary">file dispute</button>
+      </form>
+      <p class="mt-2 text-xs text-ink-500" data-dispute-status></p>
+    </Panel>
+  </section>
+</Layout>
+
+<script>
+  import { apiFetch, ApiError } from '../../lib/api';
+
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => {
+      switch (c) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        default: return '&#39;';
+      }
+    });
+  }
+
+  async function loadClaims(agentId: string): Promise<void> {
+    const target = document.querySelector<HTMLElement>('[data-panel="claims"]');
+    if (!target) return;
+    try {
+      const list = await apiFetch<Array<{ id: string; method: string; status: string }>>(
+        `/vendor/claims?agent_id=${encodeURIComponent(agentId)}`,
+      );
+      target.innerHTML = list.length === 0
+        ? '<p class="text-sm text-ink-400">No claims for this agent.</p>'
+        : `<ul class="space-y-1">${list
+            .map(
+              (c) =>
+                `<li class="font-mono text-xs text-ink-200">${escapeHtml(c.id)} — ${escapeHtml(c.method)} — <span class="pill">${escapeHtml(c.status)}</span></li>`,
+            )
+            .join('')}</ul>`;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      target.innerHTML = `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`;
+    }
+  }
+
+  async function loadResponses(agentId: string): Promise<void> {
+    const target = document.querySelector<HTMLElement>('[data-panel="responses"]');
+    if (!target) return;
+    try {
+      // The backend takes verdict_id; cycle through the agent's verdicts on the page.
+      const links = Array.from(
+        document.querySelectorAll<HTMLOptionElement>('[data-dispute-form] option'),
+      ).map((o) => o.value);
+      const all: Array<{ id: string; verdict_id: string; body_md: string }> = [];
+      for (const verdictId of links) {
+        try {
+          const list = await apiFetch<typeof all>(
+            `/vendor/responses?verdict_id=${encodeURIComponent(verdictId)}`,
+          );
+          all.push(...list);
+        } catch {
+          // skip individual failures
+        }
+      }
+      target.innerHTML = all.length === 0
+        ? '<p class="text-sm text-ink-400">No vendor responses yet.</p>'
+        : all
+            .map(
+              (r) => `
+            <article class="rounded-lg border border-white/5 bg-ink-950/40 p-3">
+              <div class="font-mono text-[11px] text-ink-400">on ${escapeHtml(r.verdict_id)}</div>
+              <p class="mt-2 whitespace-pre-wrap text-sm text-ink-200">${escapeHtml(r.body_md)}</p>
+            </article>`,
+            )
+            .join('');
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      target.innerHTML = `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`;
+    }
+  }
+
+  function bindClaimForm(agentId: string): void {
+    const form = document.querySelector<HTMLFormElement>('[data-claim-form]');
+    const out = document.querySelector<HTMLElement>('[data-claim-instructions]');
+    if (!form || !out) return;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      const method = String(fd.get('method'));
+      try {
+        const res = await apiFetch<{
+          claim: { id: string; status: string };
+          token: string;
+          instructions: { text: string; magic_link_url: string | null };
+        }>('/vendor/claims', {
+          method: 'POST',
+          json: { agent_id: agentId, method },
+        });
+        out.classList.remove('hidden');
+        out.textContent =
+          `claim ${res.claim.id} (${res.claim.status})\n` +
+          `token: ${res.token}\n\n${res.instructions.text}` +
+          (res.instructions.magic_link_url ? `\n\nmagic link: ${res.instructions.magic_link_url}` : '');
+        await loadClaims(agentId);
+      } catch (err) {
+        out.classList.remove('hidden');
+        out.textContent = err instanceof ApiError ? err.message : String(err);
+      }
+    });
+  }
+
+  function bindDisputeForm(agentId: string): void {
+    const form = document.querySelector<HTMLFormElement>('[data-dispute-form]');
+    const status = document.querySelector<HTMLElement>('[data-dispute-status]');
+    if (!form || !status) return;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      try {
+        const res = await apiFetch<{ id: string; status: string }>('/vendor/disputes', {
+          method: 'POST',
+          json: {
+            verdict_id: String(fd.get('verdict')),
+            agent_id: agentId,
+            argument_md: String(fd.get('argument')),
+            requested_outcome: String(fd.get('outcome')),
+          },
+        });
+        status.textContent = `filed: ${res.id} (${res.status})`;
+        form.reset();
+      } catch (err) {
+        status.textContent = err instanceof ApiError ? err.message : String(err);
+      }
+    });
+  }
+
+  function init(): void {
+    const root = document.querySelector<HTMLElement>('[data-vendor-root]');
+    if (!root) return;
+    const agentId = root.dataset.agentId ?? '';
+    bindClaimForm(agentId);
+    bindDisputeForm(agentId);
+    void loadClaims(agentId);
+    void loadResponses(agentId);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+</script>
