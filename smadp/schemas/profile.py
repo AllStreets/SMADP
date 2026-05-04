@@ -88,7 +88,7 @@ class Profile(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     slug: str
     name: str = Field(min_length=1, max_length=100)
     tagline: str | None = Field(default=None, max_length=200)
@@ -108,6 +108,7 @@ class Profile(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     first_seen_at: datetime
     last_refreshed_at: datetime
+    pairings: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator("slug")
     @classmethod
@@ -122,4 +123,14 @@ class Profile(BaseModel):
         for ref in v:
             if not EVIDENCE_REF_RE.match(ref):
                 raise ValueError(f"Invalid evidence ref: {ref!r}")
+        return v
+
+    @field_validator("pairings")
+    @classmethod
+    def _validate_pairings(cls, v: list[str]) -> list[str]:
+        if len(set(v)) != len(v):
+            raise ValueError("pairings must not contain duplicates")
+        for slug in v:
+            if not SLUG_RE.match(slug):
+                raise ValueError(f"Invalid pairings slug: {slug!r}")
         return v
