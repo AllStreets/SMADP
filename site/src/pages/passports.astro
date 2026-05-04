@@ -1,0 +1,120 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Panel from '../components/Panel.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Layout title="Passport viewer — SMADP" description="Verifiable signed verdict passports.">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">Passport</span>
+    <h1 class="h1 mt-3 text-white">Verifiable verdict passport</h1>
+    <p class="lead mt-4 max-w-3xl">
+      Each passport is a single self-contained signed HTML file that any auditor
+      can verify offline.
+    </p>
+  </section>
+
+  <section class="container-page mt-10">
+    <Panel title="Open a passport" icon="file-text" defaultOpen={true}>
+      <form class="grid gap-3 sm:grid-cols-[1fr_auto]" data-passport-form>
+        <input
+          type="text"
+          name="slug"
+          placeholder="anthropic__claude-research__openai__swe-agent"
+          class="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
+          data-passport-slug
+          required
+        />
+        <button type="submit" class="btn-primary">load</button>
+      </form>
+      <p class="mt-2 text-xs text-ink-500">
+        Slug format: <code class="font-mono">{`<a-namespace>__<a-name>__<b-namespace>__<b-name>`}</code>.
+      </p>
+    </Panel>
+  </section>
+
+  <section class="container-page mt-6 hidden" data-passport-result>
+    <Panel title="Passport" icon="shield" defaultOpen={true}>
+      <div class="flex items-center justify-between gap-3">
+        <span class="font-mono text-xs text-ink-400" data-passport-meta></span>
+        <button type="button" class="btn-ghost text-xs" data-passport-download>
+          download .html
+        </button>
+      </div>
+      <iframe
+        title="passport"
+        sandbox="allow-same-origin"
+        class="mt-4 h-[70vh] w-full rounded-lg border border-white/10 bg-white"
+        data-passport-frame
+      ></iframe>
+    </Panel>
+  </section>
+</Layout>
+
+<script>
+  import { apiFetch, ApiError } from '../lib/api';
+
+  function splitSlug(slug: string): [string, string] {
+    const parts = slug.split('__');
+    if (parts.length !== 4) {
+      throw new Error('slug must be <a-ns>__<a-name>__<b-ns>__<b-name> (4 segments)');
+    }
+    return [`${parts[0]}__${parts[1]}`, `${parts[2]}__${parts[3]}`];
+  }
+
+  async function load(slug: string): Promise<void> {
+    const [a, b] = splitSlug(slug);
+    const html = await apiFetch<string>(`/passports/${a}/${b}.html`, { accept: 'text/html' });
+    const result = document.querySelector<HTMLElement>('[data-passport-result]');
+    const frame = document.querySelector<HTMLIFrameElement>('[data-passport-frame]');
+    const meta = document.querySelector<HTMLElement>('[data-passport-meta]');
+    const download = document.querySelector<HTMLButtonElement>('[data-passport-download]');
+    if (!result || !frame || !meta || !download) return;
+    result.classList.remove('hidden');
+    frame.srcdoc = html;
+    meta.textContent = `${a} × ${b}`;
+    download.onclick = (): void => {
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${slug}.html`;
+      link.click();
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  function init(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-passport-form]');
+    const slugInput = document.querySelector<HTMLInputElement>('[data-passport-slug]');
+    if (!form || !slugInput) return;
+
+    const fromUrl = new URLSearchParams(window.location.search).get('slug');
+    if (fromUrl) {
+      slugInput.value = fromUrl;
+      load(fromUrl).catch((err) => {
+        const msg = err instanceof ApiError ? err.message : String(err);
+        alert(`load failed: ${msg}`);
+      });
+    }
+
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const slug = slugInput.value.trim();
+      if (!slug) return;
+      const url = new URL(window.location.href);
+      url.searchParams.set('slug', slug);
+      history.replaceState(null, '', url.toString());
+      load(slug).catch((err) => {
+        const msg = err instanceof ApiError ? err.message : String(err);
+        alert(`load failed: ${msg}`);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+</script>
