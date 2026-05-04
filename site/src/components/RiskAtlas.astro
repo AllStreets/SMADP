@@ -93,6 +93,91 @@ const perRiskTop = RISKS.map((r) => {
   return { risk: r, items: sorted };
 });
 
+// ---------- 6) Severity distribution per risk axis (stacked bars) ----------
+const SEV_ORDER: Severity[] = ['none', 'low', 'medium', 'high', 'critical'];
+const severityDist = RISKS.map((r) => {
+  const counts: Record<Severity, number> = { none: 0, low: 0, medium: 0, high: 0, critical: 0 };
+  for (const row of rows) counts[row.sevs[r.id]]++;
+  const total = rows.length || 1;
+  return {
+    risk: r,
+    counts,
+    total: rows.length,
+    pct: SEV_ORDER.map((s) => ({ sev: s, n: counts[s], pct: counts[s] / total })),
+  };
+});
+
+// ---------- 7) Risk co-occurrence (medium+ given medium+) ----------
+const isHot = (s: Severity) => sevToScore[s] >= 0.5;
+const cooccur: number[][] = RISKS.map(() => RISKS.map(() => 0));
+const hotCount: number[] = RISKS.map((r) =>
+  rows.reduce((n, row) => n + (isHot(row.sevs[r.id]) ? 1 : 0), 0),
+);
+for (let i = 0; i < RISKS.length; i++) {
+  for (let j = 0; j < RISKS.length; j++) {
+    const ri = RISKS[i]!.id;
+    const rj = RISKS[j]!.id;
+    let both = 0;
+    for (const row of rows) {
+      if (isHot(row.sevs[ri]) && isHot(row.sevs[rj])) both++;
+    }
+    cooccur[i]![j] = hotCount[i]! > 0 ? both / hotCount[i]! : 0;
+  }
+}
+
+// ---------- 8) Confidence vs composite scatter ----------
+const scatter = verdicts.map((v) => ({
+  vid: v.verdict_id,
+  pair: v.pair,
+  conf: v.confidence,
+  comp: v.composite_score,
+  ev: v.evidence_level,
+}));
+
+// ---------- 9) Evidence level distribution ----------
+const evidenceLevels: { id: string; label: string; color: string }[] = [
+  { id: 'unverified-profile', label: 'Unverified profile', color: '#A1A1AA' },
+  { id: 'docs-only', label: 'Docs only', color: '#A78BFA' },
+  { id: 'profile-verified', label: 'Profile verified', color: '#22D3EE' },
+  { id: 'sandbox-validated', label: 'Sandbox validated', color: '#22C55E' },
+];
+const evidenceDist = evidenceLevels.map((e) => {
+  const items = verdicts.filter((v) => v.evidence_level === e.id);
+  const avg = items.length ? items.reduce((s, v) => s + v.composite_score, 0) / items.length : 0;
+  return {
+    ...e,
+    n: items.length,
+    pct: verdicts.length ? items.length / verdicts.length : 0,
+    avg,
+  };
+});
+
+// ---------- 10) Vendor risk leaderboard ----------
+const vendorOf = new Map(profiles.map((p) => [p.slug, p.vendor.handle]));
+type VendorAgg = { handle: string; pairs: number; sum: number; agents: Set<string> };
+const vendorMap = new Map<string, VendorAgg>();
+for (const v of verdicts) {
+  for (const slug of v.pair) {
+    const h = vendorOf.get(slug);
+    if (!h) continue;
+    const cur = vendorMap.get(h) ?? { handle: h, pairs: 0, sum: 0, agents: new Set<string>() };
+    cur.pairs += 1;
+    cur.sum += v.composite_score;
+    cur.agents.add(slug);
+    vendorMap.set(h, cur);
+  }
+}
+const vendorRows = [...vendorMap.values()]
+  .filter((v) => v.pairs >= 2)
+  .map((v) => ({
+    handle: v.handle,
+    pairs: v.pairs,
+    avg: v.sum / v.pairs,
+    agents: v.agents.size,
+  }));
+const vendorRiskiest = [...vendorRows].sort((a, b) => b.avg - a.avg).slice(0, 8);
+const vendorSafest = [...vendorRows].sort((a, b) => a.avg - b.avg).slice(0, 8);
+
 const totals = {
   pairs: verdicts.length,
   agents: agentMap.size,
@@ -338,6 +423,285 @@ const totals = {
           );
         })}
       </ul>
+    )}
+  </div>
+
+  <!-- 6) Severity distribution per risk axis -->
+  <div class="card">
+    <h2 class="h3 text-white">Severity distribution per risk axis</h2>
+    <p class="mt-1 text-sm text-ink-300">
+      For each of the five axes, how the {rows.length} pairs split across severity bands.
+    </p>
+    {rows.length === 0 ? (
+      <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+    ) : (
+      <div class="mt-5 space-y-3">
+        {severityDist.map((d) => (
+          <div>
+            <div class="mb-1.5 flex items-baseline justify-between gap-2 font-mono text-[11px]">
+              <span class="text-ink-200">
+                <span class="font-bold text-brand-300">{d.risk.short}</span>
+                <span class="ml-2 text-ink-300">{d.risk.label}</span>
+              </span>
+              <span class="text-ink-500">
+                {d.counts.medium + d.counts.high + d.counts.critical} ≥ medium / {d.total}
+              </span>
+            </div>
+            <div class="flex h-6 w-full overflow-hidden rounded-md bg-ink-900 ring-1 ring-white/5">
+              {d.pct.map((p) =>
+                p.n > 0 ? (
+                  <div
+                    class="flex items-center justify-center text-[10px] font-mono font-semibold text-ink-950"
+                    style={`width:${p.pct * 100}%;background:${severityColor(p.sev)};`}
+                    title={`${p.sev}: ${p.n} pair${p.n === 1 ? '' : 's'} (${(p.pct * 100).toFixed(0)}%)`}
+                  >
+                    {p.pct >= 0.07 ? p.n : ''}
+                  </div>
+                ) : null
+              )}
+            </div>
+          </div>
+        ))}
+        <div class="mt-3 flex flex-wrap gap-3 text-[10px]">
+          {SEV_ORDER.map((s) => (
+            <span class="inline-flex items-center gap-1.5 text-ink-400">
+              <span class="inline-block h-3 w-3 rounded-sm" style={`background:${severityColor(s)}`}></span>
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+
+  <!-- 7) Risk co-occurrence + 8) Confidence × composite scatter -->
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div class="card">
+      <h2 class="h3 text-white">Risk co-occurrence</h2>
+      <p class="mt-1 text-sm text-ink-300">
+        When risk <span class="font-mono">row</span> fires (medium+), how often does risk
+        <span class="font-mono">column</span> also fire? Diagonal is always 100%.
+      </p>
+      {rows.length === 0 ? (
+        <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+      ) : (
+        <div class="mt-5 overflow-x-auto">
+          <table class="border-separate border-spacing-1 text-[11px]">
+            <thead>
+              <tr>
+                <th class="px-2 py-1"></th>
+                {RISKS.map((r) => (
+                  <th class="px-2 py-1 text-center font-mono text-[10px] text-brand-300" title={r.label}>{r.short}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {RISKS.map((ri, i) => (
+                <tr>
+                  <th class="px-2 py-1 text-right font-mono text-[10px] text-brand-300" title={ri.label}>{ri.short}</th>
+                  {RISKS.map((rj, j) => {
+                    const v = cooccur[i]![j]!;
+                    const a = Math.max(0.06, v);
+                    const fill = `rgba(167,139,250,${a})`;
+                    const txt = v >= 0.5 ? '#0B0712' : '#E4E4E7';
+                    return (
+                      <td
+                        class="h-12 w-14 rounded-md text-center font-mono"
+                        style={`background:${fill};color:${txt};`}
+                        title={`${ri.short} → ${rj.short}: ${(v * 100).toFixed(0)}% (n=${hotCount[i]})`}
+                      >
+                        {hotCount[i]! === 0 ? '·' : `${(v * 100).toFixed(0)}%`}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p class="mt-3 font-mono text-[10px] text-ink-500">
+            Read each row as a conditional probability. Tall purple = risks that travel together.
+          </p>
+        </div>
+      )}
+    </div>
+
+    <div class="card">
+      <h2 class="h3 text-white">Confidence × composite</h2>
+      <p class="mt-1 text-sm text-ink-300">
+        Each dot is a verdict. X = composite score, Y = evaluator confidence. Top-right
+        cluster = confidently flagged; bottom-right = high risk but lower trust.
+      </p>
+      {scatter.length === 0 ? (
+        <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+      ) : (
+        <svg viewBox="0 0 600 280" class="mt-5 w-full" role="img" aria-label="confidence vs composite scatter">
+          {/* axes & grid */}
+          <g>
+            {[0, 0.25, 0.5, 0.75, 1].map((g) => (
+              <>
+                <line
+                  x1="40" x2="590"
+                  y1={20 + (1 - g) * 220}
+                  y2={20 + (1 - g) * 220}
+                  stroke="rgba(255,255,255,0.05)" stroke-width="1"
+                />
+                <text
+                  x="34" y={24 + (1 - g) * 220}
+                  text-anchor="end"
+                  fill="#52525B"
+                  font-family="ui-monospace,monospace"
+                  font-size="9"
+                >{g.toFixed(2)}</text>
+              </>
+            ))}
+            {[0, 0.25, 0.5, 0.75, 1].map((g) => (
+              <text
+                x={40 + g * 550} y={258}
+                text-anchor="middle"
+                fill="#52525B"
+                font-family="ui-monospace,monospace"
+                font-size="9"
+              >{g.toFixed(2)}</text>
+            ))}
+            <text
+              x="315" y="272"
+              text-anchor="middle"
+              fill="#52525B"
+              font-family="ui-monospace,monospace"
+              font-size="9"
+            >composite score →</text>
+            <text
+              x="14" y="130"
+              text-anchor="middle"
+              fill="#52525B"
+              font-family="ui-monospace,monospace"
+              font-size="9"
+              transform="rotate(-90,14,130)"
+            >confidence →</text>
+          </g>
+          {/* dots */}
+          {scatter.map((s) => {
+            const cx = 40 + s.comp * 550;
+            const cy = 20 + (1 - s.conf) * 220;
+            return (
+              <a href={`/verdicts/${s.vid}`}>
+                <circle
+                  cx={cx} cy={cy} r="4"
+                  fill={compositeColor(s.comp)}
+                  fill-opacity="0.7"
+                  stroke="rgba(255,255,255,0.15)"
+                  stroke-width="0.75"
+                >
+                  <title>{`${s.pair[0]} × ${s.pair[1]} — composite ${s.comp.toFixed(2)}, confidence ${s.conf.toFixed(2)} (${s.ev})`}</title>
+                </circle>
+              </a>
+            );
+          })}
+        </svg>
+      )}
+    </div>
+  </div>
+
+  <!-- 9) Evidence level distribution -->
+  <div class="card">
+    <h2 class="h3 text-white">Evidence-layer breakdown</h2>
+    <p class="mt-1 text-sm text-ink-300">
+      How much of the catalog rests on each evidence layer, and the average risk inside
+      each layer. Lower confidence layers are still useful — but rated accordingly.
+    </p>
+    {verdicts.length === 0 ? (
+      <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+    ) : (
+      <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {evidenceDist.map((e) => (
+          <div class="rounded-lg border border-white/5 bg-ink-950/40 p-4">
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-3 w-3 rounded-sm" style={`background:${e.color}`}></span>
+              <span class="font-mono text-[10px] uppercase tracking-wider text-ink-400">{e.label}</span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="font-display text-2xl font-bold text-white">{e.n}</span>
+              <span class="font-mono text-xs text-ink-500">{(e.pct * 100).toFixed(0)}%</span>
+            </div>
+            <div class="mt-3 h-1.5 overflow-hidden rounded bg-ink-900">
+              <div class="h-full rounded" style={`width:${e.pct * 100}%; background:${e.color};`}></div>
+            </div>
+            <div class="mt-3 flex items-baseline justify-between font-mono text-[10px]">
+              <span class="text-ink-500">avg composite</span>
+              <span class="font-semibold" style={`color:${compositeColor(e.avg)}`}>
+                {e.n === 0 ? '—' : e.avg.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <!-- 10) Vendor risk leaderboard -->
+  <div class="card">
+    <h2 class="h3 text-white">Vendor risk leaderboard</h2>
+    <p class="mt-1 text-sm text-ink-300">
+      Average composite across every pair a vendor's agents participate in
+      (≥ 2 pairs to qualify; {vendorRows.length} vendors).
+    </p>
+    {vendorRows.length === 0 ? (
+      <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+    ) : (
+      <div class="mt-5 grid gap-6 lg:grid-cols-2">
+        <div>
+          <div class="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider">
+            <span class="text-emerald-300">Safest</span>
+            <span class="text-ink-500">avg / pairs / agents</span>
+          </div>
+          <ul class="space-y-1.5">
+            {vendorSafest.map((v) => {
+              const pct = (v.avg / 1.0) * 100;
+              const c = compositeColor(v.avg);
+              return (
+                <li class="rounded-md px-3 py-2 hover:bg-white/5">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <span class="truncate font-mono text-xs text-ink-50">@{v.handle}</span>
+                    <span class="font-mono text-[11px] text-ink-400">
+                      <span style={`color:${c}`}>{v.avg.toFixed(2)}</span>
+                      <span class="ml-2 text-ink-500">{v.pairs}p · {v.agents}a</span>
+                    </span>
+                  </div>
+                  <div class="mt-1.5 h-1.5 overflow-hidden rounded bg-ink-900">
+                    <div class="h-full rounded" style={`width:${pct}%; background:${c};`}></div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div>
+          <div class="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider">
+            <span class="text-rose-300">Riskiest</span>
+            <span class="text-ink-500">avg / pairs / agents</span>
+          </div>
+          <ul class="space-y-1.5">
+            {vendorRiskiest.map((v) => {
+              const pct = (v.avg / 1.0) * 100;
+              const c = compositeColor(v.avg);
+              return (
+                <li class="rounded-md px-3 py-2 hover:bg-white/5">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <span class="truncate font-mono text-xs text-ink-50">@{v.handle}</span>
+                    <span class="font-mono text-[11px] text-ink-400">
+                      <span style={`color:${c}`}>{v.avg.toFixed(2)}</span>
+                      <span class="ml-2 text-ink-500">{v.pairs}p · {v.agents}a</span>
+                    </span>
+                  </div>
+                  <div class="mt-1.5 h-1.5 overflow-hidden rounded bg-ink-900">
+                    <div class="h-full rounded" style={`width:${pct}%; background:${c};`}></div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
     )}
   </div>
 
