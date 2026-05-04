@@ -106,9 +106,7 @@ def test_drain_one_dispatches_framework_coverage_changed_when_delta(
         patch("smadp.refresh.evaluator.generate_verdict", side_effect=fake_generate),
         patch("smadp.refresh.evaluator._emit_transparency"),
         patch("smadp.refresh.evaluator._dispatch_verdict_updated"),
-        patch(
-            "smadp.refresh.evaluator._dispatch_framework_coverage_changed"
-        ) as fc_mock,
+        patch("smadp.refresh.evaluator._dispatch_framework_coverage_changed") as fc_mock,
     ):
         evaluator.drain_one(config=cfg)
 
@@ -142,9 +140,7 @@ def test_drain_one_skips_framework_coverage_when_no_delta(
         patch("smadp.refresh.evaluator.generate_verdict", side_effect=fake_generate),
         patch("smadp.refresh.evaluator._emit_transparency"),
         patch("smadp.refresh.evaluator._dispatch_verdict_updated"),
-        patch(
-            "smadp.refresh.evaluator._dispatch_framework_coverage_changed"
-        ) as fc_mock,
+        patch("smadp.refresh.evaluator._dispatch_framework_coverage_changed") as fc_mock,
     ):
         evaluator.drain_one(config=cfg)
 

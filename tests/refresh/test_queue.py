@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -78,18 +79,14 @@ def test_finalize_unknown_id_raises(cfg: Config) -> None:
         queue.finalize(item_id=999, config=cfg)
 
 
-from datetime import datetime, timedelta, timezone
-
-
-def test_reap_stale_unclaims_old_leases(
-    cfg: Config, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_reap_stale_unclaims_old_leases(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     item = queue.enqueue(verdict_id="a__b", trigger=RefreshTrigger.TTL, config=cfg)
     queue.claim(config=cfg)
     # Forge a stale claim by direct UPDATE
     import sqlite3
+
     conn = sqlite3.connect(cfg.cache_dir / "refresh.db")
-    stale = (datetime.now(timezone.utc) - timedelta(seconds=600))
+    stale = datetime.now(UTC) - timedelta(seconds=600)
     conn.execute(
         "UPDATE refresh_queue SET claimed_at = ? WHERE id = ?",
         (stale.isoformat(timespec="seconds").replace("+00:00", "Z"), item.id),

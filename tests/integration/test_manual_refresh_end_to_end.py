@@ -39,9 +39,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 @pytest.fixture
 def workspace_id(cfg: Config) -> str:
     ws = tenancy.create_workspace(name="R", plan=Plan.PUBLIC, config=cfg)
-    tenancy.add_member(
-        workspace_id=ws.id, user_id="u_ADMIN001", role=Role.ADMIN, config=cfg
-    )
+    tenancy.add_member(workspace_id=ws.id, user_id="u_ADMIN001", role=Role.ADMIN, config=cfg)
     return ws.id
 
 
@@ -106,9 +104,7 @@ def test_post_refresh_then_drain_updates_verdict_file_and_dispatches(
     assert item is not None and item.verdict_id == verdict_id
     dispatched.assert_called_once()
 
-    on_disk = json.loads(
-        (cfg.catalog_dir / "verdicts" / f"{verdict_id}.json").read_text("utf-8")
-    )
+    on_disk = json.loads((cfg.catalog_dir / "verdicts" / f"{verdict_id}.json").read_text("utf-8"))
     assert on_disk["headline"] == "post-refresh headline"
     assert on_disk["composite_score"] == 0.42
     assert queue.list_pending(config=cfg) == []

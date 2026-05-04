@@ -8,13 +8,14 @@ the queue.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Final
 
 import structlog
 
 from smadp.config import Config, load_config
-from smadp.refresh.queue import _connect, _ensure_schema as _ensure_queue_schema
+from smadp.refresh.queue import _connect
+from smadp.refresh.queue import _ensure_schema as _ensure_queue_schema
 from smadp.schemas.refresh import RefreshState, RefreshTrigger
 
 log = structlog.get_logger(__name__)
@@ -35,7 +36,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _from_iso(value: str) -> datetime:
@@ -47,9 +48,7 @@ def get_state(*, verdict_id: str, config: Config | None = None) -> RefreshState 
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
-        cur = conn.execute(
-            "SELECT * FROM refresh_state WHERE verdict_id = ?", (verdict_id,)
-        )
+        cur = conn.execute("SELECT * FROM refresh_state WHERE verdict_id = ?", (verdict_id,))
         row = cur.fetchone()
         if row is None:
             return None
@@ -91,9 +90,7 @@ def upsert_state(
         except BaseException:
             conn.execute("ROLLBACK;")
             raise
-        log.info(
-            "refresh.state.upserted", verdict_id=verdict_id, trigger=trigger.value
-        )
+        log.info("refresh.state.upserted", verdict_id=verdict_id, trigger=trigger.value)
     finally:
         conn.close()
 

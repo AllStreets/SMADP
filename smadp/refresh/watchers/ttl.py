@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta, timezone
+from datetime import UTC, timedelta
 from typing import Any, Final
 
 import structlog
@@ -30,7 +30,7 @@ class TtlWatcher:
         for verdict in repo.list_verdicts():
             ts = verdict.generated_at
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+                ts = ts.replace(tzinfo=UTC)
             if ts < cutoff:
                 out.append(
                     (

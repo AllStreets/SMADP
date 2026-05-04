@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -30,7 +30,7 @@ def test_refresh_queue_item_round_trip() -> None:
         verdict_id="agent-a__agent-b",
         trigger=RefreshTrigger.MANUAL,
         trigger_detail={"reason": "ops requested"},
-        enqueued_at=datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc),
+        enqueued_at=datetime(2026, 5, 3, 12, 0, tzinfo=UTC),
         claimed_at=None,
         done_at=None,
     )
@@ -46,7 +46,7 @@ def test_refresh_queue_item_forbids_extra() -> None:
             verdict_id="a__b",
             trigger=RefreshTrigger.TTL,
             trigger_detail={},
-            enqueued_at=datetime.now(timezone.utc),
+            enqueued_at=datetime.now(UTC),
             claimed_at=None,
             done_at=None,
             unexpected="boom",  # type: ignore[call-arg]
@@ -57,7 +57,7 @@ def test_refresh_state_round_trip() -> None:
     state = RefreshState(
         verdict_id="a__b",
         last_trigger=RefreshTrigger.DISPUTE,
-        last_evaluated_at=datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc),
+        last_evaluated_at=datetime(2026, 5, 3, 12, 0, tzinfo=UTC),
         evaluation_count=3,
     )
     restored = RefreshState.model_validate(state.model_dump(mode="json"))
@@ -69,7 +69,7 @@ def test_refresh_state_forbids_extra() -> None:
         RefreshState(
             verdict_id="a__b",
             last_trigger=RefreshTrigger.MANUAL,
-            last_evaluated_at=datetime.now(timezone.utc),
+            last_evaluated_at=datetime.now(UTC),
             evaluation_count=1,
             unexpected="boom",  # type: ignore[call-arg]
         )
@@ -80,6 +80,6 @@ def test_refresh_state_rejects_negative_count() -> None:
         RefreshState(
             verdict_id="a__b",
             last_trigger=RefreshTrigger.MANUAL,
-            last_evaluated_at=datetime.now(timezone.utc),
+            last_evaluated_at=datetime.now(UTC),
             evaluation_count=-1,
         )

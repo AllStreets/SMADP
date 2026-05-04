@@ -95,9 +95,7 @@ def test_dispute_reeval_drives_refresh_with_framework_coverage_delta(
         patch("smadp.refresh.evaluator.generate_verdict", side_effect=fake_generate),
         patch("smadp.refresh.evaluator._emit_transparency"),
         patch("smadp.refresh.evaluator._dispatch_verdict_updated") as vu_mock,
-        patch(
-            "smadp.refresh.evaluator._dispatch_framework_coverage_changed"
-        ) as fc_mock,
+        patch("smadp.refresh.evaluator._dispatch_framework_coverage_changed") as fc_mock,
     ):
         item = evaluator.drain_one(config=cfg)
 

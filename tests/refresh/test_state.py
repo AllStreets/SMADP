@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -25,7 +25,7 @@ def test_get_state_returns_none_when_unknown(cfg: Config) -> None:
 
 
 def test_upsert_then_get(cfg: Config) -> None:
-    when = datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc)
+    when = datetime(2026, 5, 3, 12, 0, tzinfo=UTC)
     state.upsert_state(
         verdict_id="a__b",
         trigger=RefreshTrigger.MANUAL,
@@ -41,11 +41,9 @@ def test_upsert_then_get(cfg: Config) -> None:
 
 
 def test_upsert_increments_count(cfg: Config) -> None:
-    when = datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc)
-    later = datetime(2026, 5, 3, 13, 0, tzinfo=timezone.utc)
-    state.upsert_state(
-        verdict_id="a__b", trigger=RefreshTrigger.TTL, evaluated_at=when, config=cfg
-    )
+    when = datetime(2026, 5, 3, 12, 0, tzinfo=UTC)
+    later = datetime(2026, 5, 3, 13, 0, tzinfo=UTC)
+    state.upsert_state(verdict_id="a__b", trigger=RefreshTrigger.TTL, evaluated_at=when, config=cfg)
     state.upsert_state(
         verdict_id="a__b", trigger=RefreshTrigger.DISPUTE, evaluated_at=later, config=cfg
     )

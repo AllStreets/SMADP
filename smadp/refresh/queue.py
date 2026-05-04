@@ -6,7 +6,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -68,7 +68,7 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _from_iso(value: str | None) -> datetime | None:
@@ -137,8 +137,7 @@ def list_pending(*, config: Config | None = None) -> list[RefreshQueueItem]:
     try:
         _ensure_schema(conn)
         cur = conn.execute(
-            "SELECT * FROM refresh_queue WHERE done_at IS NULL"
-            " ORDER BY enqueued_at ASC, id ASC"
+            "SELECT * FROM refresh_queue WHERE done_at IS NULL ORDER BY enqueued_at ASC, id ASC"
         )
         return [_row_to_item(r) for r in cur.fetchall()]
     finally:

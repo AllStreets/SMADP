@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,18 +42,20 @@ def _write_aged_verdict(
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_ttl_watcher_discovers_only_expired(
-    cfg: Config, sample_verdict: dict[str, Any]
-) -> None:
-    now = datetime.now(timezone.utc)
+def test_ttl_watcher_discovers_only_expired(cfg: Config, sample_verdict: dict[str, Any]) -> None:
+    now = datetime.now(UTC)
     _write_aged_verdict(
-        cfg, sample_verdict,
-        slug_a="freshone", slug_b="freshtwo",
+        cfg,
+        sample_verdict,
+        slug_a="freshone",
+        slug_b="freshtwo",
         generated_at=now - timedelta(days=1),
     )
     _write_aged_verdict(
-        cfg, sample_verdict,
-        slug_a="oldone", slug_b="oldtwo",
+        cfg,
+        sample_verdict,
+        slug_a="oldone",
+        slug_b="oldtwo",
         generated_at=now - timedelta(days=120),
     )
 

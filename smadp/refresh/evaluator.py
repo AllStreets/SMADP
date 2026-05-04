@@ -54,9 +54,7 @@ def _save_verdict(*, verdict: Verdict, config: Config) -> None:
     repo.save_verdict(verdict)
 
 
-def _load_verdict_for_pair(
-    *, slug_a: str, slug_b: str, config: Config
-) -> Verdict | None:
+def _load_verdict_for_pair(*, slug_a: str, slug_b: str, config: Config) -> Verdict | None:
     """Return the existing verdict for the pair, or None if not on disk."""
     repo = CatalogRepo(config=config)
     try:
@@ -97,9 +95,7 @@ def _dispatch_framework_coverage_changed(
     )
 
 
-def _reload_inputs(
-    *, slug_a: str, slug_b: str, config: Config
-) -> dict[str, Any]:
+def _reload_inputs(*, slug_a: str, slug_b: str, config: Config) -> dict[str, Any]:
     """Re-read profiles + dereference evidence used by the prior verdict.
 
     Returns a dict with keys ``profile_a``, ``profile_b``, ``evidence`` —
@@ -217,9 +213,7 @@ def drain_one(*, config: Config | None = None) -> RefreshQueueItem | None:
     )
     delta = framework_coverage_delta(old=old_cov, new=new_cov)
     if delta["added"] or delta["removed"]:
-        _dispatch_framework_coverage_changed(
-            verdict_id=item.verdict_id, delta=delta, config=cfg
-        )
+        _dispatch_framework_coverage_changed(verdict_id=item.verdict_id, delta=delta, config=cfg)
 
     now = utcnow()
     state.upsert_state(

@@ -20,9 +20,7 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     return Config()
 
 
-def test_sweep_invokes_each_watcher(
-    cfg: Config, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sweep_invokes_each_watcher(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_watcher = MagicMock()
     fake_watcher.trigger = RefreshTrigger.TTL
     fake_watcher.discover.return_value = [("a__b", {"reason": "expired"})]
@@ -36,9 +34,7 @@ def test_sweep_invokes_each_watcher(
     assert pending[0].trigger is RefreshTrigger.TTL
 
 
-def test_sweep_dedupes_same_verdict(
-    cfg: Config, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sweep_dedupes_same_verdict(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     w = MagicMock()
     w.trigger = RefreshTrigger.TTL
     w.discover.return_value = [("a__b", {})]

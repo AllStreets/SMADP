@@ -23,9 +23,7 @@ log = structlog.get_logger(__name__)
 _DEFAULT_INTERVAL_S: Final[float] = 10.0
 
 
-def _already_pending(
-    verdict_id: str, trigger: RefreshTrigger, *, config: Config
-) -> bool:
+def _already_pending(verdict_id: str, trigger: RefreshTrigger, *, config: Config) -> bool:
     for row in queue.list_pending(config=config):
         if row.verdict_id == verdict_id and row.trigger is trigger:
             return True

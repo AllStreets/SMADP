@@ -25,7 +25,8 @@ def load_frameworks_meta() -> dict[str, dict[str, Any]]:
     elif isinstance(raw, list):
         items = raw
     else:
-        return raw
+        assert isinstance(raw, dict)
+        return {str(k): dict(v) for k, v in raw.items()}
     return {fw["id"]: fw for fw in items}
 
 

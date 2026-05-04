@@ -32,7 +32,7 @@ def enqueue_manual_refresh(
     body: _ManualRefreshBody,
     workspace: Workspace = Depends(current_workspace),
     user_id: str = Depends(current_user_id),
-    _role: Workspace = Depends(require_role(Role.ADMIN)),
+    _role: None = Depends(require_role(Role.ADMIN)),
 ) -> Any:
     cfg: Config = load_config()
     detail: dict[str, Any] = {"workspace_id": workspace.id, "user_id": user_id}

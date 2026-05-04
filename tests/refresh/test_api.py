@@ -26,12 +26,8 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 @pytest.fixture
 def workspace_id(cfg: Config) -> str:
     ws = tenancy.create_workspace(name="R", plan=Plan.PUBLIC, config=cfg)
-    tenancy.add_member(
-        workspace_id=ws.id, user_id="u_ADMIN001", role=Role.ADMIN, config=cfg
-    )
-    tenancy.add_member(
-        workspace_id=ws.id, user_id="u_VIEWER01", role=Role.VIEWER, config=cfg
-    )
+    tenancy.add_member(workspace_id=ws.id, user_id="u_ADMIN001", role=Role.ADMIN, config=cfg)
+    tenancy.add_member(workspace_id=ws.id, user_id="u_VIEWER01", role=Role.VIEWER, config=cfg)
     return ws.id
 
 
@@ -43,9 +39,7 @@ def client(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def test_post_refresh_enqueues_manual(
-    client: TestClient, cfg: Config, workspace_id: str
-) -> None:
+def test_post_refresh_enqueues_manual(client: TestClient, cfg: Config, workspace_id: str) -> None:
     resp = client.post(
         "/api/refresh",
         json={"verdict_id": "agent-a__agent-b", "reason": "ops asked"},
@@ -64,9 +58,7 @@ def test_post_refresh_enqueues_manual(
     assert pending[0].trigger_detail["user_id"] == "u_ADMIN001"
 
 
-def test_post_refresh_requires_admin(
-    client: TestClient, workspace_id: str
-) -> None:
+def test_post_refresh_requires_admin(client: TestClient, workspace_id: str) -> None:
     resp = client.post(
         "/api/refresh",
         json={"verdict_id": "agent-a__agent-b"},
