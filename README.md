@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/SMADP-v0.2.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/agents-100-A78BFA?style=for-the-badge" alt="Agents"/>&nbsp;<img src="https://img.shields.io/badge/chains-6-A78BFA?style=for-the-badge" alt="Chains"/>&nbsp;<img src="https://img.shields.io/badge/License-Apache_2.0-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
+  <img src="https://img.shields.io/badge/SMADP-v0.2.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/agents-100-A78BFA?style=for-the-badge" alt="Agents"/>&nbsp;<img src="https://img.shields.io/badge/verdicts-104-A78BFA?style=for-the-badge" alt="Verdicts"/>&nbsp;<img src="https://img.shields.io/badge/chains-6-A78BFA?style=for-the-badge" alt="Chains"/>&nbsp;<img src="https://img.shields.io/badge/License-Apache_2.0-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
 </p>
 
 <p align="center">
@@ -21,7 +21,8 @@ You install Claude Code, then Cursor, then a calendar agent, then a notes agent,
 - a **safety profile** (capabilities, IO surfaces, network egress, OAuth scopes, sandboxing model)
 - a **pairwise verdict** for every two agents that share a runtime — can they run together, and if not, why not?
 - a **commonly-paired-with** list per agent, surfaced on the agent page
-- and now, **multi-agent chain analyses** — six canonical 3+-agent compositions (linear / star / loop topologies) with their own A–E sub-verdicts
+- **multi-agent chain analyses** — six canonical 3+-agent compositions (linear / star / loop topologies) with their own A–E sub-verdicts
+- and now, an in-browser **Chain Builder** at `/chains/new` that composes a draft from any subset of the 100 agents, recomputes the A–E sub-verdicts client-side as you edit, and (optionally) publishes the chain to the catalog through the `POST /api/chains` endpoint
 
 Every verdict is:
 
@@ -41,7 +42,7 @@ The product is the catalog of profiles, verdicts, and chains. The dashboard, API
 |----------|-------|----------|
 | Verified safety profiles | 30 | `catalog/profiles/*.json` |
 | Unverified seeds (auto-generated, awaiting evidence) | 70 | `catalog/profiles/_unverified/*.json` |
-| Pairwise verdicts | 25 | `catalog/verdicts/*.json` |
+| Pairwise verdicts | 104 | `catalog/verdicts/*.json` |
 | Multi-agent chain analyses | 6 | `catalog/chains/c_*.json` |
 | Evidence snippets | 79 | `catalog/_evidence/sha256-*.json` |
 
@@ -60,7 +61,7 @@ pip install -e ".[dev]"
 # Lint the catalog (works offline against the seed data — checks profile schema 1.1,
 # pairings cross-references + symmetry, chain participant/edge resolution)
 smadp lint
-# → profiles=100  verdicts=25  evidence=79   all checks passed.
+# → profiles=100  verdicts=104  evidence=79   all checks passed.
 
 # Generate a verdict for a pair
 smadp verdict claude-code cursor
@@ -75,7 +76,7 @@ smadp submit https://github.com/some-org/some-agent
 smadp serve
 ```
 
-The site (`cd site && pnpm install && pnpm dev`) renders four catalog views: **Agents** (100 profiles, filterable by category and verification status), **Chains** (the 6 compositions), **Compatibility matrix** (agent × control coverage), and **Verdicts** (pairwise judgements). Each agent page links out to *commonly paired with* siblings via the new `pairings` field on `Profile`.
+The site (`cd site && pnpm install && pnpm dev`) renders five catalog views: **Agents** (100 profiles, filterable by category and verification status), **Chains** (the 6 canonical compositions plus the in-browser Chain Builder at `/chains/new`), **Risk Atlas** (10 inline-SVG charts over all 104 verdicts — pair × risk grid, severity distribution, co-occurrence matrix, scatter, evidence-layer breakdown, vendor leaderboard, top-10 most-fraught pairs, agent risk profile, per-risk top pairs, composite histogram), **Verdicts** (pairwise judgements), and **Frameworks** (NIST AI RMF + ISO 42001 mappings). Each agent page links out to *commonly paired with* siblings via the new `pairings` field on `Profile`.
 
 ---
 
@@ -204,6 +205,17 @@ A **Chain** is a first-class artifact for compositions of 3 or more agents. Each
 
 Lint enforces that every participant slug resolves to a profile, every edge endpoint resolves to a participant, and the file's basename matches the `chain_id`. The site renders chains at `/chains` (index) and `/chains/[id]` (deep view with inline-SVG topology + sub-verdict accordion).
 
+**Chain Builder + REST API.** The `/chains/new` page is a client-side composer: pick 3–8 agents, choose a topology, draw the edges, and the same A–E heuristics that power the canonical 6 chains run live in the browser (`site/src/lib/chain-analyze.ts`). Drafts persist in `localStorage`, and `Submit to catalog` POSTs the chain through the FastAPI backend:
+
+| Endpoint | Action |
+|---|---|
+| `GET /api/chains` | List all chains in the catalog |
+| `GET /api/chains/{chain_id}` | Fetch a single chain |
+| `POST /api/chains` | Create a chain (rate-limited; emits a `chain.created` chronicle event) |
+| `DELETE /api/chains/{chain_id}` | Delete a chain (emits a `chain.deleted` chronicle event) |
+
+Submitted chains are written to `catalog/chains/c_*.json`, surfaced on `/chains` under a "Just submitted" header, and become first-class catalog artifacts on the next site rebuild.
+
 See [`docs/superpowers/specs/2026-05-02-smadp-design.md`](docs/superpowers/specs/2026-05-02-smadp-design.md) for the complete design.
 
 ---
@@ -278,11 +290,14 @@ smadp/                Python package (Profiler, Analyzer, Sandbox, CLI, API,
 catalog/              The catalog itself (profiles, verdicts, chains, evidence,
                       chronicle, frameworks)
 scripts/v2_e/         Bulk-seed tooling — ontology, profile generator,
-                      pairings table, backfill (used to land the 70 unverified
-                      profiles + symmetric pairings across all 100 agents)
+                      pairings table, backfill, generate_verdicts.py (used to
+                      land the 70 unverified profiles + symmetric pairings +
+                      the 79 docs-only verdicts that brought verdict coverage
+                      across all 100 agents)
 adapters/             MCP adapters for sandbox-runnable open-source agents
-site/                 Astro 4 + Tailwind v3 dashboard (Agents, Chains, Matrix,
-                      Verdicts, Risks, Frameworks, Workspaces, Chronicle, Submit)
+site/                 Astro 4 + Tailwind v3 dashboard (Agents, Chains, Chain
+                      Builder, Risk Atlas, Verdicts, Frameworks, Workspaces,
+                      Chronicle, Submit)
 tests/                Test suite (572 unit tests + 4 Playwright e2e smokes)
 docs/                 Methodology, threat model, evidence policy, framework
                       mappings, design specs and implementation plans under
