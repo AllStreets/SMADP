@@ -1,0 +1,357 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Panel from '../components/Panel.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Layout title="Workspace dashboard — SMADP" description="Live workspace dashboard.">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">Workspace</span>
+    <h1 class="h1 mt-3 text-white">Workspace dashboard</h1>
+    <p class="lead mt-4 max-w-3xl">
+      Pick a workspace and tell us who you are; the panels below populate live
+      from the FastAPI backend.
+    </p>
+  </section>
+
+  <!-- Picker -->
+  <section class="container-page mt-10">
+    <div class="card">
+      <h2 class="h3 text-white">Pick workspace + user</h2>
+      <form class="mt-5 grid gap-4 sm:grid-cols-3" data-ws-picker>
+        <label class="text-sm text-ink-300">
+          Workspace
+          <select
+            name="ws"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+            data-ws-select
+          >
+            <option value="">— loading —</option>
+          </select>
+        </label>
+        <label class="text-sm text-ink-300">
+          User id
+          <input
+            type="text"
+            name="user"
+            placeholder="user_alice"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
+            data-ws-user
+          />
+        </label>
+        <div class="flex items-end">
+          <button type="submit" class="btn-primary w-full">apply</button>
+        </div>
+      </form>
+      <p class="mt-3 text-xs text-ink-500" data-ws-status>not loaded yet</p>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section class="container-page mt-10 hidden space-y-4" data-ws-dashboard>
+    <Panel title="Exec summary" icon="zap" id="exec-summary">
+      <div data-panel="exec_summary">loading…</div>
+    </Panel>
+    <Panel title="Deployments" icon="layers" id="deployments">
+      <div data-panel="deployments">loading…</div>
+    </Panel>
+    <Panel title="Framework coverage" icon="shield" id="framework-coverage">
+      <div data-panel="framework_coverage">loading…</div>
+    </Panel>
+    <Panel title="Refresh freshness" icon="refresh" id="refresh-freshness">
+      <div data-panel="refresh_freshness">loading…</div>
+    </Panel>
+    <Panel title="Disputes" icon="gavel" id="disputes">
+      <div data-panel="disputes">loading…</div>
+    </Panel>
+    <Panel title="Vendor responses" icon="briefcase" id="vendor-responses" defaultOpen={false}>
+      <div data-panel="vendor_responses">loading…</div>
+    </Panel>
+  </section>
+</Layout>
+
+<script>
+  import { apiFetch, ApiError } from '../lib/api';
+  import {
+    getWorkspaceId,
+    getUserId,
+    setWorkspaceId,
+    setUserId,
+  } from '../lib/session';
+
+  type Workspace = { id: string; name: string; plan: string };
+  type Member = { workspace_id: string; user_id: string; role: string };
+
+  const fmt = (n: number, d = 2): string => n.toFixed(d);
+
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => {
+      switch (c) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        default: return '&#39;';
+      }
+    });
+  }
+
+  function setPanelHtml(key: string, html: string): void {
+    const el = document.querySelector<HTMLElement>(`[data-panel="${key}"]`);
+    if (el) el.innerHTML = html;
+  }
+
+  async function loadWorkspaces(select: HTMLSelectElement): Promise<void> {
+    try {
+      const list = await apiFetch<Workspace[]>('/workspaces');
+      const current = getWorkspaceId();
+      select.innerHTML =
+        '<option value="">— pick workspace —</option>' +
+        list
+          .map(
+            (w) =>
+              `<option value="${escapeHtml(w.id)}" ${w.id === current ? 'selected' : ''}>${escapeHtml(w.name)} — ${escapeHtml(w.id)}</option>`,
+          )
+          .join('');
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      select.innerHTML = `<option value="">load failed: ${escapeHtml(msg)}</option>`;
+    }
+  }
+
+  async function loadDeployments(): Promise<void> {
+    type Verdict = {
+      verdict_id: string;
+      pair: [string, string];
+      composite_score: number;
+      headline: string;
+      generated_at: string;
+    };
+    try {
+      const list = await apiFetch<Verdict[]>('/verdicts');
+      if (list.length === 0) {
+        setPanelHtml('deployments', '<p class="text-sm text-ink-400">No verdicts yet.</p>');
+        return;
+      }
+      setPanelHtml(
+        'deployments',
+        `
+        <table class="table-zebra w-full text-sm">
+          <thead class="text-left font-mono text-[11px] uppercase tracking-wider text-ink-400">
+            <tr><th class="px-3 py-2">Pair</th><th class="px-3 py-2">Composite</th><th class="px-3 py-2">Generated</th></tr>
+          </thead>
+          <tbody>
+            ${list
+              .slice(0, 25)
+              .map(
+                (v) => `
+              <tr class="border-t border-white/5">
+                <td class="px-3 py-2"><a class="link-quiet" href="/verdicts/${escapeHtml(v.verdict_id)}">${escapeHtml(v.pair[0])} × ${escapeHtml(v.pair[1])}</a></td>
+                <td class="px-3 py-2 font-mono">${fmt(v.composite_score)}</td>
+                <td class="px-3 py-2 font-mono text-xs text-ink-400">${escapeHtml(v.generated_at.slice(0, 10))}</td>
+              </tr>`,
+              )
+              .join('')}
+          </tbody>
+        </table>`,
+      );
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      setPanelHtml('deployments', `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`);
+    }
+  }
+
+  async function loadFrameworks(): Promise<void> {
+    type FwResp = { frameworks: Array<{ id: string; name: string; controls: Array<{ id: string; verdicts: string[] }> }> };
+    try {
+      const data = await apiFetch<FwResp>('/frameworks');
+      setPanelHtml(
+        'framework_coverage',
+        `
+        <ul class="grid gap-2 sm:grid-cols-2">
+          ${data.frameworks
+            .map((fw) => {
+              const total = fw.controls.length;
+              const touched = fw.controls.filter((c) => c.verdicts.length > 0).length;
+              return `
+                <li class="rounded-lg border border-white/5 bg-ink-950/40 p-3">
+                  <a class="font-display text-sm font-semibold text-white hover:text-brand-200" href="/frameworks/${escapeHtml(fw.id)}">${escapeHtml(fw.name)}</a>
+                  <div class="mt-1 font-mono text-xs text-ink-400">${touched}/${total} controls touched</div>
+                </li>`;
+            })
+            .join('')}
+        </ul>`,
+      );
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      setPanelHtml('framework_coverage', `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`);
+    }
+  }
+
+  async function loadRefresh(): Promise<void> {
+    type QueueItem = { id: number; verdict_id: string; trigger: string; enqueued_at: string; claimed_at: string | null };
+    try {
+      const list = await apiFetch<QueueItem[]>('/refresh/queue');
+      if (list.length === 0) {
+        setPanelHtml('refresh_freshness', '<p class="text-sm text-ink-400">Queue is idle.</p>');
+        return;
+      }
+      setPanelHtml(
+        'refresh_freshness',
+        `
+        <ul class="space-y-2">
+          ${list
+            .map(
+              (q) => `
+            <li class="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-ink-950/40 px-3 py-2">
+              <span class="font-mono text-xs text-ink-200">${escapeHtml(q.verdict_id)}</span>
+              <span class="pill">${escapeHtml(q.trigger)}</span>
+              <span class="font-mono text-[11px] text-ink-500">${q.claimed_at ? 'in flight' : 'queued'}</span>
+            </li>`,
+            )
+            .join('')}
+        </ul>`,
+      );
+    } catch (err) {
+      // /refresh/queue may not exist — render a hint linking to /refresh
+      setPanelHtml(
+        'refresh_freshness',
+        '<p class="text-sm text-ink-400">See <a class="link-quiet" href="/refresh">/refresh</a> for queue + state.</p>',
+      );
+    }
+  }
+
+  async function loadDisputes(): Promise<void> {
+    type Dispute = {
+      id: string;
+      verdict_id: string;
+      status: string;
+      filed_at: string;
+      requested_outcome: string;
+    };
+    try {
+      const list = await apiFetch<Dispute[]>('/vendor/disputes');
+      if (list.length === 0) {
+        setPanelHtml('disputes', '<p class="text-sm text-ink-400">No disputes filed.</p>');
+        return;
+      }
+      setPanelHtml(
+        'disputes',
+        `
+        <ul class="space-y-2">
+          ${list
+            .map(
+              (d) => `
+            <li class="rounded-lg border border-white/5 bg-ink-950/40 p-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class="font-mono text-xs text-ink-200">${escapeHtml(d.verdict_id)}</span>
+                <span class="pill">${escapeHtml(d.status)}</span>
+              </div>
+              <div class="mt-1 font-mono text-[11px] text-ink-500">filed ${escapeHtml(d.filed_at.slice(0, 10))} · requested ${escapeHtml(d.requested_outcome)}</div>
+            </li>`,
+            )
+            .join('')}
+        </ul>`,
+      );
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      setPanelHtml('disputes', `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`);
+    }
+  }
+
+  async function loadVendorResponses(): Promise<void> {
+    setPanelHtml(
+      'vendor_responses',
+      '<p class="text-sm text-ink-400">Vendor commentary appears on each verdict; see /verdicts.</p>',
+    );
+  }
+
+  async function loadExecSummary(): Promise<void> {
+    type Verdict = { composite_score: number; pair: [string, string] };
+    try {
+      const list = await apiFetch<Verdict[]>('/verdicts');
+      const total = list.length;
+      const high = list.filter((v) => v.composite_score >= 0.6).length;
+      const medium = list.filter((v) => v.composite_score >= 0.3 && v.composite_score < 0.6).length;
+      const low = total - high - medium;
+      setPanelHtml(
+        'exec_summary',
+        `
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Low risk</div>
+            <div class="mt-1 font-display text-3xl font-extrabold text-emerald-300">${low}</div>
+          </div>
+          <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-amber-300">Medium</div>
+            <div class="mt-1 font-display text-3xl font-extrabold text-amber-300">${medium}</div>
+          </div>
+          <div class="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-rose-300">High</div>
+            <div class="mt-1 font-display text-3xl font-extrabold text-rose-300">${high}</div>
+          </div>
+        </div>`,
+      );
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      setPanelHtml('exec_summary', `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`);
+    }
+  }
+
+  async function refreshAll(): Promise<void> {
+    await Promise.all([
+      loadExecSummary(),
+      loadDeployments(),
+      loadFrameworks(),
+      loadRefresh(),
+      loadDisputes(),
+      loadVendorResponses(),
+    ]);
+  }
+
+  function showDashboard(visible: boolean): void {
+    const dash = document.querySelector<HTMLElement>('[data-ws-dashboard]');
+    if (dash) dash.classList.toggle('hidden', !visible);
+  }
+
+  async function init(): Promise<void> {
+    const form = document.querySelector<HTMLFormElement>('[data-ws-picker]');
+    const select = document.querySelector<HTMLSelectElement>('[data-ws-select]');
+    const userInput = document.querySelector<HTMLInputElement>('[data-ws-user]');
+    const status = document.querySelector<HTMLElement>('[data-ws-status]');
+    if (!form || !select || !userInput || !status) return;
+
+    await loadWorkspaces(select);
+    const ws = getWorkspaceId();
+    const user = getUserId();
+    if (ws) select.value = ws;
+    if (user) userInput.value = user;
+    if (ws && user) {
+      status.textContent = `applied: workspace=${ws}, user=${user}`;
+      showDashboard(true);
+      void refreshAll();
+    }
+
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const wsVal = select.value.trim();
+      const userVal = userInput.value.trim();
+      if (!wsVal || !userVal) {
+        status.textContent = 'pick a workspace and enter a user id';
+        return;
+      }
+      setWorkspaceId(wsVal);
+      setUserId(userVal);
+      status.textContent = `applied: workspace=${wsVal}, user=${userVal}`;
+      document.dispatchEvent(new Event('smadp:session-changed'));
+      showDashboard(true);
+      void refreshAll();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    void init();
+  }
+</script>
