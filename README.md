@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/SMADP-v0.1.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/License-Apache_2.0-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
+  <img src="https://img.shields.io/badge/SMADP-v0.2.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/agents-100-A78BFA?style=for-the-badge" alt="Agents"/>&nbsp;<img src="https://img.shields.io/badge/chains-6-A78BFA?style=for-the-badge" alt="Chains"/>&nbsp;<img src="https://img.shields.io/badge/License-Apache_2.0-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
 </p>
 
 <p align="center">
@@ -16,7 +16,12 @@
 
 You install Claude Code, then Cursor, then a calendar agent, then a notes agent, then an email-drafter. They share your filesystem, your clipboard, your OAuth scopes, your MCP servers. Nobody has systematically studied what happens when they interact — and the casual composition is becoming dangerous.
 
-**SMADP publishes the matrix.** For every pair of popular agents (open-source from the [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents) catalog plus the major closed-source ones — Claude Code, Cursor, ChatGPT Desktop, Perplexity, Windsurf, Devin, Replit Agent, Copilot, Gemini CLI, Notion AI), we publish a verdict: can these two run in the same environment, and if not, why not?
+**SMADP publishes the matrix.** For every popular agent (the 30-strong verified seed catalog plus 70 unverified seeds across coding, search/RAG, browser automation, devops, orchestration, image/video/audio generation, productivity SaaS, OS-level assistants, and more — see [`catalog/profiles/`](catalog/profiles/)), we publish:
+
+- a **safety profile** (capabilities, IO surfaces, network egress, OAuth scopes, sandboxing model)
+- a **pairwise verdict** for every two agents that share a runtime — can they run together, and if not, why not?
+- a **commonly-paired-with** list per agent, surfaced on the agent page
+- and now, **multi-agent chain analyses** — six canonical 3+-agent compositions (linear / star / loop topologies) with their own A–E sub-verdicts
 
 Every verdict is:
 
@@ -28,7 +33,17 @@ Every verdict is:
 - **reproducible** — verdict carries the model version, rubric version, and content hashes
 - **layered** — `evidence_level` field tells you whether this is `docs-only`, `profile-verified`, or `sandbox-validated`
 
-The product is the catalog of verdicts. The dashboard, API, and CLI are surfaces on top of it.
+The product is the catalog of profiles, verdicts, and chains. The dashboard, API, and CLI are surfaces on top of it.
+
+### Catalog at a glance
+
+| Artifact | Count | Location |
+|----------|-------|----------|
+| Verified safety profiles | 30 | `catalog/profiles/*.json` |
+| Unverified seeds (auto-generated, awaiting evidence) | 70 | `catalog/profiles/_unverified/*.json` |
+| Pairwise verdicts | 25 | `catalog/verdicts/*.json` |
+| Multi-agent chain analyses | 6 | `catalog/chains/c_*.json` |
+| Evidence snippets | 79 | `catalog/_evidence/sha256-*.json` |
 
 ---
 
@@ -42,11 +57,16 @@ cd SMADP
 # Install
 pip install -e ".[dev]"
 
-# Lint the catalog (works offline against the seed data)
+# Lint the catalog (works offline against the seed data — checks profile schema 1.1,
+# pairings cross-references + symmetry, chain participant/edge resolution)
 smadp lint
+# → profiles=100  verdicts=25  evidence=79   all checks passed.
 
 # Generate a verdict for a pair
 smadp verdict claude-code cursor
+
+# Validate every chain analysis
+smadp validate
 
 # Submit a new agent for unverified profiling
 smadp submit https://github.com/some-org/some-agent
@@ -54,6 +74,8 @@ smadp submit https://github.com/some-org/some-agent
 # Start the local dashboard + API
 smadp serve
 ```
+
+The site (`cd site && pnpm install && pnpm dev`) renders four catalog views: **Agents** (100 profiles, filterable by category and verification status), **Chains** (the 6 compositions), **Compatibility matrix** (agent × control coverage), and **Verdicts** (pairwise judgements). Each agent page links out to *commonly paired with* siblings via the new `pairings` field on `Profile`.
 
 ---
 
@@ -137,16 +159,23 @@ The catalog is a git repository. The git history *is* the audit log.
 
 ```
 catalog/
-├── profiles/                    # one JSON per agent
-│   ├── claude-code.json
+├── profiles/                    # one JSON per agent (schema 1.0 or 1.1)
+│   ├── claude-code.json         # 30 verified profiles at top level
 │   ├── cursor.json
 │   ├── chatgpt-desktop.json
 │   ├── perplexity.json
 │   ├── ...
-│   └── _unverified/             # user-submitted, not yet promoted
+│   └── _unverified/             # 70 auto-generated seeds, awaiting evidence
 ├── verdicts/                    # one JSON per alphabetized pair
 │   ├── claude-code__cursor.json
 │   └── ...
+├── chains/                      # 3+-agent compositions (NEW in v0.2)
+│   ├── c_research-write-cite.json
+│   ├── c_planner-executor-critic.json
+│   ├── c_rag-reason-tool.json
+│   ├── c_browser-extractor-summarizer.json
+│   ├── c_orchestrator-fanout-merge.json
+│   └── c_loop-debug-fix-test.json
 ├── _evidence/                   # content-addressed source snippets
 │   └── sha256-<hash>.json
 ├── _meta/
@@ -154,9 +183,26 @@ catalog/
 │   ├── risk-taxonomy.json
 │   ├── frameworks.json          # NIST AI RMF + ISO 42001 mappings
 │   ├── rubric/1.0.json          # LLM-judge rubric
-│   └── schema/1.0/              # JSON Schemas
+│   └── schema/1.0/              # JSON Schemas — profile.schema.json (1.0/1.1),
+│                                #               verdict.schema.json,
+│                                #               chain.schema.json (NEW)
 └── _chronicle/                  # YYYY-MM-DD.jsonl audit log
 ```
+
+### Profile schema 1.1 — pairings field
+
+Profile schema **1.1** is a backwards-compatible bump of 1.0 that adds an optional `pairings: string[]` field listing slugs an agent is commonly composed with. Existing 1.0 files continue to load. New writes pin `schema_version: "1.1"`. Lint enforces:
+
+- every `pairings` slug must resolve to a profile (`profile.pairings-xref`)
+- if `A.pairings` includes `B`, then `B.pairings` must include `A` (`profile.pairings-symmetric`)
+- a profile may not list its own slug (`profile.pairings-self`)
+- max 20 entries per profile
+
+### Multi-agent chains (NEW)
+
+A **Chain** is a first-class artifact for compositions of 3 or more agents. Each chain JSON declares its `topology` (`linear` / `star` / `loop` / `tree` / `dag`), 3–8 `participants` (with roles drawn from `planner` / `executor` / `critic` / `retriever` / `reasoner` / `writer` / `router` / `tool` / `judge` / `memory`), the `edges` between them (with `channel`: `prompt` / `tool-call` / `shared-memory` / `filesystem` / `message-bus`), and a full A–E sub-verdict block — same shape as pairwise verdicts but evaluating composition-specific risks (cascading injection, distributed data leakage, role-conflict, error amplification across hops, layered compliance).
+
+Lint enforces that every participant slug resolves to a profile, every edge endpoint resolves to a participant, and the file's basename matches the `chain_id`. The site renders chains at `/chains` (index) and `/chains/[id]` (deep view with inline-SVG topology + sub-verdict accordion).
 
 See [`docs/superpowers/specs/2026-05-02-smadp-design.md`](docs/superpowers/specs/2026-05-02-smadp-design.md) for the complete design.
 
@@ -227,13 +273,31 @@ CI runs `smadp lint` against your file. If schema and citation validation pass, 
 ## Project layout
 
 ```
-smadp/                Python package (Profiler, Analyzer, Sandbox, CLI, API)
-catalog/              The catalog itself (profiles, verdicts, evidence, chronicle)
+smadp/                Python package (Profiler, Analyzer, Sandbox, CLI, API,
+                      schemas/profile, schemas/chain, catalog/repo, catalog/lint)
+catalog/              The catalog itself (profiles, verdicts, chains, evidence,
+                      chronicle, frameworks)
+scripts/v2_e/         Bulk-seed tooling — ontology, profile generator,
+                      pairings table, backfill (used to land the 70 unverified
+                      profiles + symmetric pairings across all 100 agents)
 adapters/             MCP adapters for sandbox-runnable open-source agents
-site/                 Astro 4 + Tailwind v4 dashboard
-tests/                Test suite
-docs/                 Methodology, threat model, evidence policy, framework mappings
+site/                 Astro 4 + Tailwind v3 dashboard (Agents, Chains, Matrix,
+                      Verdicts, Risks, Frameworks, Workspaces, Chronicle, Submit)
+tests/                Test suite (572 unit tests + 4 Playwright e2e smokes)
+docs/                 Methodology, threat model, evidence policy, framework
+                      mappings, design specs and implementation plans under
+                      docs/superpowers/{specs,plans}
 ```
+
+### Verification roadmap
+
+The 70 unverified seeds graduate to `verified` in three batches, each its own plan cycle:
+
+- **Batch V1** (~20) — most-used categories: coding, search/RAG, browser-automation, devops/SRE
+- **Batch V2** (~25) — orchestration frameworks, image/video/audio generation, productivity SaaS
+- **Batch V3** (~25) — long-tail categories + retrofitting `evidence_refs` on chains
+
+Each batch authors evidence files, flips `verification.status` to `verified`, and bumps the `verified_by`/`last_refreshed_at` fields. The schema, lint, and site already accept verified-or-unverified profiles, so graduation is a metadata-only operation.
 
 ---
 
