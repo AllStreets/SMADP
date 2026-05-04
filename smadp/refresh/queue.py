@@ -109,7 +109,8 @@ def enqueue(
                 (verdict_id, trigger.value, detail_json, enq),
             )
             row = cur.fetchone()
-            assert row is not None
+            if row is None:
+                raise RuntimeError("INSERT...RETURNING produced no row")
             new_id = int(row[0])
         log.info(
             "refresh.queue.enqueued",
