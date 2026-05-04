@@ -1,5 +1,6 @@
 """Pydantic + JSON Schema models for the SMADP catalog."""
 
+from smadp.schemas.chain import Chain
 from smadp.schemas.chronicle import ChronicleEvent
 from smadp.schemas.dispute import (
     Dispute,
@@ -40,6 +41,7 @@ from smadp.schemas.verdict import (
 
 __all__ = [
     "Capabilities",
+    "Chain",
     "ChronicleEvent",
     "Citation",
     "ClaimMethod",
