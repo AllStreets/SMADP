@@ -83,6 +83,7 @@ def lint_catalog(config: Config | None = None) -> LintReport:
     # ----------------------------------------------------------- profiles
     profile_slugs: set[str] = set()
     profile_evidence_refs: set[str] = set()
+    profile_pairings: dict[str, list[str]] = {}
     profile_dirs = [cfg.profiles_dir, cfg.unverified_profiles_dir]
     for profile_dir in profile_dirs:
         if not profile_dir.exists():
@@ -123,8 +124,37 @@ def lint_catalog(config: Config | None = None) -> LintReport:
                     f"slug {profile.slug!r} appears in multiple files",
                 )
             profile_slugs.add(profile.slug)
+            profile_pairings[profile.slug] = profile.pairings
             for ref in profile.evidence_refs:
                 profile_evidence_refs.add(ref)
+
+    # ----------------------------------------------------- pairings xref
+    for slug, pairings in profile_pairings.items():
+        for partner in pairings:
+            if partner == slug:
+                report.add(
+                    "error",
+                    "profile.pairings-self",
+                    slug,
+                    f"profile {slug!r} pairs with itself",
+                )
+                continue
+            if partner not in profile_slugs:
+                report.add(
+                    "error",
+                    "profile.pairings-xref",
+                    slug,
+                    f"pairings references unknown slug {partner!r}",
+                )
+                continue
+            partner_pairings = profile_pairings.get(partner, [])
+            if slug not in partner_pairings:
+                report.add(
+                    "error",
+                    "profile.pairings-symmetric",
+                    slug,
+                    f"pairings with {partner!r} is not reciprocated",
+                )
 
     # ---------------------------------------------------------- evidence
     on_disk_evidence: set[str] = set()
