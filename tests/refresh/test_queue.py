@@ -76,3 +76,35 @@ def test_finalize_marks_done(cfg: Config) -> None:
 def test_finalize_unknown_id_raises(cfg: Config) -> None:
     with pytest.raises(KeyError):
         queue.finalize(item_id=999, config=cfg)
+
+
+from datetime import datetime, timedelta, timezone
+
+
+def test_reap_stale_unclaims_old_leases(
+    cfg: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = queue.enqueue(verdict_id="a__b", trigger=RefreshTrigger.TTL, config=cfg)
+    queue.claim(config=cfg)
+    # Forge a stale claim by direct UPDATE
+    import sqlite3
+    conn = sqlite3.connect(cfg.cache_dir / "refresh.db")
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=600))
+    conn.execute(
+        "UPDATE refresh_queue SET claimed_at = ? WHERE id = ?",
+        (stale.isoformat(timespec="seconds").replace("+00:00", "Z"), item.id),
+    )
+    conn.commit()
+    conn.close()
+
+    reaped = queue.reap_stale(config=cfg)
+    assert reaped == 1
+    pending = queue.list_pending(config=cfg)
+    assert pending and pending[0].id == item.id and pending[0].claimed_at is None
+
+
+def test_reap_stale_leaves_fresh_claims(cfg: Config) -> None:
+    queue.enqueue(verdict_id="a__b", trigger=RefreshTrigger.TTL, config=cfg)
+    queue.claim(config=cfg)
+    reaped = queue.reap_stale(config=cfg)
+    assert reaped == 0

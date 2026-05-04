@@ -190,4 +190,27 @@ def finalize(*, item_id: int, config: Config | None = None) -> None:
         conn.close()
 
 
-__all__ = ["claim", "enqueue", "finalize", "list_pending"]
+def reap_stale(*, config: Config | None = None) -> int:
+    """Reset claimed_at to NULL for rows whose lease is older than 5 minutes."""
+    cfg = config or load_config()
+    cutoff = _iso(utcnow() - timedelta(seconds=_CLAIM_LEASE_SECONDS))
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE refresh_queue SET claimed_at = NULL"
+                " WHERE done_at IS NULL"
+                "   AND claimed_at IS NOT NULL"
+                "   AND claimed_at < ?",
+                (cutoff,),
+            )
+            n = cur.rowcount
+        if n:
+            log.info("refresh.queue.reaped", count=n)
+        return n
+    finally:
+        conn.close()
+
+
+__all__ = ["claim", "enqueue", "finalize", "list_pending", "reap_stale"]
