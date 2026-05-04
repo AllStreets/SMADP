@@ -13,23 +13,26 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import structlog
 
 from smadp.config import Config, load_config
+from smadp.refresh import queue as refresh_queue
 from smadp.schemas.dispute import (
     Dispute,
     DisputeDecision,
     DisputeStatus,
     RequestedOutcome,
 )
+from smadp.schemas.refresh import RefreshTrigger
 from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimStatus,
     VendorClaim,
     VendorResponse,
 )
+from smadp.transparency.journal import append_event
 from smadp.utils.time import utcnow
 
 log = structlog.get_logger(__name__)
@@ -505,6 +508,26 @@ def list_disputes(
         conn.close()
 
 
+def _signing_key(config: Config) -> Any:
+    """Obtain a transparency signing key.
+
+    Prefers ``smadp.transparency.keys.load_or_create_signing_key`` when
+    available; otherwise falls back to an ephemeral Ed25519 key. The
+    transparency journal verifies signatures by chain content, so the
+    ephemeral fallback remains locally verifiable for the run's lifetime.
+    """
+    try:
+        from smadp.transparency.keys import load_or_create_signing_key
+
+        return load_or_create_signing_key(config=config)
+    except (ImportError, AttributeError):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey,
+        )
+
+        return Ed25519PrivateKey.generate()
+
+
 def update_dispute_status(
     *,
     dispute_id: str,
@@ -565,9 +588,30 @@ def update_dispute_status(
             to_status=target.value,
             decision=decision.value,
         )
-        return get_dispute(dispute_id=dispute_id, config=cfg)
     finally:
         conn.close()
+
+    if target in {DisputeStatus.RESOLVED_REEVAL, DisputeStatus.RESOLVED_STANDS}:
+        append_event(
+            event_type="dispute.resolved",
+            payload={
+                "dispute_id": dispute_id,
+                "verdict_id": current.verdict_id,
+                "decision": decision.value,
+                "workspace_id": current.workspace_id,
+            },
+            signing_key=_signing_key(cfg),
+            config=cfg,
+        )
+        if target == DisputeStatus.RESOLVED_REEVAL:
+            refresh_queue.enqueue(
+                verdict_id=current.verdict_id,
+                trigger=RefreshTrigger.DISPUTE,
+                trigger_detail={"dispute_id": dispute_id},
+                config=cfg,
+            )
+
+    return get_dispute(dispute_id=dispute_id, config=cfg)
 
 
 __all__ = [
