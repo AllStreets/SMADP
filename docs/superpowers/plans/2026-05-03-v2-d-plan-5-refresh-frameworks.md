@@ -3524,3 +3524,19 @@ After Task 25 commits:
 - [ ] CI shows green on the latest commit.
 - [ ] User memory is up to date: nothing new to save unless a surprising decision came up during execution (e.g., a watcher integration choice that future-Plan-6 needs to know about).
 - [ ] Offer the user the next v2-D step: "Plan 5 complete and pushed. Plan 6 (Frontend) is the last v2-D sub-plan — start spec-and-plan for Plan 6, or pause here?"
+
+---
+
+## Status: Complete
+
+- All 25 tasks merged to `main` (Tasks 1-23 implementation + lint sweep, Task 24 push, Task 25 handoff).
+- CI green on commit `a554660` — run id 25301308742, all jobs passing (Python 3.11, Python 3.12, Dashboard build).
+- Plan 6 (Frontend) is the next v2-D sub-plan; per memory ordering, the v2-D backlog after that returns to v2-B.
+
+### Notable execution decisions worth remembering
+
+- The plan's `Config(cache_dir=..., catalog_dir=...)` kwargs are not real — `Config` is env-driven. Every test fixture in this plan was rewritten to use `monkeypatch.setenv("SMADP_CACHE_DIR", ...)` + `setenv("SMADP_CATALOG", ...)` before constructing `Config()`.
+- The plan's expected verdict shape (`agent_a_slug`, `summary`, `risks`, `evaluated_at`) does not match the real `Verdict` schema (`pair`, `headline`, `sub_verdicts`, `generated_at`). Tests use the seed `sample_verdict` conftest fixture instead.
+- TTL watcher reads `verdict.generated_at`, not the non-existent `evaluated_at` field.
+- Workspace IDs must match `^ws_[A-Z0-9]{8,}$` — used `ws_TESTWS01` in tests where a literal was needed; otherwise minted via `tenancy.create_workspace`.
+- `_role` dependency in FastAPI routers is annotated `None` (not `Workspace`) to satisfy ruff B008 — matches the vendor router pattern.
