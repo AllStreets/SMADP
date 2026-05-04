@@ -17,7 +17,16 @@ import Icon from '../components/Icon.astro';
   <!-- Picker -->
   <section class="container-page mt-10">
     <div class="card">
-      <h2 class="h3 text-white">Pick workspace + user</h2>
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="h3 text-white">Pick workspace + user</h2>
+        <button
+          type="button"
+          class="btn-ghost px-3 py-1.5 text-xs"
+          data-ws-toggle-create
+        >
+          + New workspace
+        </button>
+      </div>
       <form class="mt-5 grid gap-4 sm:grid-cols-3" data-ws-picker>
         <label class="text-sm text-ink-300">
           Workspace
@@ -34,15 +43,50 @@ import Icon from '../components/Icon.astro';
           <input
             type="text"
             name="user"
-            placeholder="user_alice"
+            placeholder="CONNOR01"
             class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
             data-ws-user
           />
+          <span class="mt-1 block font-mono text-[11px] text-ink-500" data-ws-user-hint>
+            stored as u_… (8+ uppercase letters or digits)
+          </span>
         </label>
         <div class="flex items-end">
           <button type="submit" class="btn-primary w-full">apply</button>
         </div>
       </form>
+
+      <form
+        class="mt-5 hidden grid gap-4 sm:grid-cols-3 rounded-lg border border-white/10 bg-ink-950/40 p-4"
+        data-ws-create
+      >
+        <label class="text-sm text-ink-300 sm:col-span-1">
+          Workspace name
+          <input
+            type="text"
+            name="ws-name"
+            placeholder="Acme Corp"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+            data-ws-create-name
+            required
+          />
+        </label>
+        <label class="text-sm text-ink-300 sm:col-span-1">
+          Plan
+          <select
+            name="ws-plan"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+            data-ws-create-plan
+          >
+            <option value="public">public</option>
+            <option value="private" selected>private</option>
+          </select>
+        </label>
+        <div class="flex items-end">
+          <button type="submit" class="btn-primary w-full">create</button>
+        </div>
+      </form>
+
       <p class="mt-3 text-xs text-ink-500" data-ws-status>not loaded yet</p>
     </div>
   </section>
@@ -83,6 +127,14 @@ import Icon from '../components/Icon.astro';
   type Member = { workspace_id: string; user_id: string; role: string };
 
   const fmt = (n: number, d = 2): string => n.toFixed(d);
+
+  /** Normalize a typed user id: strip an optional `u_` prefix, force uppercase,
+   *  drop disallowed chars, then re-prefix `u_`. Empty input → empty output. */
+  function normalizeUserId(raw: string): string {
+    const stripped = raw.trim().replace(/^u_/i, '');
+    const cleaned = stripped.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return cleaned ? `u_${cleaned}` : '';
+  }
 
   function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) => {
@@ -318,34 +370,88 @@ import Icon from '../components/Icon.astro';
     const form = document.querySelector<HTMLFormElement>('[data-ws-picker]');
     const select = document.querySelector<HTMLSelectElement>('[data-ws-select]');
     const userInput = document.querySelector<HTMLInputElement>('[data-ws-user]');
+    const userHint = document.querySelector<HTMLElement>('[data-ws-user-hint]');
     const status = document.querySelector<HTMLElement>('[data-ws-status]');
-    if (!form || !select || !userInput || !status) return;
+    const createToggle = document.querySelector<HTMLButtonElement>(
+      '[data-ws-toggle-create]',
+    );
+    const createForm = document.querySelector<HTMLFormElement>('[data-ws-create]');
+    const createName = document.querySelector<HTMLInputElement>('[data-ws-create-name]');
+    const createPlan = document.querySelector<HTMLSelectElement>('[data-ws-create-plan]');
+    if (!form || !select || !userInput || !userHint || !status) return;
+    if (!createToggle || !createForm || !createName || !createPlan) return;
 
     await loadWorkspaces(select);
     const ws = getWorkspaceId();
     const user = getUserId();
     if (ws) select.value = ws;
-    if (user) userInput.value = user;
+    if (user) userInput.value = user.replace(/^u_/, '');
+    userHint.textContent = user
+      ? `stored as ${user}`
+      : 'stored as u_… (8+ uppercase letters or digits)';
     if (ws && user) {
       status.textContent = `applied: workspace=${ws}, user=${user}`;
       showDashboard(true);
       void refreshAll();
     }
 
+    userInput.addEventListener('input', () => {
+      const preview = normalizeUserId(userInput.value);
+      userHint.textContent = preview
+        ? `stored as ${preview}`
+        : 'stored as u_… (8+ uppercase letters or digits)';
+    });
+
     form.addEventListener('submit', (ev) => {
       ev.preventDefault();
       const wsVal = select.value.trim();
-      const userVal = userInput.value.trim();
+      const userVal = normalizeUserId(userInput.value);
       if (!wsVal || !userVal) {
         status.textContent = 'pick a workspace and enter a user id';
         return;
       }
+      if (userVal.length < 10) {
+        // u_ + 8 chars minimum
+        status.textContent = `user id too short: ${userVal} needs 8+ letters or digits after u_`;
+        return;
+      }
+      userInput.value = userVal.replace(/^u_/, '');
+      userHint.textContent = `stored as ${userVal}`;
       setWorkspaceId(wsVal);
       setUserId(userVal);
       status.textContent = `applied: workspace=${wsVal}, user=${userVal}`;
       document.dispatchEvent(new Event('smadp:session-changed'));
       showDashboard(true);
       void refreshAll();
+    });
+
+    createToggle.addEventListener('click', () => {
+      createForm.classList.toggle('hidden');
+      if (!createForm.classList.contains('hidden')) createName.focus();
+    });
+
+    createForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const name = createName.value.trim();
+      const plan = createPlan.value;
+      if (!name) {
+        status.textContent = 'workspace name is required';
+        return;
+      }
+      try {
+        const created = await apiFetch<Workspace>('/workspaces', {
+          method: 'POST',
+          json: { name, plan },
+        });
+        await loadWorkspaces(select);
+        select.value = created.id;
+        status.textContent = `created workspace ${created.name} (${created.id}) — selected`;
+        createName.value = '';
+        createForm.classList.add('hidden');
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : String(err);
+        status.textContent = `create failed: ${msg}`;
+      }
     });
   }
 
