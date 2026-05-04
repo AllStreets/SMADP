@@ -1,0 +1,183 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Panel from '../components/Panel.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Layout title="Webhooks — SMADP" description="Manage webhook subscriptions.">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">Webhooks</span>
+    <h1 class="h1 mt-3 text-white">Webhook subscriptions</h1>
+    <p class="lead mt-4 max-w-3xl">
+      Workspace-scoped subscriptions. Secrets are shown once on creation —
+      capture them now.
+    </p>
+  </section>
+
+  <section class="container-page mt-10 space-y-4">
+    <Panel title="Create subscription" icon="webhook" defaultOpen={true}>
+      <form class="grid gap-3" data-sub-form>
+        <label class="text-sm text-ink-300">
+          URL (https only; http://localhost ok in dev)
+          <input
+            type="url"
+            name="url"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
+            placeholder="https://hooks.example.test/smadp"
+            required
+          />
+        </label>
+        <fieldset class="text-sm text-ink-300">
+          <legend>Events</legend>
+          <div class="mt-1 flex flex-wrap gap-2">
+            {[
+              'verdict.created',
+              'verdict.updated',
+              'verdict.expired',
+              'framework_coverage.changed',
+              'passport.generated',
+              'passport.revoked',
+            ].map((ev) => (
+              <label class="pill cursor-pointer">
+                <input type="checkbox" name="event_types" value={ev} class="mr-1.5" />
+                {ev}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label class="text-sm text-ink-300">
+          Integration kind
+          <select
+            name="integration_kind"
+            class="mt-1 w-full rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+          >
+            <option value="generic">generic</option>
+            <option value="vanta">Vanta</option>
+            <option value="drata">Drata</option>
+            <option value="slack">Slack</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary">create</button>
+      </form>
+      <pre class="mt-3 hidden whitespace-pre-wrap rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 font-mono text-[11px] text-amber-200" data-sub-secret></pre>
+    </Panel>
+
+    <Panel title="Subscriptions" icon="link" defaultOpen={true}>
+      <div data-panel="subs">loading…</div>
+    </Panel>
+  </section>
+</Layout>
+
+<script>
+  import { apiFetch, ApiError } from '../lib/api';
+
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => {
+      switch (c) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        default: return '&#39;';
+      }
+    });
+  }
+
+  async function loadSubs(): Promise<void> {
+    const target = document.querySelector<HTMLElement>('[data-panel="subs"]');
+    if (!target) return;
+    try {
+      const list = await apiFetch<
+        Array<{
+          id: string;
+          url: string;
+          event_types: string[];
+          active: boolean;
+          integration_kind: string;
+        }>
+      >('/webhooks/subscriptions');
+      target.innerHTML = list.length === 0
+        ? '<p class="text-sm text-ink-400">No subscriptions.</p>'
+        : list
+            .map(
+              (s) => `
+            <article class="rounded-lg border border-white/5 bg-ink-950/40 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-mono text-xs text-ink-200">${escapeHtml(s.url)}</span>
+                <span class="pill">${escapeHtml(s.integration_kind)}</span>
+                <span class="pill">${s.active ? 'active' : 'inactive'}</span>
+              </div>
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                ${s.event_types.map((e) => `<span class="pill">${escapeHtml(e)}</span>`).join('')}
+              </div>
+              <div class="mt-2 flex items-center justify-between gap-2">
+                <span class="font-mono text-[11px] text-ink-500">${escapeHtml(s.id)}</span>
+                <button type="button" class="btn-ghost text-xs" data-sub-delete="${escapeHtml(s.id)}">delete</button>
+              </div>
+            </article>`,
+            )
+            .join('');
+      for (const btn of target.querySelectorAll<HTMLButtonElement>('[data-sub-delete]')) {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.subDelete;
+          if (!id) return;
+          if (!confirm(`delete subscription ${id}?`)) return;
+          try {
+            await apiFetch(`/webhooks/subscriptions/${id}`, { method: 'DELETE' });
+            await loadSubs();
+          } catch (err) {
+            alert(err instanceof ApiError ? err.message : String(err));
+          }
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      target.innerHTML = `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`;
+    }
+  }
+
+  function bindCreate(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-sub-form]');
+    const secretBox = document.querySelector<HTMLElement>('[data-sub-secret]');
+    if (!form || !secretBox) return;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      const events = fd.getAll('event_types').map(String);
+      const url = String(fd.get('url') ?? '').trim();
+      const integrationKind = String(fd.get('integration_kind') ?? 'generic');
+      if (!url || events.length === 0) {
+        secretBox.classList.remove('hidden');
+        secretBox.textContent = 'pick at least one event and provide a URL';
+        return;
+      }
+      try {
+        const res = await apiFetch<{
+          subscription: { id: string };
+          secret: string;
+        }>('/webhooks/subscriptions', {
+          method: 'POST',
+          json: { url, event_types: events, integration_kind: integrationKind },
+        });
+        secretBox.classList.remove('hidden');
+        secretBox.textContent =
+          `subscription ${res.subscription.id} created.\n\nSECRET (copy now — shown once):\n${res.secret}`;
+        form.reset();
+        await loadSubs();
+      } catch (err) {
+        secretBox.classList.remove('hidden');
+        secretBox.textContent = err instanceof ApiError ? err.message : String(err);
+      }
+    });
+  }
+
+  function init(): void {
+    bindCreate();
+    void loadSubs();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+</script>

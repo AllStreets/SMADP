@@ -1,0 +1,120 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Panel from '../components/Panel.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Layout title="Refresh — SMADP" description="Refresh queue and freshness state.">
+  <section class="container-page mt-10">
+    <span class="heading-eyebrow">Refresh</span>
+    <h1 class="h1 mt-3 text-white">Refresh queue + freshness</h1>
+    <p class="lead mt-4 max-w-3xl">
+      Manual enqueue (admin role) and live queue snapshot. The evaluator drains
+      the queue, updates verdicts, and writes transparency events.
+    </p>
+  </section>
+
+  <section class="container-page mt-10 space-y-4">
+    <Panel title="Manual enqueue" icon="zap" defaultOpen={true}>
+      <form class="grid gap-3 sm:grid-cols-[1fr_2fr_auto]" data-enqueue-form>
+        <input
+          type="text"
+          name="verdict_id"
+          placeholder="vdt_…"
+          class="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 font-mono text-sm text-white"
+          required
+        />
+        <input
+          type="text"
+          name="reason"
+          placeholder="reason (optional)"
+          class="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-sm text-white"
+        />
+        <button type="submit" class="btn-primary">enqueue</button>
+      </form>
+      <p class="mt-2 text-xs text-ink-500" data-enqueue-status></p>
+    </Panel>
+
+    <Panel title="Pending queue" icon="clock" defaultOpen={true}>
+      <div data-panel="queue">loading…</div>
+    </Panel>
+  </section>
+</Layout>
+
+<script>
+  import { apiFetch, ApiError } from '../lib/api';
+
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => {
+      switch (c) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        default: return '&#39;';
+      }
+    });
+  }
+
+  async function refreshQueue(): Promise<void> {
+    const target = document.querySelector<HTMLElement>('[data-panel="queue"]');
+    if (!target) return;
+    try {
+      const list = await apiFetch<
+        Array<{
+          id: number;
+          verdict_id: string;
+          trigger: string;
+          enqueued_at: string;
+          claimed_at: string | null;
+          done_at: string | null;
+        }>
+      >('/refresh/queue');
+      target.innerHTML = list.length === 0
+        ? '<p class="text-sm text-ink-400">Queue is empty.</p>'
+        : `<table class="table-zebra w-full text-sm"><thead class="text-left font-mono text-[11px] uppercase tracking-wider text-ink-400"><tr><th class="px-3 py-2">id</th><th class="px-3 py-2">verdict</th><th class="px-3 py-2">trigger</th><th class="px-3 py-2">state</th></tr></thead><tbody>${list
+            .map(
+              (q) => `<tr class="border-t border-white/5"><td class="px-3 py-2 font-mono text-xs">${q.id}</td><td class="px-3 py-2 font-mono text-xs">${escapeHtml(q.verdict_id)}</td><td class="px-3 py-2"><span class="pill">${escapeHtml(q.trigger)}</span></td><td class="px-3 py-2 font-mono text-[11px] text-ink-400">${q.done_at ? 'done' : q.claimed_at ? 'in flight' : 'pending'}</td></tr>`,
+            )
+            .join('')}</tbody></table>`;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : String(err);
+      target.innerHTML = `<p class="text-sm text-amber-300">${escapeHtml(msg)}</p>`;
+    }
+  }
+
+  function bindEnqueue(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-enqueue-form]');
+    const status = document.querySelector<HTMLElement>('[data-enqueue-status]');
+    if (!form || !status) return;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      const verdictId = String(fd.get('verdict_id') ?? '').trim();
+      const reason = String(fd.get('reason') ?? '').trim();
+      if (!verdictId) return;
+      try {
+        const res = await apiFetch<{ id: number }>('/refresh', {
+          method: 'POST',
+          json: reason ? { verdict_id: verdictId, reason } : { verdict_id: verdictId },
+        });
+        status.textContent = `enqueued: id=${res.id}`;
+        form.reset();
+        await refreshQueue();
+      } catch (err) {
+        status.textContent = err instanceof ApiError ? err.message : String(err);
+      }
+    });
+  }
+
+  function init(): void {
+    bindEnqueue();
+    void refreshQueue();
+    setInterval(refreshQueue, 5_000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+</script>
