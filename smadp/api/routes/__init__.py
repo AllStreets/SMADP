@@ -2,6 +2,7 @@
 
 from smadp.api.routes import (
     agents,
+    chains,
     chronicle,
     evaluate,
     frameworks,
@@ -23,6 +24,7 @@ ROUTERS = [
     health.router,
     meta.router,
     agents.router,
+    chains.router,
     verdicts.router,
     submit.router,
     evaluate.router,

@@ -20,6 +20,8 @@ ChronicleEventType = Literal[
     "sandbox.run.completed",
     "schema.migrated",
     "framework.added",
+    "chain.created",
+    "chain.deleted",
 ]
 
 

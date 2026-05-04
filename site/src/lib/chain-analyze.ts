@@ -50,11 +50,23 @@ export interface DraftChain {
   edges: DraftEdge[];
 }
 
+export interface Citation {
+  profile_field?: string;
+  evidence_ref?: string;
+  quote?: string;
+}
 export interface SubVerdict {
   severity: Severity;
   rationale: string;
+  citations: Citation[];
+  conditions: string[];
+  mitigations: string[];
 }
 export type SubVerdicts = Record<RiskId, SubVerdict>;
+
+const cite = (slug: string, field: string): Citation => ({
+  profile_field: `${slug}.${field}`,
+});
 
 export const SEV_TO_SCORE: Record<Severity, number> = {
   none: 0,
@@ -109,21 +121,27 @@ function mutatingCaps(p: ProfileSummary): Set<string> {
 
 /* ---------- Risk computations ---------- */
 
+const empty = <T>() => [] as T[];
+
 function riskA(parts: ProfileSummary[]): SubVerdict {
-  // Prompt injection: total ingestion surface across the chain.
   const total = parts.reduce((s, p) => s + ingestionScore(p), 0);
   const max = parts.length > 0 ? Math.max(...parts.map(ingestionScore)) : 0;
   const rank =
     (max >= 3 ? 1 : 0) + (total >= 5 ? 1 : 0) + (total >= 8 ? 1 : 0) + (parts.length >= 4 ? 1 : 0);
-  const list = parts
-    .map((p) => `${p.name}=${ingestionScore(p)}`)
-    .join(', ');
+  const list = parts.map((p) => `${p.name}=${ingestionScore(p)}`).join(', ');
+  const citations: Citation[] = parts.flatMap((p) => [
+    cite(p.slug, 'capabilities.use_mcp'),
+    cite(p.slug, 'capabilities.run_browsers'),
+  ]);
   return {
     severity: sev(rank),
     rationale:
       `Total ingestion surface across the ${parts.length}-agent chain: ${total} ` +
       `(per-agent: ${list}). Untrusted content entering any node can be relayed ` +
       `to every downstream agent through the shared workspace.`,
+    citations,
+    conditions: empty<string>(),
+    mitigations: empty<string>(),
   };
 }
 
@@ -136,6 +154,7 @@ function riskB(parts: ProfileSummary[]): SubVerdict {
     (vendors.size >= 3 ? 1 : 0) +
     (closed ? 1 : 0) +
     (egress ? 1 : 0);
+  const citations: Citation[] = parts.map((p) => cite(p.slug, 'vendor.handle'));
   return {
     severity: sev(rank),
     rationale:
@@ -143,13 +162,22 @@ function riskB(parts: ProfileSummary[]): SubVerdict {
       `Closed-source participants: ${closed ? 'yes' : 'no'}. ` +
       `Broad-egress participants: ${egress ? 'yes' : 'no'}. ` +
       `Each provider boundary is an opportunity for the chain's data to land somewhere new.`,
+    citations,
+    conditions: empty<string>(),
+    mitigations: empty<string>(),
   };
 }
 
 function riskC(parts: ProfileSummary[]): SubVerdict {
-  // Capability conflict: how often do mutating caps collide across pairs?
+  const citations: Citation[] = parts.map((p) => cite(p.slug, 'capabilities.write_filesystem'));
   if (parts.length < 2) {
-    return { severity: 'none', rationale: 'Single agent — nothing to collide with.' };
+    return {
+      severity: 'none',
+      rationale: 'Single agent — nothing to collide with.',
+      citations,
+      conditions: empty<string>(),
+      mitigations: empty<string>(),
+    };
   }
   const seen: Record<string, number> = {};
   for (const p of parts) for (const c of mutatingCaps(p)) seen[c] = (seen[c] ?? 0) + 1;
@@ -161,6 +189,9 @@ function riskC(parts: ProfileSummary[]): SubVerdict {
       rationale:
         'No mutating capability is shared by two or more participants — ' +
         'concurrent operation is unlikely to interleave on the same surface.',
+      citations,
+      conditions: empty<string>(),
+      mitigations: empty<string>(),
     };
   }
   const list = overlap.map(([c, n]) => `${c} (${n} agents)`).join(', ');
@@ -170,6 +201,9 @@ function riskC(parts: ProfileSummary[]): SubVerdict {
       `Mutating capabilities held by 2+ chain participants: ${list}. ` +
       `When more than one node writes to the same surface, errors compound and ` +
       `the order of operations becomes the security boundary.`,
+    citations,
+    conditions: empty<string>(),
+    mitigations: empty<string>(),
   };
 }
 
@@ -185,6 +219,7 @@ function riskD(parts: ProfileSummary[], edges: DraftEdge[], topology: ChainTopol
     (sharedGit ? 1 : 0) +
     (fsEdges >= 2 ? 1 : 0) +
     (looped ? 1 : 0);
+  const citations: Citation[] = parts.map((p) => cite(p.slug, 'capabilities.modify_git_state'));
   return {
     severity: sev(rank),
     rationale:
@@ -193,6 +228,9 @@ function riskD(parts: ProfileSummary[], edges: DraftEdge[], topology: ChainTopol
       (looped
         ? "Loops let one agent's mistake be re-read by the next pass, amplifying drift."
         : "Errors written by one node become inputs to the next."),
+    citations,
+    conditions: empty<string>(),
+    mitigations: empty<string>(),
   };
 }
 
@@ -204,6 +242,7 @@ function riskE(parts: ProfileSummary[]): SubVerdict {
     (high.length > 0 ? 3 : 0) +
     (med.length > 0 && high.length === 0 ? 2 : 0) +
     (high.length === 0 && med.length === 0 ? 1 : 0);
+  const citations: Citation[] = parts.map((p) => cite(p.slug, 'category'));
   return {
     severity: sev(rank),
     rationale:
@@ -213,6 +252,9 @@ function riskE(parts: ProfileSummary[]): SubVerdict {
         : med.length
           ? `Touches medium-regulation category — ${med.join(', ')}.`
           : 'No regulated-data category in the chain.'),
+    citations,
+    conditions: empty<string>(),
+    mitigations: empty<string>(),
   };
 }
 
@@ -230,17 +272,20 @@ export function analyze(
     else missing.push(ptcp.slug);
   }
   if (parts.length === 0) {
-    const empty: SubVerdict = {
+    const blank: SubVerdict = {
       severity: 'none',
       rationale: 'Add at least one agent to compute risks.',
+      citations: [{ profile_field: 'pending' }],
+      conditions: [],
+      mitigations: [],
     };
     return {
       sub_verdicts: {
-        A_prompt_injection: empty,
-        B_data_leakage: empty,
-        C_capability_conflict: empty,
-        D_cascading_error: empty,
-        E_compliance: empty,
+        A_prompt_injection: blank,
+        B_data_leakage: blank,
+        C_capability_conflict: blank,
+        D_cascading_error: blank,
+        E_compliance: blank,
       },
       composite: 0,
       missing,
