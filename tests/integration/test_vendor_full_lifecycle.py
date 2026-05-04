@@ -130,12 +130,14 @@ def test_full_lifecycle_repo_claim_to_resolved_dispute(client: TestClient, works
     assert res.json()["decision_rationale_md"] == "additional review confirms verdict"
 
     # 8. Cross-workspace isolation: a different workspace cannot see this dispute
-    from smadp.tenancy import store as tenancy_store
     from smadp.config import load_config
+    from smadp.tenancy import store as tenancy_store
 
     cfg = load_config()
     other = tenancy_store.create_workspace(name="O", plan=Plan.PUBLIC, config=cfg)
-    tenancy_store.add_member(workspace_id=other.id, user_id="u_OTHER001", role=Role.ADMIN, config=cfg)
+    tenancy_store.add_member(
+        workspace_id=other.id, user_id="u_OTHER001", role=Role.ADMIN, config=cfg
+    )
     other_list = client.get(
         "/api/vendor/disputes",
         headers={"X-SMADP-Workspace": other.id, "X-SMADP-User": "u_OTHER001"},

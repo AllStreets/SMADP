@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from smadp.integrations import get_adapter
 from smadp.schemas.webhooks import EventType, IntegrationKind, WebhookEnvelope
 
-
 _FIXED_ENVELOPE = WebhookEnvelope(
     id="evt_20260503120000_abcdef",
     type=EventType.PASSPORT_GENERATED,
@@ -69,9 +68,7 @@ def test_vanta_golden():
 
 def test_drata_golden():
     adapter = get_adapter(IntegrationKind.DRATA)
-    body = adapter.translate(
-        _FIXED_ENVELOPE, config={"token": "tok", "control_id": "ctrl_GOLDEN"}
-    )
+    body = adapter.translate(_FIXED_ENVELOPE, config={"token": "tok", "control_id": "ctrl_GOLDEN"})
     assert body == _DRATA_EXPECTED
 
 

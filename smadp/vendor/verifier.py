@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import dns.exception
-import dns.resolver
 import hmac
 import time
 from typing import Final
 
+import dns.exception
+import dns.resolver
 import httpx
 import structlog
 
@@ -15,7 +15,6 @@ from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimVerification,
     DnsEvidence,
-    EmailEvidence,
     RepoEvidence,
     TokenEvidence,
     VendorClaim,
@@ -32,9 +31,8 @@ def verify_repo(*, claim: VendorClaim, evidence: RepoEvidence) -> ClaimVerificat
     url = evidence.repo_url.rstrip("/") + _OWNER_FILE_SUFFIX
     last_exc: Exception | None = None
     last_status: int | None = None
-    last_body: str | None = None
 
-    attempts = (0.0,) + _RETRY_BACKOFFS  # 1 initial + N retries
+    attempts = (0.0, *_RETRY_BACKOFFS)  # 1 initial + N retries
     for i, backoff in enumerate(attempts):
         if backoff > 0.0:
             time.sleep(backoff)
@@ -42,14 +40,11 @@ def verify_repo(*, claim: VendorClaim, evidence: RepoEvidence) -> ClaimVerificat
             with httpx.Client(timeout=_HTTP_TIMEOUT_S, follow_redirects=True) as client:
                 resp = client.get(url)
             last_status = resp.status_code
-            last_body = resp.text
             if 500 <= resp.status_code < 600:
                 last_exc = RuntimeError(f"HTTP {resp.status_code}")
                 continue
             if resp.status_code != 200:
-                return ClaimVerification(
-                    verified=False, detail=f"repo HTTP {resp.status_code}"
-                )
+                return ClaimVerification(verified=False, detail=f"repo HTTP {resp.status_code}")
             body = resp.text.strip()
             if hmac.compare_digest(body, claim.token):
                 return ClaimVerification(
@@ -136,9 +131,9 @@ def verify(
 
 
 __all__ = [
-    "verify_repo",
+    "build_email_magic_link",
+    "verify",
     "verify_dns",
     "verify_email",
-    "verify",
-    "build_email_magic_link",
+    "verify_repo",
 ]

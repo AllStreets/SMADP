@@ -113,9 +113,7 @@ class RepoEvidence(BaseModel):
             return v
         if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}:
             return v
-        raise ValueError(
-            f"repo_url must be https:// (or http://localhost for dev); got {v!r}"
-        )
+        raise ValueError(f"repo_url must be https:// (or http://localhost for dev); got {v!r}")
 
 
 class DnsEvidence(BaseModel):

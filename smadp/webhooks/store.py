@@ -154,9 +154,15 @@ def create_subscription(
                 " secret_encrypted, created_at, integration_kind, integration_config)"
                 " VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
                 (
-                    sub_id, workspace_id, url, types_json,
-                    nonce, encrypted, now_iso,
-                    integration_kind.value, config_json,
+                    sub_id,
+                    workspace_id,
+                    url,
+                    types_json,
+                    nonce,
+                    encrypted,
+                    now_iso,
+                    integration_kind.value,
+                    config_json,
                 ),
             )
         log.info(

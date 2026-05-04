@@ -44,7 +44,11 @@ def _hdrs(workspace_id: str, user_id: str = "u_ABCDEFGH") -> dict[str, str]:
 def _verify_claim(client, workspace_id) -> None:
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]

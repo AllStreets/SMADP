@@ -10,8 +10,8 @@ Time is read via the module-level ``_now()`` helper so tests can monkeypatch it.
 
 from __future__ import annotations
 
-import secrets
 import json
+import secrets
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager

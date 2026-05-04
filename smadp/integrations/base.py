@@ -11,11 +11,11 @@ from smadp.schemas.webhooks import IntegrationKind, WebhookEnvelope
 class Adapter(Protocol):
     kind: IntegrationKind
 
-    def translate(self, envelope: WebhookEnvelope, *, config: Mapping[str, object]) -> bytes:
-        ...
+    def translate(self, envelope: WebhookEnvelope, *, config: Mapping[str, object]) -> bytes: ...
 
-    def headers(self, envelope: WebhookEnvelope, *, config: Mapping[str, object]) -> dict[str, str]:
-        ...
+    def headers(
+        self, envelope: WebhookEnvelope, *, config: Mapping[str, object]
+    ) -> dict[str, str]: ...
 
 
 _REGISTRY: dict[IntegrationKind, Adapter] = {}

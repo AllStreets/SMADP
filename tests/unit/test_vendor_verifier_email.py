@@ -11,7 +11,6 @@ from smadp.schemas.tenancy import Plan
 from smadp.schemas.vendor import (
     ClaimMethod,
     DnsEvidence,
-    EmailEvidence,
     RepoEvidence,
     TokenEvidence,
 )
@@ -73,7 +72,9 @@ def test_dispatch_routes_repo(cfg: Config, workspace_id: str, monkeypatch: pytes
         return verifier.ClaimVerification(verified=True, detail="stub")
 
     monkeypatch.setattr(verifier, "verify_repo", fake_repo)
-    result = verifier.verify(claim=claim, evidence=RepoEvidence(repo_url="https://github.com/o/r/raw/main"))
+    result = verifier.verify(
+        claim=claim, evidence=RepoEvidence(repo_url="https://github.com/o/r/raw/main")
+    )
     assert result.verified is True
     assert called["claim"] is claim
 

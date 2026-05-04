@@ -8,17 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from smadp.config import Config, load_config
-from smadp.schemas.tenancy import Role, Workspace
 from smadp.schemas.dispute import (
     Dispute,
     DisputeDecision,
     RequestedOutcome,
 )
+from smadp.schemas.tenancy import Role, Workspace
 from smadp.schemas.vendor import (
     ClaimMethod,
     ClaimVerification,
     DnsEvidence,
-    EmailEvidence,
     RepoEvidence,
     TokenEvidence,
     VendorClaim,
@@ -74,7 +73,9 @@ class _VerifyClaimResponse(BaseModel):
     verification: ClaimVerification
 
 
-def _build_instructions(method: ClaimMethod, claim_id: str, token: str, cfg: Config) -> _Instructions:
+def _build_instructions(
+    method: ClaimMethod, claim_id: str, token: str, cfg: Config
+) -> _Instructions:
     if method == ClaimMethod.REPO:
         return _Instructions(
             method=method,
@@ -177,7 +178,10 @@ def verify_claim(
     if body.method != claim.method:
         raise HTTPException(
             status_code=400,
-            detail=f"verify method ({body.method.value}) must match claim method ({claim.method.value})",
+            detail=(
+                f"verify method ({body.method.value}) must match "
+                f"claim method ({claim.method.value})"
+            ),
         )
     try:
         evidence = _coerce_evidence(body.method, body.evidence)

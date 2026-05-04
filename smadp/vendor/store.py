@@ -218,8 +218,7 @@ def list_claims(
         _ensure_schema(conn)
         if agent_id is None:
             cur = conn.execute(
-                "SELECT * FROM vendor_claims WHERE workspace_id = ?"
-                " ORDER BY created_at DESC",
+                "SELECT * FROM vendor_claims WHERE workspace_id = ? ORDER BY created_at DESC",
                 (workspace_id,),
             )
         else:
@@ -246,9 +245,7 @@ def mark_claim_verified(*, claim_id: str, config: Config | None = None) -> None:
                 (now_iso, claim_id),
             )
             if cur.rowcount == 0:
-                raise KeyError(
-                    f"vendor claim {claim_id!r} is not pending or does not exist"
-                )
+                raise KeyError(f"vendor claim {claim_id!r} is not pending or does not exist")
         log.info("vendor.claim.verified", claim_id=claim_id)
     finally:
         conn.close()
@@ -267,9 +264,7 @@ def revoke_claim(*, claim_id: str, config: Config | None = None) -> None:
                 (now_iso, claim_id),
             )
             if cur.rowcount == 0:
-                raise KeyError(
-                    f"vendor claim {claim_id!r} already revoked or unknown"
-                )
+                raise KeyError(f"vendor claim {claim_id!r} already revoked or unknown")
         log.info("vendor.claim.revoked", claim_id=claim_id)
     finally:
         conn.close()
@@ -517,14 +512,11 @@ def update_dispute_status(
     current = get_dispute(dispute_id=dispute_id, config=cfg)
     target = _VALID_TRANSITIONS.get((current.status, decision))
     if target is None:
-        raise ValueError(
-            f"invalid dispute transition: {current.status.value} → {decision.value}"
-        )
+        raise ValueError(f"invalid dispute transition: {current.status.value} → {decision.value}")
     if target in {DisputeStatus.RESOLVED_REEVAL, DisputeStatus.RESOLVED_STANDS}:
         if not rationale_md or not rationale_md.strip():
             raise ValueError("rationale_md required for resolution")
     now = utcnow()
-    now_iso = now.isoformat(timespec="seconds").replace("+00:00", "Z")
     triaged_at = current.triaged_at
     sla_breached_at = current.sla_breached_at
     resolved_at = current.resolved_at
@@ -538,9 +530,7 @@ def update_dispute_status(
         resolved_at = now
 
     triaged_iso = (
-        triaged_at.isoformat(timespec="seconds").replace("+00:00", "Z")
-        if triaged_at
-        else None
+        triaged_at.isoformat(timespec="seconds").replace("+00:00", "Z") if triaged_at else None
     )
     sla_iso = (
         sla_breached_at.isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -548,9 +538,7 @@ def update_dispute_status(
         else None
     )
     resolved_iso = (
-        resolved_at.isoformat(timespec="seconds").replace("+00:00", "Z")
-        if resolved_at
-        else None
+        resolved_at.isoformat(timespec="seconds").replace("+00:00", "Z") if resolved_at else None
     )
 
     conn = _connect(cfg)
@@ -558,9 +546,12 @@ def update_dispute_status(
         _ensure_schema(conn)
         with _transaction(conn):
             conn.execute(
-                "UPDATE disputes SET status = ?, decision_rationale_md = COALESCE(?, decision_rationale_md),"
-                " triaged_at = ?, sla_breached_at = ?, resolved_at = ?"
-                " WHERE id = ?",
+                (
+                    "UPDATE disputes SET status = ?, "
+                    "decision_rationale_md = COALESCE(?, decision_rationale_md), "
+                    "triaged_at = ?, sla_breached_at = ?, resolved_at = ? "
+                    "WHERE id = ?"
+                ),
                 (target.value, rationale_md, triaged_iso, sla_iso, resolved_iso, dispute_id),
             )
         log.info(

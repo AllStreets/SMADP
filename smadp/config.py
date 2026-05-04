@@ -45,9 +45,7 @@ def _validate_public_base_url(url: str) -> str:
         return url
     if url_lower.startswith("http://localhost"):
         return url
-    raise ValueError(
-        "public_base_url must start with https:// or http://localhost"
-    )
+    raise ValueError("public_base_url must start with https:// or http://localhost")
 
 
 @dataclass(frozen=True)

@@ -52,7 +52,11 @@ def _claims() -> None:
 @_claims.command("create")
 @click.option("--agent-id", required=True)
 @click.option("--method", type=click.Choice(["repo", "dns", "email"]), required=True)
-@click.option("--evidence-url", default=None, help="Required for method=repo (the repo raw base URL).")
+@click.option(
+    "--evidence-url",
+    default=None,
+    help="Required for method=repo (the repo raw base URL).",
+)
 def _claims_create(agent_id: str, method: str, evidence_url: str | None) -> None:
     cfg = load_config()
     claim = store.create_claim(
@@ -126,9 +130,12 @@ def _responses() -> None:
 @click.option("--body-md", required=True)
 def _responses_post(verdict_id: str, agent_id: str, body_md: str) -> None:
     cfg = load_config()
-    if store.find_verified_claim(
-        workspace_id=_workspace_id(), vendor_user_id=_user_id(), agent_id=agent_id, config=cfg
-    ) is None:
+    if (
+        store.find_verified_claim(
+            workspace_id=_workspace_id(), vendor_user_id=_user_id(), agent_id=agent_id, config=cfg
+        )
+        is None
+    ):
         click.echo("error: posting requires a verified claim for this agent", err=True)
         sys.exit(2)
     r = store.post_response(
@@ -163,12 +170,21 @@ def _disputes() -> None:
 @click.option("--verdict-id", required=True)
 @click.option("--agent-id", required=True)
 @click.option("--argument-md", required=True)
-@click.option("--requested-outcome", type=click.Choice(["reeval", "withdraw", "amend"]), required=True)
-def _disputes_file(verdict_id: str, agent_id: str, argument_md: str, requested_outcome: str) -> None:
+@click.option(
+    "--requested-outcome",
+    type=click.Choice(["reeval", "withdraw", "amend"]),
+    required=True,
+)
+def _disputes_file(
+    verdict_id: str, agent_id: str, argument_md: str, requested_outcome: str
+) -> None:
     cfg = load_config()
-    if store.find_verified_claim(
-        workspace_id=_workspace_id(), vendor_user_id=_user_id(), agent_id=agent_id, config=cfg
-    ) is None:
+    if (
+        store.find_verified_claim(
+            workspace_id=_workspace_id(), vendor_user_id=_user_id(), agent_id=agent_id, config=cfg
+        )
+        is None
+    ):
         click.echo("error: filing requires a verified claim for this agent", err=True)
         sys.exit(2)
     d = store.file_dispute(

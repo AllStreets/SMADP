@@ -28,7 +28,7 @@ def workspace_id(cfg: Config) -> str:
 
 
 def test_dispatch_uses_slack_adapter_for_slack_sub(cfg: Config, workspace_id: str):
-    sub, _ = store.create_subscription(
+    _, _ = store.create_subscription(
         workspace_id=workspace_id,
         url="https://hooks.slack.com/services/abc/def",
         event_types=[EventType.PASSPORT_GENERATED],
@@ -51,7 +51,7 @@ def test_dispatch_uses_slack_adapter_for_slack_sub(cfg: Config, workspace_id: st
 
 
 def test_dispatch_generic_sub_uses_canonical_envelope(cfg: Config, workspace_id: str):
-    sub, _ = store.create_subscription(
+    _, _ = store.create_subscription(
         workspace_id=workspace_id,
         url="https://example.com/wh",
         event_types=[EventType.PASSPORT_GENERATED],
@@ -71,7 +71,7 @@ def test_dispatch_generic_sub_uses_canonical_envelope(cfg: Config, workspace_id:
 
 
 def test_dispatch_native_sub_persists_headers_overlay(cfg: Config, workspace_id: str):
-    sub, _ = store.create_subscription(
+    _, _ = store.create_subscription(
         workspace_id=workspace_id,
         url="https://api.drata.com/wh",
         event_types=[EventType.PASSPORT_GENERATED],

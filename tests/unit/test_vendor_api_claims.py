@@ -68,16 +68,18 @@ def test_create_claim_email_returns_magic_link(client: TestClient, workspace_id:
     assert r.status_code == 201
     body = r.json()
     assert body["instructions"]["method"] == "email"
-    assert body["instructions"]["magic_link_url"].startswith(
-        "https://smadp.example/vendor/claims/"
-    )
+    assert body["instructions"]["magic_link_url"].startswith("https://smadp.example/vendor/claims/")
     assert "?token=" in body["instructions"]["magic_link_url"]
 
 
 def test_create_claim_invalid_agent_id_400(client: TestClient, workspace_id: str):
     r = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "Bad_Slug!", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "Bad_Slug!",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     assert r.status_code == 422
@@ -86,7 +88,11 @@ def test_create_claim_invalid_agent_id_400(client: TestClient, workspace_id: str
 def test_create_claim_requires_workspace(client: TestClient):
     r = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
     )
     assert r.status_code in {401, 403, 422}
 
@@ -94,7 +100,11 @@ def test_create_claim_requires_workspace(client: TestClient):
 def test_list_claims(client: TestClient, workspace_id: str):
     client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     r = client.get("/api/vendor/claims", headers=_hdrs(workspace_id))
@@ -108,7 +118,11 @@ def test_list_claims(client: TestClient, workspace_id: str):
 def test_verify_claim_repo_happy_path(client: TestClient, workspace_id: str):
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]
@@ -130,7 +144,11 @@ def test_verify_claim_repo_happy_path(client: TestClient, workspace_id: str):
 def test_verify_claim_repo_mismatch_409(client: TestClient, workspace_id: str):
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]
@@ -151,7 +169,11 @@ def test_verify_claim_repo_mismatch_409(client: TestClient, workspace_id: str):
 def test_revoke_claim(client: TestClient, workspace_id: str):
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]
@@ -163,7 +185,11 @@ def test_revoke_claim(client: TestClient, workspace_id: str):
 def test_cross_workspace_404(client: TestClient, cfg: Config, workspace_id: str):
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]

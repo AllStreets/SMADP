@@ -53,7 +53,11 @@ def test_post_response_requires_verified_claim(client: TestClient, workspace_id:
 def test_post_response_after_verify(client: TestClient, workspace_id: str):
     create = client.post(
         "/api/vendor/claims",
-        json={"agent_id": "claude-code", "method": "repo", "evidence_url": "https://github.com/o/r/raw/main"},
+        json={
+            "agent_id": "claude-code",
+            "method": "repo",
+            "evidence_url": "https://github.com/o/r/raw/main",
+        },
         headers=_hdrs(workspace_id),
     )
     cid = create.json()["claim"]["id"]
@@ -76,6 +80,8 @@ def test_post_response_after_verify(client: TestClient, workspace_id: str):
 
 
 def test_list_responses_for_verdict(client: TestClient, workspace_id: str):
-    r = client.get("/api/vendor/responses", params={"verdict_id": "vdt_X"}, headers=_hdrs(workspace_id))
+    r = client.get(
+        "/api/vendor/responses", params={"verdict_id": "vdt_X"}, headers=_hdrs(workspace_id)
+    )
     assert r.status_code == 200
     assert r.json() == []

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -141,5 +140,7 @@ def test_list_disputes_for_verdict(cfg: Config, workspace_id: str):
         requested_outcome=RequestedOutcome.AMEND,
         config=cfg,
     )
-    ids = {d.id for d in store.list_disputes(workspace_id=workspace_id, verdict_id="vdt_X", config=cfg)}
+    ids = {
+        d.id for d in store.list_disputes(workspace_id=workspace_id, verdict_id="vdt_X", config=cfg)
+    }
     assert ids == {a.id, b.id}

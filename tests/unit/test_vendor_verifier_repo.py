@@ -73,7 +73,9 @@ def test_verify_repo_404_no_retry(cfg: Config, workspace_id: str):
 
 
 @respx.mock
-def test_verify_repo_5xx_then_success_retries(cfg: Config, workspace_id: str, monkeypatch: pytest.MonkeyPatch):
+def test_verify_repo_5xx_then_success_retries(
+    cfg: Config, workspace_id: str, monkeypatch: pytest.MonkeyPatch
+):
     # Disable backoff sleeps so the test is fast.
     monkeypatch.setattr(verifier, "_RETRY_BACKOFFS", (0.0, 0.0))
     claim = _claim(cfg, workspace_id)
@@ -86,7 +88,9 @@ def test_verify_repo_5xx_then_success_retries(cfg: Config, workspace_id: str, mo
 
 
 @respx.mock
-def test_verify_repo_transport_exhaust(cfg: Config, workspace_id: str, monkeypatch: pytest.MonkeyPatch):
+def test_verify_repo_transport_exhaust(
+    cfg: Config, workspace_id: str, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr(verifier, "_RETRY_BACKOFFS", (0.0, 0.0))
     claim = _claim(cfg, workspace_id)
     respx.get("https://github.com/o/r/raw/main/.smadp/owner.txt").mock(

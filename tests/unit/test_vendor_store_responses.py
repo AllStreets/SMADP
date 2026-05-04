@@ -59,5 +59,8 @@ def test_list_responses_for_verdict(cfg: Config, workspace_id: str):
         body_md="other",
         config=cfg,
     )
-    ids = {r.id for r in store.list_responses(workspace_id=workspace_id, verdict_id="vdt_X", config=cfg)}
+    ids = {
+        r.id
+        for r in store.list_responses(workspace_id=workspace_id, verdict_id="vdt_X", config=cfg)
+    }
     assert ids == {a.id, b.id}

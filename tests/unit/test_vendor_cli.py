@@ -50,10 +50,15 @@ def test_claims_create_outputs_token(cfg: Config, workspace_id: str):
     result = runner.invoke(
         cli,
         [
-            "vendor", "claims", "create",
-            "--agent-id", "claude-code",
-            "--method", "repo",
-            "--evidence-url", "https://github.com/o/r/raw/main",
+            "vendor",
+            "claims",
+            "create",
+            "--agent-id",
+            "claude-code",
+            "--method",
+            "repo",
+            "--evidence-url",
+            "https://github.com/o/r/raw/main",
         ],
         env=_cli_env(),
     )
@@ -68,10 +73,15 @@ def test_claims_ls_redacts_token(cfg: Config, workspace_id: str):
     runner.invoke(
         cli,
         [
-            "vendor", "claims", "create",
-            "--agent-id", "claude-code",
-            "--method", "repo",
-            "--evidence-url", "https://github.com/o/r/raw/main",
+            "vendor",
+            "claims",
+            "create",
+            "--agent-id",
+            "claude-code",
+            "--method",
+            "repo",
+            "--evidence-url",
+            "https://github.com/o/r/raw/main",
         ],
         env=env,
     )
@@ -87,24 +97,37 @@ def test_claims_verify_repo(cfg: Config, workspace_id: str):
     create = runner.invoke(
         cli,
         [
-            "vendor", "claims", "create",
-            "--agent-id", "claude-code",
-            "--method", "repo",
-            "--evidence-url", "https://github.com/o/r/raw/main",
+            "vendor",
+            "claims",
+            "create",
+            "--agent-id",
+            "claude-code",
+            "--method",
+            "repo",
+            "--evidence-url",
+            "https://github.com/o/r/raw/main",
         ],
         env=env,
     )
     # Find the "created  vc_..." line specifically (not the log line)
-    cid = next(line for line in create.output.splitlines() if line.startswith("created")).split()[-1]
-    token = next(line for line in create.output.splitlines() if line.startswith("token:")).split()[-1]
+    cid = next(line for line in create.output.splitlines() if line.startswith("created")).split()[
+        -1
+    ]
+    token = next(line for line in create.output.splitlines() if line.startswith("token:")).split()[
+        -1
+    ]
     respx.get("https://github.com/o/r/raw/main/.smadp/owner.txt").mock(
         return_value=httpx.Response(200, text=token)
     )
     result = runner.invoke(
         cli,
         [
-            "vendor", "claims", "verify", cid,
-            "--evidence-json", json.dumps({"repo_url": "https://github.com/o/r/raw/main"}),
+            "vendor",
+            "claims",
+            "verify",
+            cid,
+            "--evidence-json",
+            json.dumps({"repo_url": "https://github.com/o/r/raw/main"}),
         ],
         env=env,
     )
@@ -132,11 +155,17 @@ def test_disputes_file_then_triage(cfg: Config, workspace_id: str):
     f = runner.invoke(
         cli,
         [
-            "vendor", "disputes", "file",
-            "--verdict-id", "vdt_X",
-            "--agent-id", "claude-code",
-            "--argument-md", "we contest because ...",
-            "--requested-outcome", "reeval",
+            "vendor",
+            "disputes",
+            "file",
+            "--verdict-id",
+            "vdt_X",
+            "--agent-id",
+            "claude-code",
+            "--argument-md",
+            "we contest because ...",
+            "--requested-outcome",
+            "reeval",
         ],
         env=env,
     )
