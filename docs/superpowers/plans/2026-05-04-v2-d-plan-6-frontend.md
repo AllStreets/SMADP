@@ -2755,3 +2755,13 @@ After Task 15 lands, dispatch a final code-review pass over the cumulative diff 
 - TypeScript types in `api.ts`, `session.ts`, `personas.ts` are exported and consumed consistently.
 
 Then proceed to `superpowers:finishing-a-development-branch` to merge into main.
+
+---
+
+## Status: Complete
+
+Notable execution decisions:
+- Astro devToolbar disabled in astro.config.mjs (`devToolbar: { enabled: false }`) to allow clean Playwright e2e smoke tests without dev-mode console errors. The toolbar injects code even in production builds when running locally, breaking the strict error assertions in the test spec.
+- All 3 Playwright smoke tests passed: home persona switching, frameworks deep view navigation, and static admin shell rendering.
+- CI integration appended check/test/playwright steps to the existing `site` job rather than creating a new job; reused the pre-existing `pnpm/action-setup` and `setup-node@v4` blocks with consistent 6-space indentation.
+- NODE_ENV=production verified to strip Astro dev artifacts from the built output when devToolbar is disabled.

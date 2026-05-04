@@ -6,6 +6,9 @@ export default defineConfig({
   site: 'https://smadp.dev',
   output: 'static',
   trailingSlash: 'ignore',
+  devToolbar: {
+    enabled: false,
+  },
   integrations: [
     tailwind({ applyBaseStyles: false }),
   ],

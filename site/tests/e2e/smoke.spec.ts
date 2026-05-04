@@ -1,0 +1,53 @@
+import { test, expect } from '@playwright/test';
+
+test.describe('SMADP frontend smoke', () => {
+  test('home — persona switch hydrates the persona view', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+
+    await page.goto('/home');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Welcome to SMADP');
+    await expect(page.locator('[data-persona-tiles]')).toBeVisible();
+
+    // Pick the auditor tile
+    await page.locator('[data-persona-pick="auditor"]').click();
+
+    // Persona view becomes visible; the auditor's first panel (framework_coverage) link is present
+    await expect(page.locator('[data-persona-view]')).toBeVisible();
+    await expect(page.getByRole('link', { name: /Framework coverage/i })).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('frameworks index — links to deep view; deep view renders', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+
+    await page.goto('/frameworks');
+    const firstFwLink = page.locator('h2 a[href^="/frameworks/"]').first();
+    await expect(firstFwLink).toBeVisible();
+    const href = await firstFwLink.getAttribute('href');
+    expect(href).toBeTruthy();
+
+    await page.goto(href!);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('static admin shells render without console errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+
+    for (const path of ['/workspaces', '/refresh', '/webhooks', '/passports']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    }
+
+    // Console may have fetch errors (no backend) — only fail on uncaught JS errors
+    expect(errors).toEqual([]);
+  });
+});
