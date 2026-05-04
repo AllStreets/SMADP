@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config, load_config
-from smadp.schemas import Evidence, Profile, Verdict
+from smadp.schemas import Chain, Evidence, Profile, Verdict
 from smadp.utils.slug import sort_pair
 
 
@@ -33,6 +33,7 @@ class LintReport:
     profiles_checked: int = 0
     verdicts_checked: int = 0
     evidence_checked: int = 0
+    chains_checked: int = 0
     issues: list[LintIssue] = field(default_factory=list)
 
     @property
@@ -258,5 +259,37 @@ def lint_catalog(config: Config | None = None) -> LintReport:
             severity = "error"
             kind = "evidence.missing"
             report.add(severity, kind, ref, f"referenced evidence {ref} is not in _evidence/")
+
+    # ----------------------------------------------------------- chains
+    chain_validator = _load_schema(cfg.schema_dir / "chain.schema.json")
+    if cfg.chains_dir.exists():
+        for path in sorted(cfg.chains_dir.glob("*.json")):
+            report.chains_checked += 1
+            target = str(path)
+            data = _load_json(path)
+            if data is None:
+                report.add("error", "chain.parse", target, "could not parse JSON")
+                continue
+            if chain_validator is not None:
+                for err in chain_validator.iter_errors(data):
+                    report.add("error", "chain.schema", target,
+                               f"{'/'.join(str(p) for p in err.absolute_path)}: {err.message}")
+            try:
+                chain = Chain.model_validate(data)
+            except ValidationError as exc:
+                report.add("error", "chain.pydantic", target, str(exc))
+                continue
+            if path.stem != chain.chain_id:
+                report.add("error", "chain.filename", target,
+                           f"filename {path.stem!r} does not match chain_id {chain.chain_id!r}")
+            participant_slugs = {p.slug for p in chain.participants}
+            for p in chain.participants:
+                if p.slug not in profile_slugs:
+                    report.add("error", "chain.participant-xref", target,
+                               f"participant {p.slug!r} has no profile")
+            for e in chain.edges:
+                if e.from_ not in participant_slugs or e.to not in participant_slugs:
+                    report.add("error", "chain.edge-endpoint", target,
+                               f"edge {e.from_!r}->{e.to!r} not within participants")
 
     return report

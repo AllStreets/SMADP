@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from smadp.config import Config, load_config
-from smadp.schemas import Evidence, Profile, Verdict
+from smadp.schemas import Chain, Evidence, Profile, Verdict
 from smadp.schemas.profile import VerificationStatus
 from smadp.utils.slug import pair_filename, sort_pair
 
@@ -237,6 +237,34 @@ class CatalogRepo:
         for path in sorted(self.config.evidence_dir.glob("sha256-*.json")):
             sha = path.stem.removeprefix("sha256-")
             yield f"sha256:{sha}"
+
+    # ------------------------------------------------------------------ chains
+    def chain_path(self, chain_id: str) -> Path:
+        return self.config.chains_dir / f"{chain_id}.json"
+
+    def save_chain(self, chain: Chain) -> Path:
+        path = self.chain_path(chain.chain_id)
+        self.config.chains_dir.mkdir(parents=True, exist_ok=True)
+        payload = chain.model_dump(mode="json", by_alias=True, exclude_none=True)
+        self._atomic_write_json(path, payload)
+        return path
+
+    def load_chain(self, chain_id: str) -> Chain:
+        path = self.chain_path(chain_id)
+        if not path.exists():
+            raise NotFoundError(f"chain not found: {chain_id}")
+        return Chain.model_validate(self._read_json(path))
+
+    def list_chains(self) -> list[Chain]:
+        if not self.config.chains_dir.exists():
+            return []
+        out: list[Chain] = []
+        for path in sorted(self.config.chains_dir.glob("*.json")):
+            try:
+                out.append(Chain.model_validate(self._read_json(path)))
+            except (CatalogError, ValueError):
+                continue
+        return out
 
     # ------------------------------------------------------------------- pairs
     def iter_pairs(self) -> Iterator[tuple[str, str]]:

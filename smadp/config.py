@@ -89,6 +89,10 @@ class Config:
         return self.profiles_dir / "_unverified"
 
     @property
+    def chains_dir(self) -> Path:
+        return self.catalog_dir / "chains"
+
+    @property
     def verdicts_dir(self) -> Path:
         return self.catalog_dir / "verdicts"
 
@@ -116,6 +120,7 @@ class Config:
         for directory in (
             self.profiles_dir,
             self.unverified_profiles_dir,
+            self.chains_dir,
             self.verdicts_dir,
             self.evidence_dir,
             self.chronicle_dir,
