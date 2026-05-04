@@ -13,11 +13,19 @@ from smadp.config import Config
 
 def _profile(slug: str) -> dict:
     return {
-        "schema_version": "1.1", "slug": slug, "name": slug.title(),
+        "schema_version": "1.1",
+        "slug": slug,
+        "name": slug.title(),
         "vendor": {"type": "company", "handle": "Demo"},
-        "source_type": "open-source", "category": "coding",
-        "verification": {"status": "unverified", "verified_at": "2026-05-04T00:00:00Z", "method": "auto-only"},
-        "first_seen_at": "2026-05-04T00:00:00Z", "last_refreshed_at": "2026-05-04T00:00:00Z",
+        "source_type": "open-source",
+        "category": "coding",
+        "verification": {
+            "status": "unverified",
+            "verified_at": "2026-05-04T00:00:00Z",
+            "method": "auto-only",
+        },
+        "first_seen_at": "2026-05-04T00:00:00Z",
+        "last_refreshed_at": "2026-05-04T00:00:00Z",
     }
 
 
@@ -64,21 +72,34 @@ def _seed(cfg: Config, profiles: list[dict], chains: list[dict]) -> None:
 
 
 def test_unknown_participant_slug_raises(cfg: Config) -> None:
-    _seed(cfg, [_profile("agent-a"), _profile("agent-b")],
-          [_chain("c_test", participants=["agent-a", "agent-b", "missing"], edges=[("agent-a", "agent-b"), ("agent-b", "missing")])])
+    chain = _chain(
+        "c_test",
+        participants=["agent-a", "agent-b", "missing"],
+        edges=[("agent-a", "agent-b"), ("agent-b", "missing")],
+    )
+    _seed(cfg, [_profile("agent-a"), _profile("agent-b")], [chain])
     report = lint_catalog(cfg)
     assert any(i.kind == "chain.participant-xref" for i in report.errors)
 
 
 def test_edge_endpoint_not_in_participants_raises(cfg: Config) -> None:
-    _seed(cfg, [_profile("agent-a"), _profile("agent-b"), _profile("agent-c"), _profile("agent-d")],
-          [_chain("c_test", participants=["agent-a", "agent-b", "agent-c"], edges=[("agent-a", "agent-b"), ("agent-b", "agent-d")])])
+    chain = _chain(
+        "c_test",
+        participants=["agent-a", "agent-b", "agent-c"],
+        edges=[("agent-a", "agent-b"), ("agent-b", "agent-d")],
+    )
+    profiles = [_profile(s) for s in ("agent-a", "agent-b", "agent-c", "agent-d")]
+    _seed(cfg, profiles, [chain])
     report = lint_catalog(cfg)
     assert any(i.kind == "chain.edge-endpoint" for i in report.errors)
 
 
 def test_chain_filename_must_match_id(cfg: Config) -> None:
-    chain = _chain("c_alpha", participants=["agent-a", "agent-b", "agent-c"], edges=[("agent-a", "agent-b")])
+    chain = _chain(
+        "c_alpha",
+        participants=["agent-a", "agent-b", "agent-c"],
+        edges=[("agent-a", "agent-b")],
+    )
     (cfg.chains_dir / "wrong-name.json").write_text(json.dumps(chain), "utf-8")
     for s in ("agent-a", "agent-b", "agent-c"):
         (cfg.profiles_dir / f"{s}.json").write_text(json.dumps(_profile(s)), "utf-8")
@@ -87,8 +108,12 @@ def test_chain_filename_must_match_id(cfg: Config) -> None:
 
 
 def test_valid_chain_passes(cfg: Config) -> None:
-    _seed(cfg, [_profile("agent-a"), _profile("agent-b"), _profile("agent-c")],
-          [_chain("c_test", participants=["agent-a", "agent-b", "agent-c"], edges=[("agent-a", "agent-b"), ("agent-b", "agent-c")])])
+    chain = _chain(
+        "c_test",
+        participants=["agent-a", "agent-b", "agent-c"],
+        edges=[("agent-a", "agent-b"), ("agent-b", "agent-c")],
+    )
+    _seed(cfg, [_profile(s) for s in ("agent-a", "agent-b", "agent-c")], [chain])
     report = lint_catalog(cfg)
     chain_errors = [i for i in report.errors if i.kind.startswith("chain.")]
     assert chain_errors == []

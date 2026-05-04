@@ -34,10 +34,16 @@ def _chain(chain_id: str = "c_demo") -> Chain:
             {"from": "agent-b", "to": "agent-c", "channel": "filesystem"},
         ],
         "headline": "Stub.",
-        "sub_verdicts": {k: sub for k in [
-            "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-            "D_cascading_error", "E_compliance",
-        ]},
+        "sub_verdicts": dict.fromkeys(
+            [
+                "A_prompt_injection",
+                "B_data_leakage",
+                "C_capability_conflict",
+                "D_cascading_error",
+                "E_compliance",
+            ],
+            sub,
+        ),
         "framework_mappings": {},
         "first_seen_at": "2026-05-04T00:00:00Z",
         "last_refreshed_at": "2026-05-04T00:00:00Z",

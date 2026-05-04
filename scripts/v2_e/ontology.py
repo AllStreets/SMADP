@@ -105,13 +105,12 @@ assert len({s["slug"] for s in SEEDS}) == len(SEEDS), "duplicate slugs in SEEDS"
 assert len(SEEDS) == 70, f"expected 70 SEEDS, got {len(SEEDS)}"
 
 
-CategoryPreset = TypedDict("CategoryPreset", {
-    "capabilities": dict,
-    "io_surfaces": dict,
-    "data_classes_touched": list[str],
-    "sandboxing": dict,
-    "concurrency_model": dict,
-})
+class CategoryPreset(TypedDict):
+    capabilities: dict
+    io_surfaces: dict
+    data_classes_touched: list[str]
+    sandboxing: dict
+    concurrency_model: dict
 
 
 def _coding_preset() -> CategoryPreset:
@@ -227,4 +226,4 @@ CATEGORY_PRESETS: dict[str, CategoryPreset] = {
 }
 
 
-__all__ = ["SEEDS", "CATEGORY_PRESETS", "Seed", "CategoryPreset"]
+__all__ = ["CATEGORY_PRESETS", "SEEDS", "CategoryPreset", "Seed"]

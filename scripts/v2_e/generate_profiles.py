@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.v2_e.ontology import CATEGORY_PRESETS, SEEDS, Seed
@@ -40,7 +39,11 @@ def build_profile(seed: Seed) -> dict:
         },
         "capabilities": copy.deepcopy(preset["capabilities"]),
         "io_surfaces": copy.deepcopy(preset["io_surfaces"]),
-        "permissions_requested": {"oauth_scopes": [], "secrets_handled": [], "elevated_privileges": []},
+        "permissions_requested": {
+            "oauth_scopes": [],
+            "secrets_handled": [],
+            "elevated_privileges": [],
+        },
         "data_classes_touched": list(preset["data_classes_touched"]),
         "sandboxing": copy.deepcopy(preset["sandboxing"]),
         "concurrency_model": copy.deepcopy(preset["concurrency_model"]),

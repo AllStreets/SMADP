@@ -19,7 +19,7 @@ def test_table_is_symmetric() -> None:
 
 def test_table_sorted_lists() -> None:
     table = build_table()
-    for slug, partners in table.items():
+    for _slug, partners in table.items():
         assert partners == sorted(partners)
 
 

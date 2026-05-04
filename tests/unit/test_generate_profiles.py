@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
 
 from scripts.v2_e.generate_profiles import build_profile, write_all
 from scripts.v2_e.ontology import SEEDS

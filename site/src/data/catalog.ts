@@ -52,12 +52,18 @@ let _profiles: Profile[] | null = null;
 export function getProfiles(): Profile[] {
   if (_profiles) return _profiles;
   const dir = path.join(CATALOG_DIR, 'profiles');
-  const files = safeReadDir(dir).filter(
-    (f) => f.endsWith('.json') && !f.startsWith('_'),
-  );
   const out: Profile[] = [];
-  for (const f of files) {
+  // Verified profiles live at catalog/profiles/<slug>.json.
+  for (const f of safeReadDir(dir).filter(
+    (f) => f.endsWith('.json') && !f.startsWith('_'),
+  )) {
     const p = safeReadJSON<Profile>(path.join(dir, f));
+    if (p) out.push(p);
+  }
+  // Unverified seeds live at catalog/profiles/_unverified/<slug>.json.
+  const unverifiedDir = path.join(dir, '_unverified');
+  for (const f of safeReadDir(unverifiedDir).filter((f) => f.endsWith('.json'))) {
+    const p = safeReadJSON<Profile>(path.join(unverifiedDir, f));
     if (p) out.push(p);
   }
   out.sort((a, b) => a.name.localeCompare(b.name));
