@@ -26,6 +26,7 @@ from smadp.catalog.lint import LintReport, lint_catalog
 from smadp.catalog.repo import CatalogRepo, NotFoundError
 from smadp.config import Config, load_config
 from smadp.passport.cli import passport_group
+from smadp.refresh.cli import refresh_group
 from smadp.transparency.cli import transparency_group
 from smadp.utils.slug import normalize_slug, sort_pair
 from smadp.vendor.cli import vendor_group
@@ -640,6 +641,7 @@ cli.add_command(transparency_group)
 cli.add_command(passport_group)
 cli.add_command(webhook_group)
 cli.add_command(vendor_group)
+cli.add_command(refresh_group)
 
 
 # ----------------------------------------------------------------------- entry
