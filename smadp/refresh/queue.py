@@ -145,4 +145,49 @@ def list_pending(*, config: Config | None = None) -> list[RefreshQueueItem]:
         conn.close()
 
 
-__all__ = ["enqueue", "list_pending"]
+def claim(*, config: Config | None = None) -> RefreshQueueItem | None:
+    """Claim the oldest unclaimed, undone row. Returns None if queue is empty."""
+    cfg = config or load_config()
+    now = _iso(utcnow())
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE refresh_queue SET claimed_at = ?"
+                " WHERE id = ("
+                "   SELECT id FROM refresh_queue"
+                "   WHERE claimed_at IS NULL AND done_at IS NULL"
+                "   ORDER BY enqueued_at ASC, id ASC LIMIT 1"
+                " )"
+                " RETURNING *",
+                (now,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        log.info("refresh.queue.claimed", id=row["id"], verdict_id=row["verdict_id"])
+        return _row_to_item(row)
+    finally:
+        conn.close()
+
+
+def finalize(*, item_id: int, config: Config | None = None) -> None:
+    cfg = config or load_config()
+    now = _iso(utcnow())
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute(
+                "UPDATE refresh_queue SET done_at = ? WHERE id = ?",
+                (now, item_id),
+            )
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown refresh_queue id: {item_id!r}")
+        log.info("refresh.queue.finalized", id=item_id)
+    finally:
+        conn.close()
+
+
+__all__ = ["claim", "enqueue", "finalize", "list_pending"]
