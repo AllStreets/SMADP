@@ -62,3 +62,24 @@ def test_refresh_state_round_trip() -> None:
     )
     restored = RefreshState.model_validate(state.model_dump(mode="json"))
     assert restored == state
+
+
+def test_refresh_state_forbids_extra() -> None:
+    with pytest.raises(ValidationError):
+        RefreshState(
+            verdict_id="a__b",
+            last_trigger=RefreshTrigger.MANUAL,
+            last_evaluated_at=datetime.now(timezone.utc),
+            evaluation_count=1,
+            unexpected="boom",  # type: ignore[call-arg]
+        )
+
+
+def test_refresh_state_rejects_negative_count() -> None:
+    with pytest.raises(ValidationError):
+        RefreshState(
+            verdict_id="a__b",
+            last_trigger=RefreshTrigger.MANUAL,
+            last_evaluated_at=datetime.now(timezone.utc),
+            evaluation_count=-1,
+        )
