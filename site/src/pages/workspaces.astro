@@ -180,8 +180,10 @@ import Icon from '../components/Icon.astro';
       headline: string;
       generated_at: string;
     };
+    type VerdictsResp = { items: Verdict[] };
     try {
-      const list = await apiFetch<Verdict[]>('/verdicts');
+      const resp = await apiFetch<VerdictsResp>('/verdicts');
+      const list = resp.items ?? [];
       if (list.length === 0) {
         setPanelHtml('deployments', '<p class="text-sm text-ink-400">No verdicts yet.</p>');
         return;
@@ -321,8 +323,10 @@ import Icon from '../components/Icon.astro';
 
   async function loadExecSummary(): Promise<void> {
     type Verdict = { composite_score: number; pair: [string, string] };
+    type VerdictsResp = { items: Verdict[] };
     try {
-      const list = await apiFetch<Verdict[]>('/verdicts');
+      const resp = await apiFetch<VerdictsResp>('/verdicts');
+      const list = resp.items ?? [];
       const total = list.length;
       const high = list.filter((v) => v.composite_score >= 0.6).length;
       const medium = list.filter((v) => v.composite_score >= 0.3 && v.composite_score < 0.6).length;
@@ -397,13 +401,21 @@ import Icon from '../components/Icon.astro';
     }
 
     userInput.addEventListener('input', () => {
-      const preview = normalizeUserId(userInput.value);
+      const cursor = userInput.selectionStart ?? userInput.value.length;
+      const before = userInput.value;
+      const normalized = normalizeUserId(before).replace(/^u_/, '');
+      if (normalized !== before) {
+        userInput.value = normalized;
+        const next = Math.min(cursor, normalized.length);
+        try { userInput.setSelectionRange(next, next); } catch {}
+      }
+      const preview = normalized ? `u_${normalized}` : '';
       userHint.textContent = preview
         ? `stored as ${preview}`
         : 'stored as u_… (8+ uppercase letters or digits)';
     });
 
-    form.addEventListener('submit', (ev) => {
+    form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const wsVal = select.value.trim();
       const userVal = normalizeUserId(userInput.value);
@@ -420,6 +432,14 @@ import Icon from '../components/Icon.astro';
       userHint.textContent = `stored as ${userVal}`;
       setWorkspaceId(wsVal);
       setUserId(userVal);
+      try {
+        await apiFetch<Member>(`/workspaces/${wsVal}/members`, {
+          method: 'POST',
+          json: { user_id: userVal, role: 'owner' },
+        });
+      } catch {
+        // already a member or insufficient perms — fine, panels will tell us
+      }
       status.textContent = `applied: workspace=${wsVal}, user=${userVal}`;
       document.dispatchEvent(new Event('smadp:session-changed'));
       showDashboard(true);
