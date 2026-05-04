@@ -70,3 +70,82 @@ def test_drain_one_runs_evaluation_and_finalizes(
     assert s is not None and s.evaluation_count == 1
 
     assert queue.list_pending(config=cfg) == []
+
+
+def _zeroed(sample: dict[str, Any]) -> Verdict:
+    payload = dict(sample)
+    payload["pair"] = tuple(payload["pair"])
+    payload["sub_verdicts"] = {
+        k: {**v, "severity": "none"} for k, v in payload["sub_verdicts"].items()
+    }
+    return Verdict.model_validate(payload)
+
+
+def test_drain_one_dispatches_framework_coverage_changed_when_delta(
+    cfg: Config, sample_verdict: dict[str, Any]
+) -> None:
+    new = _real_verdict(sample_verdict)
+    slug_a, slug_b = new.pair
+    old = _zeroed(sample_verdict)
+    queue.enqueue(
+        verdict_id=f"{slug_a}__{slug_b}",
+        trigger=RefreshTrigger.MANUAL,
+        config=cfg,
+    )
+
+    async def fake_generate(*args: Any, **kwargs: Any) -> Verdict:
+        return new
+
+    with (
+        patch("smadp.refresh.evaluator._load_verdict_for_pair", return_value=old),
+        patch(
+            "smadp.refresh.evaluator._reload_inputs",
+            return_value={"profile_a": object(), "profile_b": object(), "evidence": {}},
+        ),
+        patch("smadp.refresh.evaluator._save_verdict"),
+        patch("smadp.refresh.evaluator.generate_verdict", side_effect=fake_generate),
+        patch("smadp.refresh.evaluator._emit_transparency"),
+        patch("smadp.refresh.evaluator._dispatch_verdict_updated"),
+        patch(
+            "smadp.refresh.evaluator._dispatch_framework_coverage_changed"
+        ) as fc_mock,
+    ):
+        evaluator.drain_one(config=cfg)
+
+    fc_mock.assert_called_once()
+    delta = fc_mock.call_args.kwargs["delta"]
+    assert set(delta.keys()) == {"added", "removed"}
+    assert "LLM01" in delta["added"].get("owasp_llm_top_10", [])
+
+
+def test_drain_one_skips_framework_coverage_when_no_delta(
+    cfg: Config, sample_verdict: dict[str, Any]
+) -> None:
+    same = _real_verdict(sample_verdict)
+    slug_a, slug_b = same.pair
+    queue.enqueue(
+        verdict_id=f"{slug_a}__{slug_b}",
+        trigger=RefreshTrigger.MANUAL,
+        config=cfg,
+    )
+
+    async def fake_generate(*args: Any, **kwargs: Any) -> Verdict:
+        return same
+
+    with (
+        patch("smadp.refresh.evaluator._load_verdict_for_pair", return_value=same),
+        patch(
+            "smadp.refresh.evaluator._reload_inputs",
+            return_value={"profile_a": object(), "profile_b": object(), "evidence": {}},
+        ),
+        patch("smadp.refresh.evaluator._save_verdict"),
+        patch("smadp.refresh.evaluator.generate_verdict", side_effect=fake_generate),
+        patch("smadp.refresh.evaluator._emit_transparency"),
+        patch("smadp.refresh.evaluator._dispatch_verdict_updated"),
+        patch(
+            "smadp.refresh.evaluator._dispatch_framework_coverage_changed"
+        ) as fc_mock,
+    ):
+        evaluator.drain_one(config=cfg)
+
+    fc_mock.assert_not_called()
