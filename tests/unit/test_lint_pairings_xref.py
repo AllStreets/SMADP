@@ -56,10 +56,13 @@ def test_pairings_orphan_raises_error(cfg: Config) -> None:
 
 
 def test_pairings_asymmetric_raises_error(cfg: Config) -> None:
-    _seed(cfg, [
-        _profile_json("aa", pairings=["bb"]),
-        _profile_json("bb", pairings=[]),
-    ])
+    _seed(
+        cfg,
+        [
+            _profile_json("aa", pairings=["bb"]),
+            _profile_json("bb", pairings=[]),
+        ],
+    )
     report = lint_catalog(cfg)
     assert any(i.kind == "profile.pairings-symmetric" for i in report.errors)
 
@@ -71,10 +74,13 @@ def test_pairings_self_reference_raises_error(cfg: Config) -> None:
 
 
 def test_pairings_symmetric_passes(cfg: Config) -> None:
-    _seed(cfg, [
-        _profile_json("aa", pairings=["bb"]),
-        _profile_json("bb", pairings=["aa"]),
-    ])
+    _seed(
+        cfg,
+        [
+            _profile_json("aa", pairings=["bb"]),
+            _profile_json("bb", pairings=["aa"]),
+        ],
+    )
     report = lint_catalog(cfg)
     pairings_errors = [i for i in report.errors if i.kind.startswith("profile.pairings-")]
     assert pairings_errors == []

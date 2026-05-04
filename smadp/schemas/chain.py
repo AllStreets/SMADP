@@ -15,8 +15,16 @@ CHAIN_ID_RE = re.compile(r"^c_[a-z0-9-]{3,80}$")
 Topology = Literal["linear", "star", "loop", "tree", "dag"]
 ChannelKind = Literal["prompt", "tool-call", "shared-memory", "filesystem", "message-bus"]
 Role = Literal[
-    "planner", "executor", "critic", "retriever", "reasoner",
-    "writer", "router", "tool", "judge", "memory",
+    "planner",
+    "executor",
+    "critic",
+    "retriever",
+    "reasoner",
+    "writer",
+    "router",
+    "tool",
+    "judge",
+    "memory",
 ]
 Severity = Literal["none", "low", "medium", "high", "critical"]
 

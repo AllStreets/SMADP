@@ -19,35 +19,37 @@ def _chain(chain_id: str = "c_demo") -> Chain:
         "conditions": [],
         "mitigations": [],
     }
-    return Chain.model_validate({
-        "schema_version": "1.0",
-        "chain_id": chain_id,
-        "name": chain_id,
-        "topology": "linear",
-        "participants": [
-            {"slug": "agent-a", "role": "planner"},
-            {"slug": "agent-b", "role": "executor"},
-            {"slug": "agent-c", "role": "critic"},
-        ],
-        "edges": [
-            {"from": "agent-a", "to": "agent-b", "channel": "prompt"},
-            {"from": "agent-b", "to": "agent-c", "channel": "filesystem"},
-        ],
-        "headline": "Stub.",
-        "sub_verdicts": dict.fromkeys(
-            [
-                "A_prompt_injection",
-                "B_data_leakage",
-                "C_capability_conflict",
-                "D_cascading_error",
-                "E_compliance",
+    return Chain.model_validate(
+        {
+            "schema_version": "1.0",
+            "chain_id": chain_id,
+            "name": chain_id,
+            "topology": "linear",
+            "participants": [
+                {"slug": "agent-a", "role": "planner"},
+                {"slug": "agent-b", "role": "executor"},
+                {"slug": "agent-c", "role": "critic"},
             ],
-            sub,
-        ),
-        "framework_mappings": {},
-        "first_seen_at": "2026-05-04T00:00:00Z",
-        "last_refreshed_at": "2026-05-04T00:00:00Z",
-    })
+            "edges": [
+                {"from": "agent-a", "to": "agent-b", "channel": "prompt"},
+                {"from": "agent-b", "to": "agent-c", "channel": "filesystem"},
+            ],
+            "headline": "Stub.",
+            "sub_verdicts": dict.fromkeys(
+                [
+                    "A_prompt_injection",
+                    "B_data_leakage",
+                    "C_capability_conflict",
+                    "D_cascading_error",
+                    "E_compliance",
+                ],
+                sub,
+            ),
+            "framework_mappings": {},
+            "first_seen_at": "2026-05-04T00:00:00Z",
+            "last_refreshed_at": "2026-05-04T00:00:00Z",
+        }
+    )
 
 
 @pytest.fixture

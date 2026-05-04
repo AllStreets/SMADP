@@ -64,10 +64,14 @@ def test_pydantic_round_trip() -> None:
 
 def test_pydantic_rejects_too_few_participants() -> None:
     with pytest.raises(ValidationError):
-        Chain.model_validate(_base(participants=[
-            {"slug": "a", "role": "planner"},
-            {"slug": "b", "role": "executor"},
-        ]))
+        Chain.model_validate(
+            _base(
+                participants=[
+                    {"slug": "a", "role": "planner"},
+                    {"slug": "b", "role": "executor"},
+                ]
+            )
+        )
 
 
 def test_pydantic_rejects_bad_topology() -> None:

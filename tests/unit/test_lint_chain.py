@@ -31,25 +31,36 @@ def _profile(slug: str) -> dict:
 
 def _sub() -> dict:
     return {
-        "severity": "low", "rationale": "x",
+        "severity": "low",
+        "rationale": "x",
         "citations": [{"profile_field": "agent-a.capabilities.execute_shell"}],
-        "conditions": [], "mitigations": [],
+        "conditions": [],
+        "mitigations": [],
     }
 
 
 def _chain(chain_id: str, *, participants: list[str], edges: list[tuple[str, str]]) -> dict:
     return {
-        "schema_version": "1.0", "chain_id": chain_id, "name": chain_id,
+        "schema_version": "1.0",
+        "chain_id": chain_id,
+        "name": chain_id,
         "topology": "linear",
         "participants": [{"slug": s, "role": "planner"} for s in participants],
         "edges": [{"from": a, "to": b, "channel": "prompt"} for a, b in edges],
         "headline": "h",
-        "sub_verdicts": {k: _sub() for k in [
-            "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-            "D_cascading_error", "E_compliance",
-        ]},
+        "sub_verdicts": {
+            k: _sub()
+            for k in [
+                "A_prompt_injection",
+                "B_data_leakage",
+                "C_capability_conflict",
+                "D_cascading_error",
+                "E_compliance",
+            ]
+        },
         "framework_mappings": {},
-        "first_seen_at": "2026-05-04T00:00:00Z", "last_refreshed_at": "2026-05-04T00:00:00Z",
+        "first_seen_at": "2026-05-04T00:00:00Z",
+        "last_refreshed_at": "2026-05-04T00:00:00Z",
     }
 
 
