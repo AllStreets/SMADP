@@ -1,0 +1,397 @@
+---
+import {
+  getProfiles,
+  getVerdicts,
+  compositeColor,
+  severityColor,
+} from '../data/catalog';
+import type { RiskId, Severity } from '../data/types';
+
+const profiles = getProfiles();
+const verdicts = getVerdicts();
+const profileName = new Map(profiles.map((p) => [p.slug, p.name]));
+const display = (slug: string) => profileName.get(slug) ?? slug;
+
+const RISKS: { id: RiskId; label: string; short: string }[] = [
+  { id: 'A_prompt_injection', label: 'Prompt injection', short: 'A' },
+  { id: 'B_data_leakage', label: 'Data leakage', short: 'B' },
+  { id: 'C_capability_conflict', label: 'Capability conflict', short: 'C' },
+  { id: 'D_cascading_error', label: 'Cascading error', short: 'D' },
+  { id: 'E_compliance', label: 'Compliance', short: 'E' },
+];
+
+const sevToScore: Record<Severity, number> = {
+  none: 0,
+  low: 0.2,
+  medium: 0.5,
+  high: 0.8,
+  critical: 1,
+};
+
+// ---------- 1) Pair-by-risk grid ----------
+type PairRow = {
+  verdict_id: string;
+  pair: [string, string];
+  composite: number;
+  sevs: Record<RiskId, Severity>;
+};
+const rows: PairRow[] = verdicts
+  .map((v) => ({
+    verdict_id: v.verdict_id,
+    pair: v.pair,
+    composite: v.composite_score,
+    sevs: {
+      A_prompt_injection: v.sub_verdicts.A_prompt_injection.severity,
+      B_data_leakage: v.sub_verdicts.B_data_leakage.severity,
+      C_capability_conflict: v.sub_verdicts.C_capability_conflict.severity,
+      D_cascading_error: v.sub_verdicts.D_cascading_error.severity,
+      E_compliance: v.sub_verdicts.E_compliance.severity,
+    },
+  }))
+  .sort((a, b) => b.composite - a.composite);
+
+// ---------- 2) Composite distribution histogram (10 buckets) ----------
+const buckets = Array.from({ length: 10 }, () => 0);
+for (const v of verdicts) {
+  const idx = Math.min(9, Math.floor(v.composite_score * 10));
+  buckets[idx]!++;
+}
+const histMax = Math.max(1, ...buckets);
+
+// ---------- 3) Top-10 riskiest pairs ----------
+const top10 = [...rows].slice(0, Math.min(10, rows.length));
+const top10Max = top10.length > 0 ? Math.max(...top10.map((r) => r.composite)) : 1;
+
+// ---------- 4) Agent risk profile (avg composite per agent) ----------
+type AgentAgg = { slug: string; name: string; pairs: number; avg: number; sum: number };
+const agentMap = new Map<string, AgentAgg>();
+for (const v of verdicts) {
+  for (const slug of v.pair) {
+    const cur = agentMap.get(slug) ?? {
+      slug,
+      name: display(slug),
+      pairs: 0,
+      avg: 0,
+      sum: 0,
+    };
+    cur.pairs += 1;
+    cur.sum += v.composite_score;
+    cur.avg = cur.sum / cur.pairs;
+    agentMap.set(slug, cur);
+  }
+}
+const agents = [...agentMap.values()].sort((a, b) => b.avg - a.avg).slice(0, 20);
+const agentMaxAvg = agents.length > 0 ? Math.max(...agents.map((a) => a.avg)) : 1;
+
+// ---------- 5) Per-risk top-5 pairs ----------
+const perRiskTop = RISKS.map((r) => {
+  const sorted = [...rows]
+    .map((row) => ({ row, score: sevToScore[row.sevs[r.id]] }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  return { risk: r, items: sorted };
+});
+
+const totals = {
+  pairs: verdicts.length,
+  agents: agentMap.size,
+  avg: verdicts.length
+    ? verdicts.reduce((s, v) => s + v.composite_score, 0) / verdicts.length
+    : 0,
+  hi: verdicts.filter((v) => v.composite_score >= 0.6).length,
+};
+---
+
+<div class="space-y-8">
+  <!-- KPI strip -->
+  <div class="grid gap-3 sm:grid-cols-4">
+    <div class="glass rounded-xl p-4">
+      <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Pairs</div>
+      <div class="mt-1 font-display text-2xl font-bold text-white">{totals.pairs}</div>
+    </div>
+    <div class="glass rounded-xl p-4">
+      <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Agents in catalog</div>
+      <div class="mt-1 font-display text-2xl font-bold text-white">{totals.agents}</div>
+    </div>
+    <div class="glass rounded-xl p-4">
+      <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Average composite</div>
+      <div class="mt-1 font-display text-2xl font-bold" style={`color:${compositeColor(totals.avg)}`}>{totals.avg.toFixed(2)}</div>
+    </div>
+    <div class="glass rounded-xl p-4">
+      <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">High-risk pairs (≥ 0.60)</div>
+      <div class="mt-1 font-display text-2xl font-bold text-rose-300">{totals.hi}</div>
+    </div>
+  </div>
+
+  <!-- 1) Pair-by-risk grid -->
+  <div class="card">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 class="h3 text-white">Pair × risk severity</h2>
+        <p class="mt-1 text-sm text-ink-300">
+          Every published verdict, sorted by composite score. Each cell is the
+          severity for that risk axis. Click a row to open the verdict.
+        </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-[11px]">
+        {(['none', 'low', 'medium', 'high', 'critical'] as Severity[]).map((s) => (
+          <span class="inline-flex items-center gap-1.5 text-ink-400">
+            <span class="inline-block h-3 w-3 rounded" style={`background:${severityColor(s)}`}></span>
+            {s}
+          </span>
+        ))}
+      </div>
+    </div>
+
+    {rows.length === 0 ? (
+      <p class="mt-6 text-sm text-ink-400">No verdicts yet — once they land here the grid will populate.</p>
+    ) : (
+      <div class="mt-5 overflow-x-auto">
+        <table class="w-full border-separate border-spacing-y-1 text-sm">
+          <thead class="font-mono text-[10px] uppercase tracking-wider text-ink-400">
+            <tr>
+              <th class="text-left">Pair</th>
+              <th class="text-right pr-3">Composite</th>
+              {RISKS.map((r) => (
+                <th class="px-1 text-center" title={r.label}>{r.short}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                class="cursor-pointer transition-colors hover:bg-white/5"
+                data-vid={r.verdict_id}
+              >
+                <td class="rounded-l-md bg-ink-900/40 px-3 py-2 font-mono text-xs text-ink-100">
+                  <span class="text-ink-50">{display(r.pair[0])}</span>
+                  <span class="px-1.5 text-ink-500">×</span>
+                  <span class="text-ink-50">{display(r.pair[1])}</span>
+                </td>
+                <td class="bg-ink-900/40 px-3 py-2 text-right">
+                  <span
+                    class="inline-flex items-center justify-end font-mono text-xs font-semibold"
+                    style={`color:${compositeColor(r.composite)}`}
+                  >
+                    {r.composite.toFixed(2)}
+                  </span>
+                </td>
+                {RISKS.map((rk, idx) => {
+                  const sev = r.sevs[rk.id];
+                  const isLast = idx === RISKS.length - 1;
+                  return (
+                    <td
+                      class:list={[
+                        'bg-ink-900/40 px-1 py-2 text-center',
+                        isLast && 'rounded-r-md',
+                      ]}
+                      title={`${rk.label}: ${sev}`}
+                    >
+                      <span
+                        class="inline-block h-3.5 w-3.5 rounded-sm"
+                        style={`background:${severityColor(sev)}`}
+                      ></span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- 2) Histogram + 3) Top-10  -->
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div class="card">
+      <h2 class="h3 text-white">Composite score distribution</h2>
+      <p class="mt-1 text-sm text-ink-300">How risk is spread across all pairs.</p>
+      {verdicts.length === 0 ? (
+        <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+      ) : (
+        <svg viewBox="0 0 600 240" class="mt-5 w-full" role="img" aria-label="composite score histogram">
+          <g>
+            {[0, 0.25, 0.5, 0.75, 1].map((g) => (
+              <line
+                x1="40" x2="590"
+                y1={20 + (1 - g) * 180}
+                y2={20 + (1 - g) * 180}
+                stroke="rgba(255,255,255,0.05)" stroke-width="1"
+              />
+            ))}
+            {buckets.map((count, i) => {
+              const x = 40 + i * 55 + 6;
+              const w = 43;
+              const h = (count / histMax) * 180;
+              const y = 200 - h;
+              const mid = (i + 0.5) / 10;
+              const fill = compositeColor(mid);
+              return (
+                <g>
+                  <rect x={x} y={y} width={w} height={h} fill={fill} rx="3" opacity="0.85">
+                    <title>{`${(i / 10).toFixed(1)}–${((i + 1) / 10).toFixed(1)}: ${count} pair${count === 1 ? '' : 's'}`}</title>
+                  </rect>
+                  {count > 0 && (
+                    <text
+                      x={x + w / 2} y={y - 4}
+                      text-anchor="middle"
+                      fill="#E4E4E7"
+                      font-family="ui-monospace,monospace"
+                      font-size="10"
+                    >{count}</text>
+                  )}
+                  <text
+                    x={x + w / 2} y={218}
+                    text-anchor="middle"
+                    fill="#71717A"
+                    font-family="ui-monospace,monospace"
+                    font-size="9"
+                  >{((i / 10)).toFixed(1)}</text>
+                </g>
+              );
+            })}
+            <text
+              x="315" y="234"
+              text-anchor="middle"
+              fill="#52525B"
+              font-family="ui-monospace,monospace"
+              font-size="9"
+            >composite score bucket (lower = safer)</text>
+          </g>
+        </svg>
+      )}
+    </div>
+
+    <div class="card">
+      <h2 class="h3 text-white">Top-10 riskiest pairs</h2>
+      <p class="mt-1 text-sm text-ink-300">Highest composite scores in the catalog.</p>
+      {top10.length === 0 ? (
+        <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+      ) : (
+        <ul class="mt-5 space-y-1.5">
+          {top10.map((r, i) => {
+            const pct = (r.composite / Math.max(top10Max, 0.01)) * 100;
+            const barColor = compositeColor(r.composite);
+            return (
+              <li>
+                <a
+                  href={`/verdicts/${r.verdict_id}`}
+                  class="group block rounded-md px-3 py-2 transition-colors hover:bg-white/5"
+                >
+                  <div class="flex items-baseline justify-between gap-3">
+                    <div class="font-mono text-xs text-ink-200">
+                      <span class="text-ink-500">#{(i + 1).toString().padStart(2, '0')}</span>
+                      <span class="ml-3 text-ink-50">{display(r.pair[0])}</span>
+                      <span class="px-1.5 text-ink-500">×</span>
+                      <span class="text-ink-50">{display(r.pair[1])}</span>
+                    </div>
+                    <span class="font-mono text-xs font-semibold" style={`color:${barColor}`}>
+                      {r.composite.toFixed(2)}
+                    </span>
+                  </div>
+                  <div class="mt-1.5 h-1.5 overflow-hidden rounded bg-ink-900">
+                    <div class="h-full rounded" style={`width:${pct}%; background:${barColor};`}></div>
+                  </div>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  </div>
+
+  <!-- 4) Agent risk profile -->
+  <div class="card">
+    <h2 class="h3 text-white">Agent risk profile</h2>
+    <p class="mt-1 text-sm text-ink-300">
+      Average composite score across every pair an agent participates in
+      (top {agents.length} of {agentMap.size}, sorted by risk).
+    </p>
+    {agents.length === 0 ? (
+      <p class="mt-6 text-sm text-ink-400">no data yet.</p>
+    ) : (
+      <ul class="mt-5 grid gap-1.5 sm:grid-cols-2">
+        {agents.map((a) => {
+          const pct = (a.avg / Math.max(agentMaxAvg, 0.01)) * 100;
+          const c = compositeColor(a.avg);
+          return (
+            <li>
+              <a
+                href={`/agents/${a.slug}`}
+                class="group block rounded-md px-3 py-2 transition-colors hover:bg-white/5"
+              >
+                <div class="flex items-baseline justify-between gap-3">
+                  <span class="truncate font-mono text-xs text-ink-50">{a.name}</span>
+                  <span class="font-mono text-[11px] text-ink-400">
+                    <span style={`color:${c}`}>{a.avg.toFixed(2)}</span>
+                    <span class="ml-2 text-ink-500">{a.pairs}p</span>
+                  </span>
+                </div>
+                <div class="mt-1.5 h-1.5 overflow-hidden rounded bg-ink-900">
+                  <div class="h-full rounded" style={`width:${pct}%; background:${c};`}></div>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </div>
+
+  <!-- 5) Per-risk top pairs -->
+  <div class="card">
+    <h2 class="h3 text-white">Top pairs per risk axis</h2>
+    <p class="mt-1 text-sm text-ink-300">
+      The five worst pairs along each individual risk dimension.
+    </p>
+    <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {perRiskTop.map(({ risk, items }) => (
+        <div class="rounded-lg border border-white/5 bg-ink-950/40 p-4">
+          <div class="flex items-baseline gap-2">
+            <span class="font-mono text-[10px] font-bold uppercase tracking-wider text-brand-300">
+              {risk.short}
+            </span>
+            <span class="font-display text-sm font-semibold text-white">
+              {risk.label}
+            </span>
+          </div>
+          {items.length === 0 ? (
+            <p class="mt-3 text-xs text-ink-500">no pairs flagged.</p>
+          ) : (
+            <ul class="mt-3 space-y-1.5">
+              {items.map(({ row, score }) => {
+                const c = severityColor(row.sevs[risk.id]);
+                return (
+                  <li>
+                    <a
+                      href={`/verdicts/${row.verdict_id}`}
+                      class="group flex items-center justify-between gap-2 rounded px-2 py-1 transition-colors hover:bg-white/5"
+                    >
+                      <span class="truncate font-mono text-[11px] text-ink-200">
+                        {display(row.pair[0])} × {display(row.pair[1])}
+                      </span>
+                      <span class="inline-flex h-2.5 w-2.5 flex-none rounded-sm" style={`background:${c}`} title={row.sevs[risk.id]}></span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
+
+<script>
+  // Click any pair-grid row → verdict page.
+  document.querySelectorAll<HTMLTableRowElement>('tr[data-vid]').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const vid = tr.dataset.vid;
+      if (vid) window.location.href = `/verdicts/${vid}`;
+    });
+  });
+</script>
