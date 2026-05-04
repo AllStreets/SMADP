@@ -285,3 +285,32 @@ export function getVerdictsForControl(controlId: string): Verdict[] {
     Object.values(v.framework_mappings).some((arr) => arr.includes(controlId)),
   );
 }
+
+/**
+ * Compact per-agent payload for client-side analysers (e.g. the chain
+ * builder). Carries only the fields the heuristics need so we can ship
+ * all 100 agents to the page without bloat.
+ */
+export function getProfileSummariesForClient() {
+  return getProfiles().map((p) => ({
+    slug: p.slug,
+    name: p.name,
+    vendor: p.vendor.handle,
+    source_type: p.source_type,
+    category: p.category,
+    caps: {
+      execute_shell: !!p.capabilities.execute_shell,
+      write_filesystem: !!p.capabilities.write_filesystem,
+      modify_git_state: !!p.capabilities.modify_git_state,
+      install_packages: !!p.capabilities.install_packages,
+      spawn_subprocesses: !!p.capabilities.spawn_subprocesses,
+      use_mcp: !!p.capabilities.use_mcp,
+      run_browsers: !!p.capabilities.run_browsers,
+      network_egress: p.capabilities.network_egress ?? 'none',
+    },
+    io: {
+      files: !!(p.io_surfaces.files && p.io_surfaces.files.length > 0),
+      calls_apis: !!(p.io_surfaces.calls_apis && p.io_surfaces.calls_apis.length > 0),
+    },
+  }));
+}
