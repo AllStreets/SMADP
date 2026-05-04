@@ -145,6 +145,61 @@ jobs:
           server.shutdown()
           PY
 
+      - name: Smoke — vendor repo-claim verify
+        env:
+          SMADP_CACHE_DIR: ${{ runner.temp }}/smadp-vendor-ci
+          SMADP_KEK_MASTER: "0000000000000000000000000000000000000000000000000000000000000000"
+          SMADP_PUBLIC_BASE_URL: "http://localhost:8765"
+        run: |
+          python - <<'PY'
+          import http.server, threading
+          from smadp.config import Config
+          from smadp.schemas.tenancy import Plan, Role
+          from smadp.schemas.vendor import ClaimMethod, RepoEvidence
+          from smadp.tenancy import store as tenancy
+          from smadp.vendor import store, verifier
+
+          cfg = Config()
+
+          ws = tenancy.create_workspace(name="ci", plan=Plan.PUBLIC, config=cfg)
+          tenancy.add_member(workspace_id=ws.id, user_id="u_CIUSER01", role=Role.ADMIN, config=cfg)
+          claim = store.create_claim(
+              workspace_id=ws.id, agent_id="ci-agent", vendor_user_id="u_CIUSER01",
+              method=ClaimMethod.REPO,
+              evidence_url="http://localhost:8765",
+              config=cfg,
+          )
+
+          token = claim.token
+
+          class H(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path == "/.smadp/owner.txt":
+                      body = token.encode()
+                      self.send_response(200)
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  else:
+                      self.send_response(404)
+                      self.end_headers()
+              def log_message(self, *a, **k): pass
+
+          srv = http.server.HTTPServer(("127.0.0.1", 8765), H)
+          t = threading.Thread(target=srv.serve_forever, daemon=True); t.start()
+          try:
+              result = verifier.verify_repo(
+                  claim=claim, evidence=RepoEvidence(repo_url="http://localhost:8765"),
+              )
+              assert result.verified, result.detail
+              store.mark_claim_verified(claim_id=claim.id)
+              loaded = store.get_claim(claim_id=claim.id)
+              assert loaded.status.value == "verified"
+              print("vendor smoke ok")
+          finally:
+              srv.shutdown()
+          PY
+
       - name: Catalog lint (smadp lint)
         run: smadp lint --catalog catalog
 
