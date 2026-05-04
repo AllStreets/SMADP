@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import structlog
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -129,7 +129,7 @@ def create_subscription(
     event_types: list[EventType],
     config: Config | None = None,
     integration_kind: IntegrationKind = IntegrationKind.GENERIC,
-    integration_config: dict | None = None,
+    integration_config: dict[str, Any] | None = None,
 ) -> tuple[Subscription, str]:
     """Insert a new subscription; return (subscription, plaintext_secret).
 

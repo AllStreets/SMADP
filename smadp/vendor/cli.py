@@ -96,6 +96,7 @@ def _claims_verify(claim_id: str, evidence_json: str) -> None:
     cfg = load_config()
     raw = json.loads(evidence_json)
     claim = store.get_claim(claim_id=claim_id, config=cfg)
+    evidence: RepoEvidence | DnsEvidence | TokenEvidence
     if claim.method == ClaimMethod.REPO:
         evidence = RepoEvidence(**raw)
     elif claim.method == ClaimMethod.DNS:

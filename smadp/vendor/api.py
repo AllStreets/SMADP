@@ -108,7 +108,9 @@ def _build_instructions(
     raise ValueError(f"unknown method: {method!r}")
 
 
-def _coerce_evidence(method: ClaimMethod, raw: dict[str, Any]):
+def _coerce_evidence(
+    method: ClaimMethod, raw: dict[str, Any]
+) -> RepoEvidence | DnsEvidence | TokenEvidence:
     if method == ClaimMethod.REPO:
         return RepoEvidence(**raw)
     if method == ClaimMethod.DNS:
@@ -196,7 +198,7 @@ def verify_claim(
     return _verify_failed_response(claim, result)
 
 
-def _verify_failed_response(claim: VendorClaim, result: ClaimVerification):
+def _verify_failed_response(claim: VendorClaim, result: ClaimVerification) -> Any:
     from fastapi.responses import JSONResponse
 
     return JSONResponse(

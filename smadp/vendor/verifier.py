@@ -64,7 +64,7 @@ _DNS_LIFETIME_S: Final[float] = 10.0
 _DNS_PREFIX: Final[str] = "_smadp-owner."
 
 
-def _resolve_txt(name: str):
+def _resolve_txt(name: str) -> dns.resolver.Answer:
     """Indirection for monkeypatching in tests."""
     resolver = dns.resolver.Resolver(configure=True)
     resolver.lifetime = _DNS_LIFETIME_S

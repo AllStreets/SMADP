@@ -122,6 +122,10 @@ def _from_iso(s: str | None) -> datetime | None:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def _from_iso_required(s: str) -> datetime:
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 def _generate_claim_id() -> str:
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return "vc_" + "".join(secrets.choice(alphabet) for _ in range(8))
@@ -141,7 +145,7 @@ def _row_to_claim(row: sqlite3.Row) -> VendorClaim:
         token=row["token"],
         status=ClaimStatus(row["status"]),
         evidence_url=row["evidence_url"],
-        created_at=_from_iso(row["created_at"]),
+        created_at=_from_iso_required(row["created_at"]),
         granted_at=_from_iso(row["granted_at"]),
         revoked_at=_from_iso(row["revoked_at"]),
     )
@@ -307,7 +311,7 @@ def _row_to_response(row: sqlite3.Row) -> VendorResponse:
         verdict_id=row["verdict_id"],
         vendor_user_id=row["vendor_user_id"],
         body_md=row["body_md"],
-        created_at=_from_iso(row["created_at"]),
+        created_at=_from_iso_required(row["created_at"]),
     )
 
 
@@ -345,7 +349,7 @@ def post_response(
             verdict_id=verdict_id,
             vendor_user_id=vendor_user_id,
             body_md=body_md,
-            created_at=_from_iso(now_iso),
+            created_at=_from_iso_required(now_iso),
         )
     finally:
         conn.close()
@@ -410,7 +414,7 @@ def _row_to_dispute(row: sqlite3.Row) -> Dispute:
         requested_outcome=RequestedOutcome(row["requested_outcome"]),
         status=DisputeStatus(row["status"]),
         decision_rationale_md=row["decision_rationale_md"],
-        filed_at=_from_iso(row["filed_at"]),
+        filed_at=_from_iso_required(row["filed_at"]),
         triaged_at=_from_iso(row["triaged_at"]),
         resolved_at=_from_iso(row["resolved_at"]),
         sla_breached_at=_from_iso(row["sla_breached_at"]),
