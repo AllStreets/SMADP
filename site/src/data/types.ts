@@ -84,6 +84,7 @@ export interface Profile {
     supports_multiple_instances?: boolean;
   };
   evidence_refs: string[];
+  pairings?: string[];
   first_seen_at: string;
   last_refreshed_at: string;
 }

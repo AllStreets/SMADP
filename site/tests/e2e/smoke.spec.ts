@@ -50,4 +50,24 @@ test.describe('SMADP frontend smoke', () => {
     // Console may have fetch errors (no backend) — only fail on uncaught JS errors
     expect(errors).toEqual([]);
   });
+
+  test('chains index → deep view renders', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+
+    await page.goto('/chains');
+
+    // Get the first chain link by finding h1 in main and using that context
+    const firstChainLink = page.locator('main a[href^="/chains/c_"]').first();
+    const href = await firstChainLink.getAttribute('href');
+    expect(href).toBeTruthy();
+
+    await page.goto(href!);
+    await expect(page.locator('svg[aria-label="Chain topology"]')).toBeVisible();
+
+    expect(errors).toEqual([]);
+  });
 });
