@@ -19,7 +19,6 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 import structlog
 
@@ -34,7 +33,6 @@ class PinImagesError(RuntimeError):
 class PinImagesResult:
     changed: dict[str, str] = field(default_factory=dict)
     unchanged: dict[str, str] = field(default_factory=dict)
-    skipped: dict[str, str] = field(default_factory=dict)
 
 
 def pin_images(
@@ -51,6 +49,7 @@ def pin_images(
 
     target_slugs = list(slugs) if slugs else _discover_slugs(adapters_root)
     result = PinImagesResult()
+    approved_dirty = False
 
     for slug in target_slugs:
         if slug not in approved:
@@ -77,12 +76,14 @@ def pin_images(
         if dry_run:
             continue
         approved[slug] = digest
+        approved_dirty = True
         mcp["image_digest_pinned"] = digest
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n", encoding="utf-8")
+
+    if approved_dirty:
         approved_images_path.write_text(
             json.dumps(approved, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n", encoding="utf-8")
-
     return result
 
 
@@ -109,9 +110,13 @@ def _pull_and_inspect(image_ref: str) -> str:
             text=True,
             timeout=600,
         )
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        if isinstance(e, subprocess.TimeoutExpired):
+            stderr = (e.stderr or b"").decode().strip()
+        else:
+            stderr = e.stderr.strip()
         raise PinImagesError(
-            f"`{docker} pull {image_ref}` failed: {e.stderr.strip()}"
+            f"`{docker} pull {image_ref}` failed: {stderr or type(e).__name__}"
         ) from e
     try:
         proc = subprocess.run(
@@ -121,9 +126,13 @@ def _pull_and_inspect(image_ref: str) -> str:
             text=True,
             timeout=30,
         )
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        if isinstance(e, subprocess.TimeoutExpired):
+            stderr = (e.stderr or b"").decode().strip()
+        else:
+            stderr = e.stderr.strip()
         raise PinImagesError(
-            f"`{docker} inspect {image_ref}` failed: {e.stderr.strip()}"
+            f"`{docker} inspect {image_ref}` failed: {stderr or type(e).__name__}"
         ) from e
     try:
         digests = json.loads(proc.stdout.strip())

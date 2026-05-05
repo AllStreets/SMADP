@@ -602,6 +602,9 @@ def sandbox_pin_images(ctx: click.Context, adapters: tuple[str, ...], dry_run: b
         ctx.exit(2)
         return
 
+    if not result.changed and not result.unchanged:
+        console.print("[yellow]no adapters processed[/]")
+        return
     table = Table(title="pin-images" + (" (dry run)" if dry_run else ""))
     table.add_column("slug")
     table.add_column("status")
