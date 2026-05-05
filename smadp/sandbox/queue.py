@@ -22,7 +22,6 @@ this module never touches a container.
 
 from __future__ import annotations
 
-import json
 import secrets
 import sqlite3
 from collections.abc import Iterator
@@ -34,7 +33,7 @@ from typing import Any, Final, Literal
 import structlog
 
 from smadp.config import Config, load_config
-from smadp.sandbox.binding import bind_scenario_to_pair
+from smadp.sandbox.binding import bind_scenario_to_pair, load_adapter_capabilities
 from smadp.sandbox.policy import (
     UnsafeSecretError,
     looks_like_real_secret,
@@ -209,8 +208,8 @@ def enqueue_sandbox_run(
 
     # Capability-based scenario↔adapter binding.
     sc = load_scenario(scenario)
-    caps_a = _load_adapter_capabilities(a_sorted)
-    caps_b = _load_adapter_capabilities(b_sorted)
+    caps_a = load_adapter_capabilities(a_sorted, config=cfg)
+    caps_b = load_adapter_capabilities(b_sorted, config=cfg)
     binding = bind_scenario_to_pair(
         sc,
         slug_a=a_sorted,
@@ -396,19 +395,6 @@ def _update_terminal(
         conn.close()
 
 
-def _load_adapter_capabilities(slug: str) -> dict[str, Any]:
-    """Read `adapters/<slug>/mcp.json` and return its capabilities block."""
-    repo_root = Path(__file__).resolve().parents[2]
-    mcp_path = repo_root / "adapters" / slug / "mcp.json"
-    if not mcp_path.exists():
-        raise ValueError(f"unknown adapter {slug!r}: no {mcp_path}")
-    raw = json.loads(mcp_path.read_text(encoding="utf-8"))
-    caps = raw.get("capabilities")
-    if not isinstance(caps, dict):
-        raise ValueError(f"{mcp_path} has no `capabilities` object")
-    return caps
-
-
 def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
     """Test-only helper — returns raw rows as dicts."""
     cfg = config or load_config()
@@ -423,8 +409,6 @@ def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
 
 __all__ = [
     "RunState",
-    "_all_rows_for_test",
-    "_load_adapter_capabilities",
     "claim_next_pending",
     "enqueue_sandbox_run",
     "get_run_status",

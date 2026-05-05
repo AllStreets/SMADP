@@ -9,10 +9,13 @@ capabilities are satisfied by its assigned adapter, then returns the chosen
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from smadp.config import Config, load_config
 from smadp.sandbox.scenarios.loader import AgentRole, Scenario
 
 
@@ -76,4 +79,22 @@ def bind_scenario_to_pair(
     )
 
 
-__all__ = ["BindingResult", "ScenarioBindingError", "bind_scenario_to_pair"]
+def load_adapter_capabilities(slug: str, *, config: Config | None = None) -> dict[str, Any]:
+    """Read `<repo_root>/adapters/<slug>/mcp.json` and return its capabilities block."""
+    cfg = config or load_config()
+    mcp_path: Path = cfg.repo_root / "adapters" / slug / "mcp.json"
+    if not mcp_path.exists():
+        raise ValueError(f"unknown adapter {slug!r}: no {mcp_path}")
+    raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    caps = raw.get("capabilities")
+    if not isinstance(caps, dict):
+        raise ValueError(f"{mcp_path} has no `capabilities` object")
+    return caps
+
+
+__all__ = [
+    "BindingResult",
+    "ScenarioBindingError",
+    "bind_scenario_to_pair",
+    "load_adapter_capabilities",
+]
