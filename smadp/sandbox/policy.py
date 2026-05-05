@@ -20,8 +20,10 @@ Two responsibilities:
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Final
 
 # ---------------------------------------------------------------------------
@@ -94,44 +96,26 @@ def assert_safe_secrets(env: dict[str, str]) -> None:
 
 _IMAGE_DIGEST_RE = re.compile(r"^[a-z0-9./_-]+(?::[a-zA-Z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 
-# Approved base images keyed by adapter slug. The digest values below are
-# placeholders (all-zero) for v1 development; ops MUST replace them with real,
-# signature-verified digests before sandbox runs go to production. The list is
-# intentionally tiny: every addition is a supply-chain decision.
-#
-# To pin a real digest: ``docker buildx imagetools inspect <ref>`` or
-# ``crane digest <ref>`` and copy the ``sha256:...`` line.
-APPROVED_IMAGES: Final[dict[str, str]] = {
-    # Generic Python runtime — used by adapters that ship as pip packages.
-    "python-base": (
-        "docker.io/library/python:3.12-slim@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    # Node runtime — used by JS-based adapters (continue-dev local server).
-    "node-base": (
-        "docker.io/library/node:20-bookworm-slim@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    # Per-adapter images. Replace with real ghcr.io / docker.io digests once
-    # signatures are verified. Keep the slug here aligned with
-    # ``adapters/<slug>/mcp.json``'s ``slug`` field.
-    "aider": (
-        "ghcr.io/paul-gauthier/aider@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    "continue-dev": (
-        "ghcr.io/continuedev/continue@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    "autogen": (
-        "ghcr.io/microsoft/autogen@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-    "open-interpreter": (
-        "ghcr.io/openinterpreter/open-interpreter@sha256:"
-        "0000000000000000000000000000000000000000000000000000000000000000"
-    ),
-}
+_APPROVED_IMAGES_PATH: Final[Path] = Path(__file__).with_name("approved_images.json")
+
+
+def _load_approved_images() -> dict[str, str]:
+    """Load `<package>/approved_images.json` into a slug → pinned-digest mapping.
+
+    The file is package data; it is mutated by `smadp sandbox pin-images` and
+    committed to git so every host validates against the same set.
+    """
+    raw = json.loads(_APPROVED_IMAGES_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in raw.items()
+    ):
+        raise RuntimeError(
+            f"{_APPROVED_IMAGES_PATH} must be a JSON object of string→string"
+        )
+    return raw
+
+
+APPROVED_IMAGES: Final[dict[str, str]] = _load_approved_images()
 
 
 def validate_image_digest(digest: str) -> bool:
