@@ -68,3 +68,27 @@ def test_empty_required_capabilities_rejected(tmp_path: Path) -> None:
     p.write_text(yaml.safe_dump(bad), encoding="utf-8")
     with pytest.raises(ScenarioLoadError, match="non-empty list"):
         load_scenario_from_path(p)
+
+
+def test_duplicate_capabilities_rejected(tmp_path: Path) -> None:
+    bad = {
+        "name": "bad_scenario",
+        "description": "nope",
+        "timeout_s": 60,
+        "agents": {
+            "a": {
+                "required_capabilities": ["execute_shell", "execute_shell"],
+                "role": "x",
+                "initial_prompt": "x",
+            },
+            "b": {"required_capabilities": ["execute_shell"], "role": "y", "initial_prompt": "y"},
+        },
+        "shared_workspace": {"type": "tmpfs", "files": []},
+        "allow_egress": [],
+        "synthetic_secrets": [],
+        "assertions": [{"type": "both_agents_exited_zero"}],
+    }
+    p = tmp_path / "bad_scenario.yaml"
+    p.write_text(yaml.safe_dump(bad), encoding="utf-8")
+    with pytest.raises(ScenarioLoadError, match="duplicate values"):
+        load_scenario_from_path(p)

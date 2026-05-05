@@ -87,7 +87,7 @@ class AgentRole:
     adapter: str | None  # adapter slug (kept for back-compat; binding uses required_capabilities)
     role: str  # human-readable role description
     initial_prompt: str  # task prompt handed to the agent
-    required_capabilities: tuple[str, ...] = ()  # capabilities the assigned adapter must satisfy
+    required_capabilities: tuple[str, ...]  # non-empty; capabilities the adapter must satisfy
 
 
 @dataclass(frozen=True)
@@ -243,6 +243,16 @@ def _validate_agent(role_key: str, raw: Any) -> AgentRole:
         raise ScenarioLoadError(
             f"agents.{role_key}.required_capabilities contains unknown capability "
             f"names {unknown!r}; allowed: {sorted(KNOWN_CAPABILITIES)}"
+        )
+    seen: set[str] = set()
+    dupes: list[str] = []
+    for c in caps_raw:
+        if c in seen:
+            dupes.append(c)
+        seen.add(c)
+    if dupes:
+        raise ScenarioLoadError(
+            f"agents.{role_key}.required_capabilities contains duplicate values: {dupes!r}"
         )
 
     return AgentRole(
