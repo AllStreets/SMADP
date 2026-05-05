@@ -35,8 +35,13 @@ async def test_worker_once_processes_one_run(
         slug_a="aider", slug_b="continue-dev", scenario="calendar_email", config=tmp_config
     )
 
-    async def fake_execute_run(rid: str, *, config: Config) -> SandboxRun:
-        # Simulate runner: mark completed.
+    captured_env: dict[str, object] = {}
+
+    async def fake_execute_run(
+        rid: str, *, config: Config, env_passthrough: object = None
+    ) -> SandboxRun:
+        # Simulate runner: mark completed; record env_passthrough for assertion.
+        captured_env["value"] = env_passthrough
         transcript = config.cache_dir / "transcripts" / rid / "transcript.jsonl"
         transcript.parent.mkdir(parents=True, exist_ok=True)
         transcript.write_text("", encoding="utf-8")

@@ -293,20 +293,36 @@ def list_pending(*, config: Config | None = None) -> list[SandboxRun]:
 # ---------------------------------------------------------------------------
 
 
-def claim_next_pending(*, config: Config | None = None) -> SandboxRun | None:
+def claim_next_pending(
+    *,
+    config: Config | None = None,
+    scenario: str | None = None,
+) -> SandboxRun | None:
     """Atomically transition the oldest pending run to ``running`` and return it.
 
     Returns ``None`` if no pending runs exist. Uses ``BEGIN IMMEDIATE`` so
     multiple workers on the same DB cannot double-claim.
+
+    ``scenario`` filters the candidate set to rows whose ``scenario`` column
+    equals the given value, so a worker started with ``--scenario`` only
+    drains its slice of the queue.
     """
     cfg = config or load_config()
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
         with _transaction(conn):
-            cur = conn.execute(
-                "SELECT * FROM runs WHERE state = 'pending' ORDER BY created_at ASC LIMIT 1"
-            )
+            if scenario is None:
+                cur = conn.execute(
+                    "SELECT * FROM runs WHERE state = 'pending' "
+                    "ORDER BY created_at ASC LIMIT 1"
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT * FROM runs WHERE state = 'pending' AND scenario = ? "
+                    "ORDER BY created_at ASC LIMIT 1",
+                    (scenario,),
+                )
             row = cur.fetchone()
             if row is None:
                 return None

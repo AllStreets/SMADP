@@ -133,8 +133,16 @@ def _build_spec_for_agent(
     role: AgentRole,
     scenario: Scenario,
     adapter: AdapterDescriptor,
+    env_passthrough: Mapping[str, str] | None = None,
 ) -> ContainerSpec:
-    """Compose a ContainerSpec for one agent in a scenario."""
+    """Compose a ContainerSpec for one agent in a scenario.
+
+    ``env_passthrough`` carries real, allowlist-filtered API keys from the
+    worker (see :mod:`smadp.sandbox.keys`). When present, real values win over
+    the synthetic stub; absent, adapters get a synthetic stand-in so the
+    scenario surfaces the missing-credential failure cleanly rather than
+    crashing on env lookup.
+    """
     # Image: prefer the digest pinned in the adapter manifest if it's on the
     # allowlist; otherwise fall back to the policy's per-slug pinned digest.
     if adapter.image_digest_pinned:
@@ -142,20 +150,20 @@ def _build_spec_for_agent(
     else:
         image_digest = lookup_image_for_adapter(adapter.slug)
 
-    # Env: only synthetic, scenario-scoped values. Adapters that require API
-    # keys must satisfy them via injected synthetic secrets in the scenario;
-    # the runner never forwards host env.
+    # Env: scenario synthetic_secrets first, then worker-supplied real keys
+    # (allowlist-filtered upstream), finally synthetic stubs for any
+    # adapter.env_required that nobody else satisfied.
     env: dict[str, str] = {}
     for key, value in scenario.synthetic_secrets.items():
         env[key] = value
+    if env_passthrough:
+        for key, value in env_passthrough.items():
+            env[key] = value
     # Pass the role + initial prompt as env vars so adapters can read them
     # without us having to template their CLI flags.
     env["SMADP_AGENT_ROLE"] = role.role_key
     env["SMADP_AGENT_TASK"] = role.initial_prompt
     env["SMADP_RUN_ID"] = run_id
-    # Adapters that demand a credential they cannot run without get a
-    # synthetic stand-in; if they actually depend on a *real* key the
-    # scenario will fail and that's the correct outcome.
     for required in adapter.env_required:
         env.setdefault(required, f"synthetic-test-only-{required.lower()}-stub")
 
@@ -434,12 +442,21 @@ def _evaluate_assertion(
 # ---------------------------------------------------------------------------
 
 
-async def execute_run(run_id: str, *, config: Config | None = None) -> SandboxRun:
+async def execute_run(
+    run_id: str,
+    *,
+    config: Config | None = None,
+    env_passthrough: Mapping[str, str] | None = None,
+) -> SandboxRun:
     """Execute a previously-enqueued sandbox run end-to-end.
 
     The run must already be in the ``pending`` or ``running`` state. Returns
     the final :class:`SandboxRun` regardless of outcome (pass/fail/errored);
     raises only on bugs in the runner itself, not on agent misbehavior.
+
+    ``env_passthrough`` is the optional, allowlist-filtered map of real API
+    keys the worker has loaded from ``~/.smadp/keys.env``. The runner copies
+    these into each container's env over the synthetic stubs.
     """
     cfg = config or load_config()
     transcript_path = _transcript_path_for(run_id, config=cfg)
@@ -492,6 +509,7 @@ async def execute_run(run_id: str, *, config: Config | None = None) -> SandboxRu
                 role=role_a,
                 scenario=scenario,
                 adapter=adapter_a,
+                env_passthrough=env_passthrough,
             )
             spec_b = _build_spec_for_agent(
                 run_id=run_id,
@@ -499,6 +517,7 @@ async def execute_run(run_id: str, *, config: Config | None = None) -> SandboxRu
                 role=role_b,
                 scenario=scenario,
                 adapter=adapter_b,
+                env_passthrough=env_passthrough,
             )
         except (PolicyError, ValueError) as e:
             writer.emit(
