@@ -157,3 +157,23 @@ def test_pull_and_inspect_handles_unparseable_repodigests(monkeypatch: pytest.Mo
 
     with pytest.raises(pin_images.PinImagesError, match=r"could not parse RepoDigests JSON"):
         pin_images._pull_and_inspect("ghcr.io/example/aider:latest")
+
+
+def test_pull_timeout_raises_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A TimeoutExpired during `docker pull` becomes PinImagesError, not a raw traceback."""
+    import subprocess as _subprocess
+
+    def fake_which(name: str) -> str | None:
+        return "/usr/bin/docker" if name == "docker" else None
+
+    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        if "pull" in cmd:
+            # text=True semantics: stderr is a str, not bytes
+            raise _subprocess.TimeoutExpired(cmd=cmd, timeout=600, output="", stderr="pull stalled")
+        raise AssertionError("inspect should not be called after pull timeout")
+
+    monkeypatch.setattr(pin_images.shutil, "which", fake_which)
+    monkeypatch.setattr(pin_images.subprocess, "run", fake_run)
+
+    with pytest.raises(pin_images.PinImagesError, match=r"failed: pull stalled"):
+        pin_images._pull_and_inspect("ghcr.io/example/aider:latest")

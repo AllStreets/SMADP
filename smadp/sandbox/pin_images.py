@@ -93,6 +93,15 @@ def _discover_slugs(adapters_root: Path) -> list[str]:
     return sorted(p.name for p in adapters_root.iterdir() if (p / "mcp.json").exists())
 
 
+def _decode_stderr(value: bytes | str | None) -> str:
+    """Normalize subprocess stderr to a stripped str regardless of text mode or exception class."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace").strip()
+    return value.strip()
+
+
 def _pull_and_inspect(image_ref: str) -> str:
     """Run `docker pull` then `docker inspect` and extract the first RepoDigest.
 
@@ -111,10 +120,7 @@ def _pull_and_inspect(image_ref: str) -> str:
             timeout=600,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        if isinstance(e, subprocess.TimeoutExpired):
-            stderr = (e.stderr or b"").decode().strip()
-        else:
-            stderr = e.stderr.strip()
+        stderr = _decode_stderr(e.stderr)
         raise PinImagesError(
             f"`{docker} pull {image_ref}` failed: {stderr or type(e).__name__}"
         ) from e
@@ -127,10 +133,7 @@ def _pull_and_inspect(image_ref: str) -> str:
             timeout=30,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        if isinstance(e, subprocess.TimeoutExpired):
-            stderr = (e.stderr or b"").decode().strip()
-        else:
-            stderr = e.stderr.strip()
+        stderr = _decode_stderr(e.stderr)
         raise PinImagesError(
             f"`{docker} inspect {image_ref}` failed: {stderr or type(e).__name__}"
         ) from e
