@@ -618,6 +618,58 @@ def sandbox_pin_images(ctx: click.Context, adapters: tuple[str, ...], dry_run: b
     console.print(table)
 
 
+@sandbox.command("work")
+@click.option("--once", is_flag=True, help="Process at most one run, then exit.")
+@click.option(
+    "--max",
+    "max_runs",
+    type=int,
+    default=None,
+    help="Exit after N completed runs.",
+)
+@click.option(
+    "--scenario", default=None, help="Only process runs for this scenario."
+)
+@click.option(
+    "--keys-file",
+    type=click.Path(file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to keys.env (default: ~/.smadp/keys.env).",
+)
+@click.option(
+    "--poll-interval", type=float, default=2.0, help="Seconds between queue polls."
+)
+@click.pass_context
+def sandbox_work(
+    ctx: click.Context,
+    once: bool,
+    max_runs: int | None,
+    scenario: str | None,
+    keys_file: Path | None,
+    poll_interval: float,
+) -> None:
+    """Drain the sandbox queue: exec each run, promote the verdict."""
+    import asyncio
+
+    from smadp.sandbox.worker import run_worker
+
+    cfg = _config_from_ctx(ctx)
+    summary = asyncio.run(
+        run_worker(
+            once=once,
+            max_runs=max_runs,
+            scenario_filter=scenario,
+            config=cfg,
+            keys_path=keys_file,
+            poll_interval_s=poll_interval,
+        )
+    )
+    console.print(
+        f"[green]worker exit[/] runs_completed={summary.runs_completed} "
+        f"runs_failed={summary.runs_failed}"
+    )
+
+
 # ------------------------------------------------------------------- chronicle
 @cli.command()
 @click.option("--tail", is_flag=True, help="Follow new events as they arrive.")
