@@ -91,26 +91,25 @@ def _adapters_root(config: Config) -> Path:
     return config.repo_root / _ADAPTER_DIR_NAME
 
 
-def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
-    path = _adapters_root(config) / slug / "mcp.json"
-    if not path.exists():
-        raise FileNotFoundError(f"No adapter descriptor for slug {slug!r} at {path}")
-    raw = json.loads(path.read_text(encoding="utf-8"))
+def _adapter_descriptor_from_dict(raw: dict, *, slug_hint: str) -> AdapterDescriptor:
+    """Build an AdapterDescriptor from an already-parsed mcp.json dict."""
     if not isinstance(raw, dict):
-        raise ValueError(f"Adapter {slug!r}: mcp.json root must be a JSON object")
+        raise ValueError(f"Adapter {slug_hint!r}: mcp.json root must be a JSON object")
     if raw.get("schema_version") != "1.0":
-        raise ValueError(f"Adapter {slug!r}: unsupported schema_version")
+        raise ValueError(f"Adapter {slug_hint!r}: unsupported schema_version")
     cmd = raw.get("command", [])
     if not isinstance(cmd, list) or not cmd or not all(isinstance(c, str) for c in cmd):
-        raise ValueError(f"Adapter {slug!r}: command must be a non-empty list of strings")
+        raise ValueError(
+            f"Adapter {slug_hint!r}: command must be a non-empty list of strings"
+        )
     env_req = raw.get("env_required", []) or []
     if not isinstance(env_req, list) or not all(isinstance(e, str) for e in env_req):
-        raise ValueError(f"Adapter {slug!r}: env_required must be a list of strings")
+        raise ValueError(f"Adapter {slug_hint!r}: env_required must be a list of strings")
     caps = raw.get("capabilities", {}) or {}
     if not isinstance(caps, dict):
-        raise ValueError(f"Adapter {slug!r}: capabilities must be an object")
+        raise ValueError(f"Adapter {slug_hint!r}: capabilities must be an object")
     return AdapterDescriptor(
-        slug=str(raw.get("slug", slug)),
+        slug=str(raw.get("slug", slug_hint)),
         transport=str(raw.get("transport", "stdio")),
         command=tuple(cmd),
         env_required=tuple(env_req),
@@ -119,6 +118,19 @@ def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
         capabilities={k: bool(v) for k, v in caps.items()},
         trust_floor=float(raw.get("trust_floor", 0.0)),
     )
+
+
+def _load_adapter_from_root(slug: str, *, root: Path) -> AdapterDescriptor:
+    """Test seam: load an adapter from an arbitrary root (used by the synthetic test)."""
+    path = root / slug / "mcp.json"
+    if not path.exists():
+        raise FileNotFoundError(f"No adapter descriptor for slug {slug!r} at {path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return _adapter_descriptor_from_dict(raw, slug_hint=slug)
+
+
+def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
+    return _load_adapter_from_root(slug, root=_adapters_root(config))
 
 
 # ---------------------------------------------------------------------------
