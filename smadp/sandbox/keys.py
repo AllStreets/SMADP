@@ -8,7 +8,6 @@ cannot accidentally exfiltrate a token to an unrelated env var.
 from __future__ import annotations
 
 import logging
-import os
 import stat
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -53,8 +52,8 @@ def load_keys_file(path: Path) -> dict[str, str]:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
+        if len(value) >= 2 and (
+            (value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")
         ):
             value = value[1:-1]
         if not key:
