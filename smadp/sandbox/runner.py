@@ -459,21 +459,23 @@ async def execute_run(run_id: str, *, config: Config | None = None) -> SandboxRu
         bound = bound.bind(scenario=scenario.name)
         bound.info("sandbox.run.loaded")
 
-        # Re-read raw row to get slugs (SandboxRun schema doesn't expose them).
-        slugs = _slugs_for_run(run_id, config=cfg)
-        slug_a, slug_b = slugs
+        # Re-read raw row to get slugs + role assignment chosen at enqueue time.
+        slug_a, slug_b, role_a_key, role_b_key = _slugs_and_roles_for_run(run_id, config=cfg)
 
-        # 2. Resolve adapters. Each scenario has 2 agent roles; we map them
-        # in declaration order to the (sorted) pair slugs.
-        roles = scenario.agents
-        if len(roles) != 2:
-            raise RuntimeError("Scenario must declare exactly two agents")
-        # Allow adapter override from scenario (future), else use queue slugs.
-        adapter_slug_a = roles[0].adapter or slug_a
-        adapter_slug_b = roles[1].adapter or slug_b
+        # 2. Resolve adapters per the role binding.
+        roles_by_key = {role.role_key: role for role in scenario.agents}
         try:
-            adapter_a = load_adapter(adapter_slug_a, config=cfg)
-            adapter_b = load_adapter(adapter_slug_b, config=cfg)
+            role_a = roles_by_key[role_a_key]
+            role_b = roles_by_key[role_b_key]
+        except KeyError as exc:
+            raise RuntimeError(
+                f"queue row references unknown role {exc.args[0]!r} for scenario "
+                f"{scenario.name!r}; rebuild the queue row"
+            ) from exc
+
+        try:
+            adapter_a = load_adapter(slug_a, config=cfg)
+            adapter_b = load_adapter(slug_b, config=cfg)
         except FileNotFoundError as e:
             writer.emit(
                 agent="runner",
@@ -486,15 +488,15 @@ async def execute_run(run_id: str, *, config: Config | None = None) -> SandboxRu
         try:
             spec_a = _build_spec_for_agent(
                 run_id=run_id,
-                role_key=roles[0].role_key,
-                role=roles[0],
+                role_key=role_a.role_key,
+                role=role_a,
                 scenario=scenario,
                 adapter=adapter_a,
             )
             spec_b = _build_spec_for_agent(
                 run_id=run_id,
-                role_key=roles[1].role_key,
-                role=roles[1],
+                role_key=role_b.role_key,
+                role=role_b,
                 scenario=scenario,
                 adapter=adapter_b,
             )
@@ -621,12 +623,22 @@ def _transcript_path_for(run_id: str, *, config: Config) -> Path:
     return base / "transcript.jsonl"
 
 
-def _slugs_for_run(run_id: str, *, config: Config) -> tuple[str, str]:
-    """Read slug_a/slug_b directly from the queue (not exposed on SandboxRun)."""
+def _slugs_and_roles_for_run(run_id: str, *, config: Config) -> tuple[str, str, str, str]:
+    """Read (slug_a, slug_b, role_a, role_b) for a run.
+
+    Raises KeyError if the run id is not present, RuntimeError if role_a/role_b
+    are NULL (legacy row enqueued before the binding migration shipped).
+    """
     rows = queue._all_rows_for_test(config=config)
     for row in rows:
         if row["id"] == run_id:
-            return (row["slug_a"], row["slug_b"])
+            role_a, role_b = row.get("role_a"), row.get("role_b")
+            if not role_a or not role_b:
+                raise RuntimeError(
+                    f"run {run_id!r} has missing role binding (role_a={role_a!r}, "
+                    f"role_b={role_b!r}); was it enqueued before the binding migration?"
+                )
+            return (row["slug_a"], row["slug_b"], role_a, role_b)
     raise KeyError(f"No run {run_id!r}")
 
 
