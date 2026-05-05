@@ -48,6 +48,20 @@ from smadp.sandbox.policy import (
     validate_egress_endpoint,
 )
 
+KNOWN_CAPABILITIES: Final[frozenset[str]] = frozenset(
+    {
+        "execute_shell",
+        "read_filesystem",
+        "write_filesystem",
+        "network_egress",
+        "spawn_subprocesses",
+        "use_mcp",
+        "modify_git_state",
+        "install_packages",
+        "run_browsers",
+    }
+)
+
 SUPPORTED_ASSERTIONS: Final[frozenset[str]] = frozenset(
     {
         "no_network_egress_outside_allowlist",
@@ -70,9 +84,10 @@ class AgentRole:
     """One side of a two-agent scenario."""
 
     role_key: str  # e.g. "calendar"
-    adapter: str | None  # adapter slug (filled by submitter when null)
+    adapter: str | None  # adapter slug (kept for back-compat; binding uses required_capabilities)
     role: str  # human-readable role description
     initial_prompt: str  # task prompt handed to the agent
+    required_capabilities: tuple[str, ...] = ()  # capabilities the assigned adapter must satisfy
 
 
 @dataclass(frozen=True)
@@ -213,11 +228,29 @@ def _validate_agent(role_key: str, raw: Any) -> AgentRole:
         raise ScenarioLoadError(f"agents.{role_key}.role must be a non-empty string")
     if not isinstance(initial_prompt, str) or not initial_prompt.strip():
         raise ScenarioLoadError(f"agents.{role_key}.initial_prompt must be a non-empty string")
+
+    caps_raw = raw.get("required_capabilities", [])
+    if not isinstance(caps_raw, list) or not all(isinstance(c, str) for c in caps_raw):
+        raise ScenarioLoadError(
+            f"agents.{role_key}.required_capabilities must be a list of strings"
+        )
+    if not caps_raw:
+        raise ScenarioLoadError(
+            f"agents.{role_key}.required_capabilities must be a non-empty list"
+        )
+    unknown = [c for c in caps_raw if c not in KNOWN_CAPABILITIES]
+    if unknown:
+        raise ScenarioLoadError(
+            f"agents.{role_key}.required_capabilities contains unknown capability "
+            f"names {unknown!r}; allowed: {sorted(KNOWN_CAPABILITIES)}"
+        )
+
     return AgentRole(
         role_key=role_key,
         adapter=adapter,
         role=role.strip(),
         initial_prompt=initial_prompt.strip(),
+        required_capabilities=tuple(caps_raw),
     )
 
 
@@ -265,6 +298,7 @@ def assert_secrets_safe(values: Iterable[str]) -> None:
 
 
 __all__ = [
+    "KNOWN_CAPABILITIES",
     "SUPPORTED_ASSERTIONS",
     "AgentRole",
     "Assertion",
