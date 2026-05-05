@@ -109,9 +109,11 @@ def _load_approved_images() -> dict[str, str]:
     if not isinstance(raw, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in raw.items()
     ):
-        raise RuntimeError(
+        raise PolicyError(
             f"{_APPROVED_IMAGES_PATH} must be a JSON object of string→string"
         )
+    if not raw:
+        raise PolicyError(f"{_APPROVED_IMAGES_PATH} must not be empty")
     return raw
 
 
@@ -140,7 +142,7 @@ def lookup_image_for_adapter(adapter_slug: str) -> str:
     except KeyError as e:
         raise DisallowedImageError(
             f"No approved image for adapter slug {adapter_slug!r}; "
-            f"add an entry to smadp.sandbox.policy.APPROVED_IMAGES."
+            f"add an entry to smadp/sandbox/approved_images.json."
         ) from e
 
 

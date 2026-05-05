@@ -36,7 +36,7 @@ def test_validate_image_digest_uses_loaded_set() -> None:
     sample = next(iter(raw.values()))
     assert policy.validate_image_digest(sample) is True
     # A well-formed but unknown digest must still be rejected.
-    bogus = "ghcr.io/example/unknown@sha256:" + ("0" * 64)
+    bogus = "ghcr.io/example/unknown@sha256:" + ("a" * 64)
     assert policy.validate_image_digest(bogus) is False
 
 
