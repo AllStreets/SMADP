@@ -92,10 +92,9 @@ class PromotionResult:
 
 def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     """Read a completed sandbox run; mutate the verdict; record a chronicle event."""
-    rows = {r["id"]: r for r in queue._all_rows_for_test(config=config)}
-    if run_id not in rows:
+    row = queue.get_raw_row(run_id, config=config)
+    if row is None:
         raise PromotionError(f"unknown run_id: {run_id!r}")
-    row = rows[run_id]
     if row["state"] != "completed":
         raise RunNotCompletedError(
             f"run {run_id!r} is in state {row['state']!r}; promotion requires 'completed'"
@@ -117,7 +116,6 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
 
     result = PromotionResult(run_id=run_id, sandbox_run_appended=True)
     new_evidence_level = verdict.evidence_level
-    # Convert SubVerdicts model to a plain dict so we can mutate per-axis.
     new_subverdicts: dict[str, SubVerdict] = dict(verdict.sub_verdicts)
 
     outcome: SandboxOutcome = sandbox_run.outcome
@@ -127,7 +125,7 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
             new_evidence_level = promoted
             result.evidence_level_changed_to = promoted
     elif outcome == "fail":
-        bumps = _apply_policy_bumps(transcript_path, new_subverdicts, run_id)
+        new_subverdicts, bumps = _apply_policy_bumps(transcript_path, new_subverdicts, run_id)
         result.severity_bumps = bumps
     # inconclusive / errored: just append the run.
 
@@ -206,18 +204,20 @@ def _apply_policy_bumps(
     transcript_path: Path | None,
     subverdicts: dict[str, SubVerdict],
     run_id: str,
-) -> dict[str, tuple[Severity, Severity]]:
-    """Read the transcript, find policy_violation events, bump matching sub-verdicts.
+) -> tuple[dict[str, SubVerdict], dict[str, tuple[Severity, Severity]]]:
+    """Pure function: derive the post-bump subverdicts dict and the bump record.
 
-    Mutates ``subverdicts`` in place and returns ``{axis: (old, new)}`` for each
-    bump applied. The transcript file's sha256 is used as the citation
-    ``evidence_ref`` so the bump is tied to verifiable bytes on disk.
+    Reads policy_violation events from the transcript, maps each ``kind`` to a
+    sub-verdict axis, and bumps that axis's severity by one rung (capped at
+    ``"critical"``, deduped per-axis). The transcript's sha256 is used as the
+    citation ``evidence_ref`` so each bump is tied to verifiable bytes.
     """
     if transcript_path is None or not transcript_path.exists():
-        return {}
+        return dict(subverdicts), {}
     sha = hashlib.sha256(transcript_path.read_bytes()).hexdigest()
     evidence_ref = f"sha256:{sha}"
 
+    new_subverdicts = dict(subverdicts)
     bumps: dict[str, tuple[Severity, Severity]] = {}
     for event in _iter_transcript_events(transcript_path):
         if event.get("event_type") != "policy_violation":
@@ -225,11 +225,11 @@ def _apply_policy_bumps(
         payload = event.get("payload") or {}
         kind = payload.get("kind")
         target_axis = _POLICY_TO_SUBVERDICT.get(str(kind) if kind else "")
-        if target_axis is None or target_axis not in subverdicts:
+        if target_axis is None or target_axis not in new_subverdicts:
             continue
         if target_axis in bumps:
             continue  # already bumped this run for this axis
-        sv = subverdicts[target_axis]
+        sv = new_subverdicts[target_axis]
         new_sev = _bump_severity(sv.severity)
         if new_sev is None:
             continue  # capped at critical
@@ -237,25 +237,31 @@ def _apply_policy_bumps(
             evidence_ref=evidence_ref,
             quote=f"sandbox-run:{run_id} | {kind}: {payload.get('detail', '')}".strip(),
         )
-        subverdicts[target_axis] = sv.model_copy(
+        new_subverdicts[target_axis] = sv.model_copy(
             update={
                 "severity": new_sev,
                 "citations": list(sv.citations) + [new_citation],
             }
         )
         bumps[target_axis] = (sv.severity, new_sev)
-    return bumps
+    return new_subverdicts, bumps
 
 
 def _iter_transcript_events(path: Path) -> Iterable[dict[str, Any]]:
-    """Yield JSON-decoded events from a JSONL transcript, skipping malformed lines."""
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    """Yield JSON-decoded events from a JSONL transcript, logging malformed lines."""
+    for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw.strip()
         if not line:
             continue
         try:
             yield json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            log.warning(
+                "sandbox.promote.malformed_transcript_line",
+                path=str(path),
+                line_no=line_no,
+                error=str(exc),
+            )
             continue
 
 

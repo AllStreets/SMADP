@@ -395,6 +395,23 @@ def _update_terminal(
         conn.close()
 
 
+def get_raw_row(run_id: str, *, config: Config | None = None) -> dict[str, Any] | None:
+    """Return the raw queue row for ``run_id`` as a dict, or None if no such run.
+
+    Exposed because the runner and promotion module need slug+role+transcript
+    fields that the public ``SandboxRun`` schema omits.
+    """
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        cur = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
+        row = cur.fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
 def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
     """Test-only helper — returns raw rows as dicts."""
     cfg = config or load_config()
@@ -411,6 +428,7 @@ __all__ = [
     "RunState",
     "claim_next_pending",
     "enqueue_sandbox_run",
+    "get_raw_row",
     "get_run_status",
     "iter_runs",
     "list_pending",

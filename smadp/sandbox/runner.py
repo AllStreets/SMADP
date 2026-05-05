@@ -629,17 +629,16 @@ def _slugs_and_roles_for_run(run_id: str, *, config: Config) -> tuple[str, str, 
     Raises KeyError if the run id is not present, RuntimeError if role_a/role_b
     are NULL (legacy row enqueued before the binding migration shipped).
     """
-    rows = queue._all_rows_for_test(config=config)
-    for row in rows:
-        if row["id"] == run_id:
-            role_a, role_b = row.get("role_a"), row.get("role_b")
-            if not role_a or not role_b:
-                raise RuntimeError(
-                    f"run {run_id!r} has missing role binding (role_a={role_a!r}, "
-                    f"role_b={role_b!r}); was it enqueued before the binding migration?"
-                )
-            return (row["slug_a"], row["slug_b"], role_a, role_b)
-    raise KeyError(f"No run {run_id!r}")
+    row = queue.get_raw_row(run_id, config=config)
+    if row is None:
+        raise KeyError(f"No run {run_id!r}")
+    role_a, role_b = row.get("role_a"), row.get("role_b")
+    if not role_a or not role_b:
+        raise RuntimeError(
+            f"run {run_id!r} has missing role binding (role_a={role_a!r}, "
+            f"role_b={role_b!r}); was it enqueued before the binding migration?"
+        )
+    return (row["slug_a"], row["slug_b"], role_a, role_b)
 
 
 __all__ = [
