@@ -22,6 +22,7 @@ this module never touches a container.
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 from collections.abc import Iterator
@@ -33,11 +34,12 @@ from typing import Any, Final, Literal
 import structlog
 
 from smadp.config import Config, load_config
+from smadp.sandbox.binding import bind_scenario_to_pair
 from smadp.sandbox.policy import (
     UnsafeSecretError,
     looks_like_real_secret,
 )
-from smadp.sandbox.scenarios import list_builtin_scenarios
+from smadp.sandbox.scenarios import list_builtin_scenarios, load_scenario
 from smadp.schemas.verdict import SandboxRun
 from smadp.utils.slug import normalize_slug, sort_pair
 from smadp.utils.time import utcnow
@@ -60,7 +62,9 @@ CREATE TABLE IF NOT EXISTS runs (
     completed_at TEXT,
     transcript_path TEXT,
     outcome TEXT,
-    error TEXT
+    error TEXT,
+    role_a TEXT,
+    role_b TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_state_created
     ON runs(state, created_at);
@@ -91,6 +95,12 @@ def _connect(config: Config) -> sqlite3.Connection:
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
+    # Additive migration for DBs created before role_a/role_b existed.
+    cur = conn.execute("PRAGMA table_info(runs)")
+    existing_cols = {row[1] for row in cur.fetchall()}
+    for col in ("role_a", "role_b"):
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
 
 
 @contextmanager
@@ -197,14 +207,26 @@ def enqueue_sandbox_run(
     run_id = _generate_run_id(a_sorted, b_sorted)
     now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
 
+    # Capability-based scenario↔adapter binding.
+    sc = load_scenario(scenario)
+    caps_a = _load_adapter_capabilities(a_sorted)
+    caps_b = _load_adapter_capabilities(b_sorted)
+    binding = bind_scenario_to_pair(
+        sc,
+        slug_a=a_sorted,
+        caps_a=caps_a,
+        slug_b=b_sorted,
+        caps_b=caps_b,
+    )
+
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
         with _transaction(conn):
             conn.execute(
-                "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at) "
-                "VALUES (?, ?, ?, ?, 'pending', ?)",
-                (run_id, a_sorted, b_sorted, scenario, now_iso),
+                "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at, role_a, role_b) "
+                "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
+                (run_id, a_sorted, b_sorted, scenario, now_iso, binding.role_a, binding.role_b),
             )
         log.info(
             "sandbox.queue.enqueued",
@@ -212,6 +234,8 @@ def enqueue_sandbox_run(
             slug_a=a_sorted,
             slug_b=b_sorted,
             scenario=scenario,
+            role_a=binding.role_a,
+            role_b=binding.role_b,
         )
         return run_id
     finally:
@@ -372,6 +396,19 @@ def _update_terminal(
         conn.close()
 
 
+def _load_adapter_capabilities(slug: str) -> dict[str, Any]:
+    """Read `adapters/<slug>/mcp.json` and return its capabilities block."""
+    repo_root = Path(__file__).resolve().parents[2]
+    mcp_path = repo_root / "adapters" / slug / "mcp.json"
+    if not mcp_path.exists():
+        raise ValueError(f"unknown adapter {slug!r}: no {mcp_path}")
+    raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    caps = raw.get("capabilities")
+    if not isinstance(caps, dict):
+        raise ValueError(f"{mcp_path} has no `capabilities` object")
+    return caps
+
+
 def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
     """Test-only helper — returns raw rows as dicts."""
     cfg = config or load_config()
@@ -386,6 +423,8 @@ def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
 
 __all__ = [
     "RunState",
+    "_all_rows_for_test",
+    "_load_adapter_capabilities",
     "claim_next_pending",
     "enqueue_sandbox_run",
     "get_run_status",

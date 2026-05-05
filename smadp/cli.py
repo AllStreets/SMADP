@@ -467,10 +467,10 @@ def sandbox() -> None:
 @sandbox.command("run")
 @click.argument("slug_a")
 @click.argument("slug_b")
-@click.option("--scenario", default=None)
+@click.option("--scenario", required=True, help="Scenario name (one of the built-ins).")
 @click.pass_context
-def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str | None) -> None:
-    """Enqueue a sandbox run."""
+def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str) -> None:
+    """Enqueue a sandbox run after capability binding."""
     cfg = _config_from_ctx(ctx)
     repo = CatalogRepo(cfg)
     a, b = sort_pair(slug_a, slug_b)
@@ -480,19 +480,21 @@ def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str | No
             ctx.exit(2)
             return
     try:
-        from smadp.sandbox.queue import enqueue_sandbox_run  # type: ignore[import-not-found]
+        from smadp.sandbox.binding import ScenarioBindingError
+        from smadp.sandbox.queue import enqueue_sandbox_run
     except Exception as exc:
         err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
         ctx.exit(1)
         return
-    record = enqueue_sandbox_run(slug_a=a, slug_b=b, scenario=scenario)  # type: ignore[misc]
-    if isinstance(record, dict):
-        console.print(
-            f"[green]queued[/] run_id={record.get('run_id')} "
-            f"pair={a} <> {b} scenario={scenario or '-'}"
-        )
-    else:
-        console.print(f"[green]queued[/] run_id={record} pair={a} <> {b}")
+    try:
+        run_id = enqueue_sandbox_run(slug_a=a, slug_b=b, scenario=scenario, config=cfg)
+    except ScenarioBindingError as exc:
+        err_console.print(f"[red]binding failed:[/] {exc}")
+        ctx.exit(2)
+        return
+    console.print(
+        f"[green]queued[/] run_id={run_id} pair={a} <> {b} scenario={scenario}"
+    )
 
 
 @sandbox.command("status")

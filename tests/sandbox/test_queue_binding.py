@@ -1,0 +1,76 @@
+"""Queue: role_a/role_b columns + binding integrated at enqueue time."""
+
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from smadp.config import Config
+from smadp.sandbox import queue
+from smadp.sandbox.binding import ScenarioBindingError
+
+
+@pytest.fixture
+def tmp_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
+    catalog = tmp_path / "catalog"
+    cache = tmp_path / "cache"
+    catalog.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SMADP_CATALOG", str(catalog))
+    monkeypatch.setenv("SMADP_CACHE_DIR", str(cache))
+    return Config()
+
+
+def test_enqueue_writes_role_a_and_role_b(tmp_config: Config) -> None:
+    run_id = queue.enqueue_sandbox_run(
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+    )
+    rows = queue._all_rows_for_test(config=tmp_config)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["id"] == run_id
+    assert row["role_a"] in {"calendar", "email"}
+    assert row["role_b"] in {"calendar", "email"}
+    assert row["role_a"] != row["role_b"]
+
+
+def test_enqueue_raises_when_no_binding_fits(tmp_config: Config) -> None:
+    # coding_browser requires `run_browsers`; none of our four adapters has it.
+    with pytest.raises(ScenarioBindingError):
+        queue.enqueue_sandbox_run(
+            slug_a="aider",
+            slug_b="continue-dev",
+            scenario="coding_browser",
+            config=tmp_config,
+        )
+    # No row written.
+    assert queue._all_rows_for_test(config=tmp_config) == []
+
+
+def test_legacy_rows_get_null_role_columns(tmp_config: Config) -> None:
+    """Existing rows from before the migration are tolerated as NULL."""
+    queue.enqueue_sandbox_run(
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+    )
+    db_path = tmp_config.cache_dir / "sandbox-queue.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            ("legacy_run", "x", "y", "calendar_email", "2025-01-01T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
+    assert rows["legacy_run"]["role_a"] is None
+    assert rows["legacy_run"]["role_b"] is None
