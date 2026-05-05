@@ -570,6 +570,49 @@ def sandbox_runs(ctx: click.Context, limit: int) -> None:
     console.print(table)
 
 
+@sandbox.command("pin-images")
+@click.option(
+    "--adapter",
+    "adapters",
+    multiple=True,
+    help="Adapter slug to pin (repeatable). Default: all adapters under adapters/.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would change without writing files.",
+)
+@click.pass_context
+def sandbox_pin_images(ctx: click.Context, adapters: tuple[str, ...], dry_run: bool) -> None:
+    """Pull each adapter image and write its sha256 digest into approved_images.json + mcp.json."""
+    from smadp.sandbox.pin_images import PinImagesError, pin_images  # local import (docker dep)
+
+    repo_root = Path(__file__).resolve().parents[1]
+    adapters_root = repo_root / "adapters"
+    approved_images_path = repo_root / "smadp" / "sandbox" / "approved_images.json"
+    try:
+        result = pin_images(
+            slugs=list(adapters) or None,
+            adapters_root=adapters_root,
+            approved_images_path=approved_images_path,
+            dry_run=dry_run,
+        )
+    except PinImagesError as exc:
+        err_console.print(f"[red]pin-images failed:[/] {exc}")
+        ctx.exit(2)
+        return
+
+    table = Table(title="pin-images" + (" (dry run)" if dry_run else ""))
+    table.add_column("slug")
+    table.add_column("status")
+    table.add_column("digest")
+    for slug, digest in result.changed.items():
+        table.add_row(slug, "[yellow]changed[/]" if not dry_run else "[yellow]would change[/]", digest)
+    for slug, digest in result.unchanged.items():
+        table.add_row(slug, "[dim]unchanged[/]", digest)
+    console.print(table)
+
+
 # ------------------------------------------------------------------- chronicle
 @cli.command()
 @click.option("--tail", is_flag=True, help="Follow new events as they arrive.")
