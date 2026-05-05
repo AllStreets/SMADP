@@ -112,7 +112,7 @@ def test_network_egress_satisfied_by_any_non_none() -> None:
         slug_b="continue-dev",
         caps_b=cont_caps,
     )
-    assert result.role_a == "role_a"
+    assert result == BindingResult(role_a="role_a", role_b="role_b")
 
 
 def test_network_egress_not_satisfied_by_none() -> None:
@@ -127,3 +127,37 @@ def test_network_egress_not_satisfied_by_none() -> None:
             slug_b="continue-dev",
             caps_b=cont_caps,
         )
+
+
+def test_missing_cap_key_treated_as_absent() -> None:
+    """If an adapter's caps dict doesn't include a required key, binding fails."""
+    sc = _scenario(cap_a=("run_browsers",), cap_b=("execute_shell",))
+    # caps_a omits run_browsers entirely (real adapters set it false; this is the absent case)
+    caps_a_no_browser: dict[str, Any] = {
+        k: v for k, v in _caps(execute_shell=True).items() if k != "run_browsers"
+    }
+    caps_b_no_browser: dict[str, Any] = {
+        k: v for k, v in _caps(execute_shell=True).items() if k != "run_browsers"
+    }
+    with pytest.raises(ScenarioBindingError, match="run_browsers"):
+        bind_scenario_to_pair(
+            sc,
+            slug_a="aider",
+            caps_a=caps_a_no_browser,
+            slug_b="continue-dev",
+            caps_b=caps_b_no_browser,
+        )
+
+
+def test_symmetric_scenario_returns_direct_assignment() -> None:
+    """When both permutations satisfy the scenario, direct assignment wins (deterministic)."""
+    sc = _scenario(cap_a=("execute_shell",), cap_b=("read_filesystem",))
+    caps_both = _caps(execute_shell=True, read_filesystem=True)
+    result = bind_scenario_to_pair(
+        sc,
+        slug_a="aider",
+        caps_a=caps_both,
+        slug_b="continue-dev",
+        caps_b=caps_both,
+    )
+    assert result == BindingResult(role_a="role_a", role_b="role_b")
