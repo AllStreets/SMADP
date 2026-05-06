@@ -173,19 +173,28 @@ keys for the providers the adapters use.
 
 2. **Pin image digests** (one-time; re-run when bumping adapter versions):
    ```
-   smadp sandbox pin-images
+   smadp sandbox pin-images --adapter aider --adapter synthetic-adapter
    ```
    This pulls each adapter image, extracts its sha256 digest, and writes it
    to `smadp/sandbox/approved_images.json` and `adapters/<slug>/mcp.json`.
+
+   > **Note (current state, 2026-05-05):** of the four agents in the seed
+   > catalog, only `aider` ships as a public container image
+   > (`paulgauthier/aider:latest`). `autogen`, `continue-dev`, and
+   > `open-interpreter` are libraries/desktop apps with no canonical image,
+   > so the smoke set pairs `aider` with `synthetic-adapter` (a tiny
+   > alpine-based no-key adapter) until we publish purpose-built containers
+   > for those three.
 
 3. **Run the smoke set:**
    ```
    make sandbox-smoke
    ```
-   Enqueues three pairings (calendar_email, notes_email,
-   spreadsheet_powerpoint) and drains the queue. Each successful run
-   promotes the verdict to `evidence_level: sandbox-validated` and appends
-   a `sandbox.run.completed` entry to today's chronicle file.
+   Enqueues three pairings (`aider × synthetic-adapter` on calendar_email,
+   notes_email, spreadsheet_powerpoint) and drains the queue. Each
+   successful run promotes the verdict to `evidence_level:
+   sandbox-validated` and appends a `sandbox.run.completed` entry to
+   today's chronicle file.
 
 Inspect results:
 ```
