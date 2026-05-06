@@ -540,6 +540,7 @@ def sandbox_status(ctx: click.Context, run_id: str | None) -> None:
 @click.pass_context
 def sandbox_runs(ctx: click.Context, limit: int) -> None:
     """List recent sandbox runs (any status)."""
+    cfg = _config_from_ctx(ctx)
     try:
         from smadp.sandbox.queue import iter_runs  # type: ignore[import-not-found]
     except Exception as exc:
@@ -556,16 +557,51 @@ def sandbox_runs(ctx: click.Context, limit: int) -> None:
         records = iter_runs(limit=limit)  # type: ignore[misc]
     except TypeError:
         records = iter_runs()  # type: ignore[misc]
-    for r in list(records)[:limit]:
-        if not isinstance(r, dict):
+
+    # Look up the queue-state column, which iter_runs doesn't surface on the
+    # SandboxRun schema (that schema is verdict-facing). We hit the same DB
+    # to read `state` per row so the CLI can show pending/running/completed.
+    states_by_id: dict[str, str] = {}
+    try:
+        from smadp.sandbox.queue import get_raw_row  # type: ignore[import-not-found]
+    except Exception:
+        get_raw_row = None  # type: ignore[assignment]
+
+    rows = list(records)[:limit]
+    for r in rows:
+        rid = getattr(r, "run_id", None)
+        if isinstance(rid, str) and get_raw_row is not None:
+            row = get_raw_row(rid, config=cfg)
+            if row is not None:
+                states_by_id[rid] = str(row["state"])
+
+    for r in rows:
+        if isinstance(r, dict):  # legacy contract: tolerate dict-shaped rows
+            pair = r.get("pair") or [r.get("slug_a"), r.get("slug_b")]
+            table.add_row(
+                str(r.get("run_id", "")),
+                f"{pair[0]} <> {pair[1]}",
+                str(r.get("status", states_by_id.get(str(r.get("run_id", "")), "-"))),
+                str(r.get("outcome", "-")),
+                str(r.get("queued_at", r.get("created_at", "-"))),
+            )
             continue
-        pair = r.get("pair") or [r.get("slug_a"), r.get("slug_b")]
+        # SandboxRun pydantic model
+        run_id = getattr(r, "run_id", "")
+        scenario_label = getattr(r, "scenario", None) or "-"
+        # SandboxRun doesn't carry slug_a/slug_b — fall back to the raw row.
+        slug_a = slug_b = "?"
+        if get_raw_row is not None:
+            raw = get_raw_row(run_id, config=cfg)
+            if raw is not None:
+                slug_a = str(raw["slug_a"])
+                slug_b = str(raw["slug_b"])
         table.add_row(
-            str(r.get("run_id", "")),
-            f"{pair[0]} <> {pair[1]}",
-            str(r.get("status", "")),
-            str(r.get("outcome", "-")),
-            str(r.get("queued_at", r.get("created_at", "-"))),
+            str(run_id),
+            f"{slug_a} <> {slug_b} ({scenario_label})",
+            states_by_id.get(run_id, "-"),
+            str(getattr(r, "outcome", "-")),
+            str(getattr(r, "started_at", "-")),
         )
     console.print(table)
 

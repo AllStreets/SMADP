@@ -118,6 +118,9 @@ PAIRS: list[tuple[str, str]] = [
     ("replit-agent", "cursor"),
     ("replit-agent", "bolt-new"),
     ("open-interpreter", "perplexity"),
+    # Sandbox test fixture: paired with aider so the smoke set has a valid
+    # capability-binding pair. Not a real production pairing.
+    ("aider", "synthetic-adapter"),
 ]
 
 
