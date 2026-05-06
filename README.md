@@ -154,6 +154,54 @@ Three layers of evidence, each with its own audit trail. Verdicts are tagged wit
 
 ---
 
+## Sandbox quickstart
+
+Produce real `evidence_level: sandbox-validated` verdicts on a developer
+laptop in three steps.
+
+**Prerequisites:** Docker (or rootless Podman) on PATH; one or more LLM API
+keys for the providers the adapters use.
+
+1. **Bring your own keys.** Create `~/.smadp/keys.env` with mode 600:
+   ```
+   OPENAI_API_KEY=sk-...
+   ANTHROPIC_API_KEY=sk-ant-...
+   CONTINUE_API_KEY=cn-...
+   ```
+   Only keys in the hardcoded allowlist (OpenAI, Anthropic, DeepSeek,
+   OpenRouter, Groq, Continue) are passed through. Anything else is dropped.
+
+2. **Pin image digests** (one-time; re-run when bumping adapter versions):
+   ```
+   smadp sandbox pin-images
+   ```
+   This pulls each adapter image, extracts its sha256 digest, and writes it
+   to `smadp/sandbox/approved_images.json` and `adapters/<slug>/mcp.json`.
+
+3. **Run the smoke set:**
+   ```
+   make sandbox-smoke
+   ```
+   Enqueues three pairings (calendar_email, notes_email,
+   spreadsheet_powerpoint) and drains the queue. Each successful run
+   promotes the verdict to `evidence_level: sandbox-validated` and appends
+   a `sandbox.run.completed` entry to today's chronicle file.
+
+Inspect results:
+```
+smadp sandbox runs
+smadp chronicle --since 2026-05-04
+```
+
+Under the hood: a single-process worker (`smadp sandbox work`) atomically
+claims pending runs from a SQLite-backed queue, runs the pair through the
+existing rootless-container runner, and feeds the transcript hash into the
+promotion module. Policy gates (image-digest allowlist, key allowlist,
+egress-allowlist enforcement, transcript secret-redaction) sit on every
+boundary.
+
+---
+
 ## Catalog format
 
 The catalog is a git repository. The git history *is* the audit log.
