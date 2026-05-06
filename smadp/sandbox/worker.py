@@ -33,9 +33,7 @@ async def _execute_run(
     config: Config,
     env_passthrough: Mapping[str, str] | None = None,
 ) -> Any:
-    return await _runner_execute_run(
-        run_id, config=config, env_passthrough=env_passthrough
-    )
+    return await _runner_execute_run(run_id, config=config, env_passthrough=env_passthrough)
 
 
 def _promote_from_run(run_id: str, *, config: Config) -> promote.PromotionResult:
@@ -134,9 +132,7 @@ async def run_worker(
             )
         else:
             try:
-                await _execute_run(
-                    claimed.run_id, config=cfg, env_passthrough=env
-                )
+                await _execute_run(claimed.run_id, config=cfg, env_passthrough=env)
                 _promote_from_run(claimed.run_id, config=cfg)
                 summary.runs_completed += 1
             except promote.VerdictMissingError as exc:
@@ -154,9 +150,7 @@ async def run_worker(
                     error=repr(exc),
                 )
 
-        if max_runs is not None and (
-            summary.runs_completed + summary.runs_failed
-        ) >= max_runs:
+        if max_runs is not None and (summary.runs_completed + summary.runs_failed) >= max_runs:
             break
         if once:
             break

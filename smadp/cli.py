@@ -492,9 +492,7 @@ def sandbox_run(ctx: click.Context, slug_a: str, slug_b: str, scenario: str) -> 
         err_console.print(f"[red]binding failed:[/] {exc}")
         ctx.exit(2)
         return
-    console.print(
-        f"[green]queued[/] run_id={run_id} pair={a} <> {b} scenario={scenario}"
-    )
+    console.print(f"[green]queued[/] run_id={run_id} pair={a} <> {b} scenario={scenario}")
 
 
 @sandbox.command("status")
@@ -611,8 +609,9 @@ def sandbox_pin_images(ctx: click.Context, adapters: tuple[str, ...], dry_run: b
     table.add_column("slug")
     table.add_column("status")
     table.add_column("digest")
+    changed_label = "[yellow]would change[/]" if dry_run else "[yellow]changed[/]"
     for slug, digest in result.changed.items():
-        table.add_row(slug, "[yellow]changed[/]" if not dry_run else "[yellow]would change[/]", digest)
+        table.add_row(slug, changed_label, digest)
     for slug, digest in result.unchanged.items():
         table.add_row(slug, "[dim]unchanged[/]", digest)
     console.print(table)
@@ -627,18 +626,14 @@ def sandbox_pin_images(ctx: click.Context, adapters: tuple[str, ...], dry_run: b
     default=None,
     help="Exit after N completed runs.",
 )
-@click.option(
-    "--scenario", default=None, help="Only process runs for this scenario."
-)
+@click.option("--scenario", default=None, help="Only process runs for this scenario.")
 @click.option(
     "--keys-file",
     type=click.Path(file_okay=True, dir_okay=False, path_type=Path),
     default=None,
     help="Path to keys.env (default: ~/.smadp/keys.env).",
 )
-@click.option(
-    "--poll-interval", type=float, default=2.0, help="Seconds between queue polls."
-)
+@click.option("--poll-interval", type=float, default=2.0, help="Seconds between queue polls.")
 @click.pass_context
 def sandbox_work(
     ctx: click.Context,

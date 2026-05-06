@@ -24,11 +24,7 @@ def test_parses_simple_key_value(tmp_path: Path) -> None:
 def test_strips_quotes_and_comments(tmp_path: Path) -> None:
     f = _write_keys(
         tmp_path / "k.env",
-        "# top comment\n"
-        "OPENAI_API_KEY=\"sk-abc\"\n"
-        "\n"
-        "ANTHROPIC_API_KEY='sk-ant-xyz'\n"
-        "# trailing\n",
+        "# top comment\nOPENAI_API_KEY=\"sk-abc\"\n\nANTHROPIC_API_KEY='sk-ant-xyz'\n# trailing\n",
     )
     loaded = keys.load_keys_file(f)
     assert loaded == {"OPENAI_API_KEY": "sk-abc", "ANTHROPIC_API_KEY": "sk-ant-xyz"}

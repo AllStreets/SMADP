@@ -52,9 +52,7 @@ def load_keys_file(path: Path) -> dict[str, str]:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        if len(value) >= 2 and (
-            (value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")
-        ):
+        if len(value) >= 2 and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
             value = value[1:-1]
         if not key:
             continue
@@ -77,7 +75,7 @@ def compute_env_for_adapter(
 
     ``loaded`` should already be filtered to the allowlist (call
     :func:`filter_to_allowlist` first), but this function tolerates extras —
-    it only ever returns keys explicitly listed in env_required ∪ env_optional.
+    it only ever returns keys explicitly listed in env_required or env_optional.
     """
     requested = set(env_required) | set(env_optional)
     safe = filter_to_allowlist(loaded)

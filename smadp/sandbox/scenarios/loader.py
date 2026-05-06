@@ -235,9 +235,7 @@ def _validate_agent(role_key: str, raw: Any) -> AgentRole:
             f"agents.{role_key}.required_capabilities must be a list of strings"
         )
     if not caps_raw:
-        raise ScenarioLoadError(
-            f"agents.{role_key}.required_capabilities must be a non-empty list"
-        )
+        raise ScenarioLoadError(f"agents.{role_key}.required_capabilities must be a non-empty list")
     unknown = [c for c in caps_raw if c not in KNOWN_CAPABILITIES]
     if unknown:
         raise ScenarioLoadError(

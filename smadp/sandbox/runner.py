@@ -91,7 +91,7 @@ def _adapters_root(config: Config) -> Path:
     return config.repo_root / _ADAPTER_DIR_NAME
 
 
-def _adapter_descriptor_from_dict(raw: dict, *, slug_hint: str) -> AdapterDescriptor:
+def _adapter_descriptor_from_dict(raw: dict[str, Any], *, slug_hint: str) -> AdapterDescriptor:
     """Build an AdapterDescriptor from an already-parsed mcp.json dict."""
     if not isinstance(raw, dict):
         raise ValueError(f"Adapter {slug_hint!r}: mcp.json root must be a JSON object")
@@ -99,9 +99,7 @@ def _adapter_descriptor_from_dict(raw: dict, *, slug_hint: str) -> AdapterDescri
         raise ValueError(f"Adapter {slug_hint!r}: unsupported schema_version")
     cmd = raw.get("command", [])
     if not isinstance(cmd, list) or not cmd or not all(isinstance(c, str) for c in cmd):
-        raise ValueError(
-            f"Adapter {slug_hint!r}: command must be a non-empty list of strings"
-        )
+        raise ValueError(f"Adapter {slug_hint!r}: command must be a non-empty list of strings")
     env_req = raw.get("env_required", []) or []
     if not isinstance(env_req, list) or not all(isinstance(e, str) for e in env_req):
         raise ValueError(f"Adapter {slug_hint!r}: env_required must be a list of strings")

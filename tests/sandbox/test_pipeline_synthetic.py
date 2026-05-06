@@ -16,28 +16,22 @@ def _container_runtime() -> str | None:
     for name in ("docker", "podman"):
         if shutil.which(name):
             try:
-                proc = subprocess.run(
-                    [name, "info"], capture_output=True, timeout=5
-                )
-                if proc.returncode == 0:
-                    return name
-            except Exception:
+                proc = subprocess.run([name, "info"], capture_output=True, timeout=5)
+            except (subprocess.TimeoutExpired, OSError):
                 continue
+            if proc.returncode == 0:
+                return name
     return None
 
 
 _RUNTIME = _container_runtime()
-pytestmark = pytest.mark.skipif(
-    _RUNTIME is None, reason="docker/podman not available"
-)
+pytestmark = pytest.mark.skipif(_RUNTIME is None, reason="docker/podman not available")
 
 
 def _alpine_digest() -> str:
     """Pull alpine:3.20 and return its docker.io/library/alpine@sha256:... digest."""
     assert _RUNTIME is not None
-    subprocess.run(
-        [_RUNTIME, "pull", "alpine:3.20"], check=True, capture_output=True
-    )
+    subprocess.run([_RUNTIME, "pull", "alpine:3.20"], check=True, capture_output=True)
     out = subprocess.run(
         [_RUNTIME, "inspect", "--format={{json .RepoDigests}}", "alpine:3.20"],
         check=True,
@@ -80,9 +74,7 @@ async def test_synthetic_pipeline_promotes_verdict(
     shutil.copytree(fixtures / "synthetic_adapter", adapters_root / "synthetic-adapter")
     shutil.copytree(fixtures / "synthetic_adapter", adapters_root / "synthetic-adapter-2")
     mcp2 = adapters_root / "synthetic-adapter-2" / "mcp.json"
-    raw = mcp2.read_text(encoding="utf-8").replace(
-        "synthetic-adapter", "synthetic-adapter-2"
-    )
+    raw = mcp2.read_text(encoding="utf-8").replace("synthetic-adapter", "synthetic-adapter-2")
     mcp2.write_text(raw, encoding="utf-8")
 
     # Inject the real alpine digest into the policy allowlist for both slugs.
@@ -101,29 +93,42 @@ async def test_synthetic_pipeline_promotes_verdict(
     from smadp.catalog.repo import CatalogRepo
     from smadp.schemas.verdict import Verdict
 
+    zero_hash = "sha256:" + "0" * 64
+    sub = {
+        "severity": "low",
+        "rationale": "placeholder rationale that is non-empty",
+        "citations": [{"profile_field": "name"}],
+        "conditions": [],
+        "mitigations": [],
+    }
     verdict = Verdict.model_validate(
         {
-            "verdict_id": "vd_synthetic-adapter__synthetic-adapter-2",
-            "pair": ["synthetic-adapter", "synthetic-adapter-2"],
-            "verdict_text": "Stub.",
-            "evidence_level": "docs-only",
+            "schema_version": "1.0",
+            "verdict_id": "v_2026-05-04_synthetic-adapter__synthetic-adapter-2_abc1",
+            "pair": ("synthetic-adapter", "synthetic-adapter-2"),
             "generated_at": "2026-05-04T00:00:00Z",
-            "model": "claude-opus-4-7",
+            "model": {
+                "name": "claude-opus-4-7",
+                "id": "claude-opus-4-7",
+                "rubric_version": "1.0",
+            },
+            "evidence_level": "docs-only",
+            "confidence": 0.6,
+            "composite_score": 0.5,
+            "headline": "Synthetic stub for integration test.",
             "sub_verdicts": {
-                axis: {
-                    "severity": "low",
-                    "rationale": "stub",
-                    "citations": [{"profile_field": "name", "quote": "x"}],
-                    "conditions": [],
-                    "mitigations": [],
-                }
-                for axis in (
-                    "A_prompt_injection",
-                    "B_data_leakage",
-                    "C_capability_conflict",
-                    "D_cascading_error",
-                    "E_compliance",
-                )
+                "A_prompt_injection": sub,
+                "B_data_leakage": sub,
+                "C_capability_conflict": sub,
+                "D_cascading_error": sub,
+                "E_compliance": sub,
+            },
+            "framework_mappings": {},
+            "reproducibility": {
+                "rubric_url": "/_meta/rubric/1.0.json",
+                "profile_a_hash": zero_hash,
+                "profile_b_hash": zero_hash,
+                "evidence_bundle_hash": zero_hash,
             },
             "sandbox_runs": [],
         }
@@ -137,18 +142,21 @@ async def test_synthetic_pipeline_promotes_verdict(
     from smadp.sandbox import worker as worker_mod
 
     def fake_caps(slug: str, *, config: Config | None = None) -> dict:
-        return json.loads(
-            (adapters_root / slug / "mcp.json").read_text(encoding="utf-8")
-        )["capabilities"]
+        return json.loads((adapters_root / slug / "mcp.json").read_text(encoding="utf-8"))[
+            "capabilities"
+        ]
 
     monkeypatch.setattr(binding_mod, "load_adapter_capabilities", fake_caps)
     monkeypatch.setattr(queue_mod, "load_adapter_capabilities", fake_caps)
     monkeypatch.setattr(
         runner_mod,
         "load_adapter",
-        lambda slug, *, config: runner_mod._load_adapter_from_root(
-            slug, root=adapters_root
-        ),
+        lambda slug, *, config: runner_mod._load_adapter_from_root(slug, root=adapters_root),
+    )
+    monkeypatch.setattr(
+        worker_mod,
+        "_load_keys_for_run",
+        lambda *a, **kw: ({}, []),
     )
 
     run_id = queue_mod.enqueue_sandbox_run(
@@ -168,8 +176,6 @@ async def test_synthetic_pipeline_promotes_verdict(
     assert summary.runs_completed == 1
     assert summary.runs_failed == 0
 
-    persisted = CatalogRepo(tmp_config).load_verdict(
-        "synthetic-adapter", "synthetic-adapter-2"
-    )
+    persisted = CatalogRepo(tmp_config).load_verdict("synthetic-adapter", "synthetic-adapter-2")
     assert persisted.evidence_level == "sandbox-validated"
     assert any(sr.run_id == run_id for sr in persisted.sandbox_runs)

@@ -35,9 +35,7 @@ def test_pin_one_adapter_writes_digest(tmp_path: Path, monkeypatch: pytest.Monke
     adapters_dir = tmp_path / "adapters" / "aider"
     adapters_dir.mkdir(parents=True)
     (adapters_dir / "mcp.json").write_text(
-        json.dumps(
-            {"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": None}
-        ),
+        json.dumps({"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": None}),
         encoding="utf-8",
     )
 
@@ -68,9 +66,7 @@ def test_dry_run_does_not_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     adapters_dir = tmp_path / "adapters" / "aider"
     adapters_dir.mkdir(parents=True)
     (adapters_dir / "mcp.json").write_text(
-        json.dumps(
-            {"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": None}
-        )
+        json.dumps({"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": None})
     )
     digest = _AIDER_BASE + ("b" * 64)
     monkeypatch.setattr(
@@ -113,9 +109,7 @@ def test_unchanged_path_does_not_rewrite(tmp_path: Path, monkeypatch: pytest.Mon
     adapters_dir.mkdir(parents=True)
     mcp_path = adapters_dir / "mcp.json"
     mcp_path.write_text(
-        json.dumps(
-            {"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": digest}
-        ),
+        json.dumps({"slug": "aider", "image": _AIDER_IMAGE, "image_digest_pinned": digest}),
         encoding="utf-8",
     )
     mcp_mtime = mcp_path.stat().st_mtime_ns

@@ -92,12 +92,8 @@ def _seed_completed_run(
     transcript_dir.mkdir(parents=True, exist_ok=True)
     transcript = transcript_dir / "transcript.jsonl"
     lines = [json.dumps(ev) for ev in (transcript_events or [])]
-    transcript.write_text(
-        ("\n".join(lines) + "\n") if lines else "", encoding="utf-8"
-    )
-    queue.mark_completed(
-        run_id, outcome=outcome, transcript_path=str(transcript), config=cfg
-    )
+    transcript.write_text(("\n".join(lines) + "\n") if lines else "", encoding="utf-8")
+    queue.mark_completed(run_id, outcome=outcome, transcript_path=str(transcript), config=cfg)
     return run_id, transcript
 
 
@@ -139,9 +135,7 @@ def test_fail_with_egress_violation_bumps_b(tmp_config: Config) -> None:
             "payload": {"kind": "egress_outside_allowlist", "detail": "evil.com"},
         },
     ]
-    run_id, transcript = _seed_completed_run(
-        tmp_config, outcome="fail", transcript_events=events
-    )
+    run_id, transcript = _seed_completed_run(tmp_config, outcome="fail", transcript_events=events)
 
     result = promote.promote_from_run(run_id, config=tmp_config)
     persisted = repo.load_verdict("aider", "continue-dev")
@@ -174,9 +168,7 @@ def test_fail_with_cross_role_write_bumps_c(tmp_config: Config) -> None:
             },
         },
     ]
-    run_id, _ = _seed_completed_run(
-        tmp_config, outcome="fail", transcript_events=events
-    )
+    run_id, _ = _seed_completed_run(tmp_config, outcome="fail", transcript_events=events)
 
     result = promote.promote_from_run(run_id, config=tmp_config)
     assert result.severity_bumps == {"C_capability_conflict": ("none", "low")}
@@ -195,9 +187,7 @@ def test_fail_caps_at_critical(tmp_config: Config) -> None:
             "payload": {"kind": "egress_outside_allowlist", "detail": "evil.com"},
         },
     ]
-    run_id, _ = _seed_completed_run(
-        tmp_config, outcome="fail", transcript_events=events
-    )
+    run_id, _ = _seed_completed_run(tmp_config, outcome="fail", transcript_events=events)
 
     result = promote.promote_from_run(run_id, config=tmp_config)
     assert result.severity_bumps == {}  # already at critical

@@ -112,7 +112,7 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
 
     transcript_path = Path(row["transcript_path"]) if row["transcript_path"] else None
     sandbox_run = _build_sandbox_run(row, transcript_path)
-    new_runs = list(verdict.sandbox_runs) + [sandbox_run]
+    new_runs = [*verdict.sandbox_runs, sandbox_run]
 
     result = PromotionResult(run_id=run_id, sandbox_run_appended=True)
     new_evidence_level = verdict.evidence_level
@@ -148,9 +148,7 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
             "run_id": run_id,
             "scenario": row["scenario"],
             "evidence_level_changed_to": result.evidence_level_changed_to,
-            "severity_bumps": {
-                k: list(v) for k, v in result.severity_bumps.items()
-            },
+            "severity_bumps": {k: list(v) for k, v in result.severity_bumps.items()},
         },
     )
     log.info(
@@ -164,9 +162,7 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     return result
 
 
-def _maybe_promote(
-    current: EvidenceLevel, target: EvidenceLevel
-) -> EvidenceLevel | None:
+def _maybe_promote(current: EvidenceLevel, target: EvidenceLevel) -> EvidenceLevel | None:
     if _EVIDENCE_LADDER.index(target) > _EVIDENCE_LADDER.index(current):
         return target
     return None
@@ -240,7 +236,7 @@ def _apply_policy_bumps(
         new_subverdicts[target_axis] = sv.model_copy(
             update={
                 "severity": new_sev,
-                "citations": list(sv.citations) + [new_citation],
+                "citations": [*sv.citations, new_citation],
             }
         )
         bumps[target_axis] = (sv.severity, new_sev)

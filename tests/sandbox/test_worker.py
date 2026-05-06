@@ -59,9 +59,7 @@ async def test_worker_once_processes_one_run(
 
     def fake_promote(rid: str, *, config: Config) -> promote.PromotionResult:
         promote_calls.append(rid)
-        return promote.PromotionResult(
-            run_id=rid, evidence_level_changed_to="sandbox-validated"
-        )
+        return promote.PromotionResult(run_id=rid, evidence_level_changed_to="sandbox-validated")
 
     monkeypatch.setattr(worker, "_execute_run", fake_execute_run)
     monkeypatch.setattr(worker, "_promote_from_run", fake_promote)
@@ -96,9 +94,7 @@ async def test_worker_marks_failed_when_required_key_missing(
         slug_a="aider", slug_b="continue-dev", scenario="calendar_email", config=tmp_config
     )
     # Simulate that one of the adapters is missing a required key.
-    monkeypatch.setattr(
-        worker, "_load_keys_for_run", lambda *a, **kw: ({}, ["OPENAI_API_KEY"])
-    )
+    monkeypatch.setattr(worker, "_load_keys_for_run", lambda *a, **kw: ({}, ["OPENAI_API_KEY"]))
 
     summary = await worker.run_worker(
         once=True, max_runs=None, scenario_filter=None, config=tmp_config

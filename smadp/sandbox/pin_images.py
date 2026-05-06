@@ -54,8 +54,7 @@ def pin_images(
     for slug in target_slugs:
         if slug not in approved:
             raise PinImagesError(
-                f"adapter slug {slug!r} is not in approved_images.json — "
-                "add a stub entry first"
+                f"adapter slug {slug!r} is not in approved_images.json — add a stub entry first"
             )
         mcp_path = adapters_root / slug / "mcp.json"
         if not mcp_path.exists():

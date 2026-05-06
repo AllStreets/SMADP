@@ -314,8 +314,7 @@ def claim_next_pending(
         with _transaction(conn):
             if scenario is None:
                 cur = conn.execute(
-                    "SELECT * FROM runs WHERE state = 'pending' "
-                    "ORDER BY created_at ASC LIMIT 1"
+                    "SELECT * FROM runs WHERE state = 'pending' ORDER BY created_at ASC LIMIT 1"
                 )
             else:
                 cur = conn.execute(
