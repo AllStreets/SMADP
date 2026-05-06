@@ -53,9 +53,7 @@ class Config:
     repo_root: Path = field(default_factory=_detect_repo_root)
     catalog_dir: Path = field(init=False)
     cache_dir: Path = field(init=False)
-    openai_api_key: str | None = field(
-        default_factory=lambda: os.environ.get(OPENAI_API_KEY_ENV)
-    )
+    openai_api_key: str | None = field(default_factory=lambda: os.environ.get(OPENAI_API_KEY_ENV))
     model_id: str = DEFAULT_MODEL_ID
     model_name: str = DEFAULT_MODEL_NAME
     public_base_url: str = field(
