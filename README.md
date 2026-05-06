@@ -146,11 +146,11 @@ Three layers of evidence, each with its own audit trail. Verdicts are tagged wit
 
 1. **Static profile (always)** — a structured Safety Profile per agent: capabilities, IO surfaces, network egress, OAuth scopes, data classes, sandboxing model. Hand-verified for the seed catalog; auto-generated and flagged `unverified` for user-submitted agents.
 
-2. **LLM-judge over profiles + cited evidence (always)** — Claude Sonnet 4.6 reasons over both profiles and the evidence bundle to produce per-risk sub-verdicts. Every claim cites a profile field and an evidence ID; every evidence ID is a content-addressed snippet of source material with the source URL preserved.
+2. **LLM-judge over profiles + cited evidence (always)** — `gpt-5.4-mini` reasons over both profiles and the evidence bundle to produce per-risk sub-verdicts. Every claim cites a profile field and an evidence ID; every evidence ID is a content-addressed snippet of source material with the source URL preserved.
 
 3. **Sandbox validation (open-source pairs only, v1)** — for open-source pairs with MCP adapters, both agents are run in an airtight container (rootless Podman + gVisor `runsc`, `--network none`, ephemeral tmpfs, `cap-drop ALL`) through scenario tasks. Observed behavior either confirms or contradicts the LLM-judge's verdict; the verdict is updated and `evidence_level` is promoted to `sandbox-validated`.
 
-**Closed-source agents stay at `docs-only` in v1.** This is intentional — overclaiming kills credibility. Capability adapters for closed-source agents (driving Claude Code via the Anthropic API + the CLI binary in a container, etc.) are on the v2 roadmap.
+**Closed-source agents stay at `docs-only` in v1.** This is intentional — overclaiming kills credibility. Capability adapters for closed-source agents (driving CLI binaries in a container, etc.) are on the v2 roadmap.
 
 ---
 
@@ -159,17 +159,16 @@ Three layers of evidence, each with its own audit trail. Verdicts are tagged wit
 Produce real `evidence_level: sandbox-validated` verdicts on a developer
 laptop in three steps.
 
-**Prerequisites:** Docker (or rootless Podman) on PATH; one or more LLM API
-keys for the providers the adapters use.
+**Prerequisites:** Docker (or rootless Podman) on PATH; an OpenAI API key
+(both the verdict judge and the in-sandbox adapters default to
+`gpt-5.4-mini`).
 
-1. **Bring your own keys.** Create `~/.smadp/keys.env` with mode 600:
+1. **Bring your own key.** Create `~/.smadp/keys.env` with mode 600:
    ```
    OPENAI_API_KEY=sk-...
-   ANTHROPIC_API_KEY=sk-ant-...
-   CONTINUE_API_KEY=cn-...
    ```
-   Only keys in the hardcoded allowlist (OpenAI, Anthropic, DeepSeek,
-   OpenRouter, Groq, Continue) are passed through. Anything else is dropped.
+   Only `OPENAI_API_KEY` is in the hardcoded allowlist; anything else is
+   dropped before any container starts.
 
 2. **Pin image digests** (one-time; re-run when bumping adapter versions):
    ```

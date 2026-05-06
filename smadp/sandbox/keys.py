@@ -15,16 +15,7 @@ from typing import Final
 
 log = logging.getLogger(__name__)
 
-KEY_ALLOWLIST: Final[frozenset[str]] = frozenset(
-    {
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "OPENROUTER_API_KEY",
-        "GROQ_API_KEY",
-        "CONTINUE_API_KEY",
-    }
-)
+KEY_ALLOWLIST: Final[frozenset[str]] = frozenset({"OPENAI_API_KEY"})
 
 
 def default_keys_path() -> Path:

@@ -11,13 +11,13 @@ import platformdirs
 SCHEMA_VERSION = "1.0"
 RUBRIC_VERSION = "1.0"
 
-DEFAULT_MODEL_ID = "claude-sonnet-4-6"
-DEFAULT_MODEL_NAME = "claude-sonnet-4-6"
+DEFAULT_MODEL_ID = "gpt-5.4-mini"
+DEFAULT_MODEL_NAME = "gpt-5.4-mini"
 
 REPO_ROOT_ENV = "SMADP_REPO_ROOT"
 CATALOG_ENV = "SMADP_CATALOG"
 CACHE_DIR_ENV = "SMADP_CACHE_DIR"
-ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 PUBLIC_BASE_URL_ENV = "SMADP_PUBLIC_BASE_URL"
 
 PROFILE_FIELDS_REQUIRING_EVIDENCE = (
@@ -53,8 +53,8 @@ class Config:
     repo_root: Path = field(default_factory=_detect_repo_root)
     catalog_dir: Path = field(init=False)
     cache_dir: Path = field(init=False)
-    anthropic_api_key: str | None = field(
-        default_factory=lambda: os.environ.get(ANTHROPIC_API_KEY_ENV)
+    openai_api_key: str | None = field(
+        default_factory=lambda: os.environ.get(OPENAI_API_KEY_ENV)
     )
     model_id: str = DEFAULT_MODEL_ID
     model_name: str = DEFAULT_MODEL_NAME

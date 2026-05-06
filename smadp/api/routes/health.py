@@ -45,16 +45,16 @@ async def health() -> HealthResponse:
 @router.get(
     "/deep",
     response_model=HealthDeepResponse,
-    summary="Deep health check (anthropic key, container runtime, catalog)",
+    summary="Deep health check (openai key, container runtime, catalog)",
 )
 async def health_deep(request: Request) -> HealthDeepResponse:
     cfg: Config = request.app.state.config
     checks: dict[str, dict[str, Any]] = {}
 
-    # ---- anthropic key
-    checks["anthropic_api_key"] = {
-        "ok": bool(cfg.anthropic_api_key),
-        "detail": "set" if cfg.anthropic_api_key else "missing",
+    # ---- openai key
+    checks["openai_api_key"] = {
+        "ok": bool(cfg.openai_api_key),
+        "detail": "set" if cfg.openai_api_key else "missing",
     }
 
     # ---- container runtime

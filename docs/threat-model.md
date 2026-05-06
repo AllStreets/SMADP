@@ -37,9 +37,9 @@ A user of SMADP — whether reading a verdict on the public dashboard or running
 |---|---------------|-----------------|
 | 1 | **Seed catalog reviewers** | The humans who flip a profile from `draft` to `verified` correctly read the cited evidence. The git log shows which reviewer signed off on which mutation. |
 | 2 | **Rubric authors** | The severity definitions, indicators, and weights in `catalog/_meta/rubric/<version>.json` are appropriate for the risk being scored. |
-| 3 | **The LLM-judge model** | Claude Sonnet 4.6 (or Opus 4.7) reasons faithfully over the rubric and the evidence bundle. The judge's reasoning is constrained by anti-hallucination rules ([`methodology.md`](methodology.md) §2) and citation validation, but model error is still possible. |
+| 3 | **The LLM-judge model** | `gpt-5.4-mini` reasons faithfully over the rubric and the evidence bundle. The judge's reasoning is constrained by anti-hallucination rules ([`methodology.md`](methodology.md) §2) and citation validation, but model error is still possible. |
 | 4 | **Sandbox isolation** | The v1 stack (rootless Podman + gVisor `runsc`, `--network none`, ephemeral tmpfs, `--cap-drop ALL`) actually contains a misbehaving open-source agent ([`sandbox-isolation.md`](sandbox-isolation.md)). |
-| 5 | **The Anthropic inference API** | When SMADP calls Claude, the response is faithful to the prompt and not silently substituted. Self-hosters who route through their own AI gateway should re-establish this trust at the gateway layer. |
+| 5 | **The OpenAI inference API** | When SMADP calls OpenAI, the response is faithful to the prompt and not silently substituted. Self-hosters who route through their own AI gateway should re-establish this trust at the gateway layer. |
 | 6 | **The git remote (catalog distribution)** | The catalog you fetch is the catalog the reviewers committed. SMADP signs releases; we do not yet sign every commit. |
 | 7 | **Source URLs cited in evidence** | When the validator re-fetches a cited URL, the response is from the original publisher and not a MITM. Vendors changing their docs is normal and is detected (`stale`); a network-level adversary substituting docs is detected only if the publisher serves an `etag`/content-hash that mismatches the snapshot. |
 

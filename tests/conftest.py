@@ -4,7 +4,7 @@ The catalog data shipped with the repo is treated as authoritative test
 fixture material; tests load it directly. Tests that mutate state must use
 ``tmp_catalog`` (a per-test copy) so the seed catalog stays clean.
 
-The Anthropic SDK is the only external dependency we mock — every other
+The OpenAI SDK is the only external dependency we mock — every other
 component (catalog, schemas, scoring, sandbox queue) is exercised against
 real on-disk data.
 """
@@ -130,56 +130,80 @@ def tmp_catalog_env(tmp_catalog: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 # --------------------------------------------------------- env hygiene shim
 @pytest.fixture(autouse=True)
-def _no_real_anthropic_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make sure no test accidentally depends on a real Anthropic key."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+def _no_real_openai_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make sure no test accidentally depends on a real OpenAI key."""
+    if os.environ.get("OPENAI_API_KEY"):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
 # --------------------------------------------------------- LLM client mock
-class FakeAsyncAnthropic:
-    """Drop-in fake for ``anthropic.AsyncAnthropic`` used in unit tests.
+class FakeAsyncOpenAI:
+    """Drop-in fake for ``openai.AsyncOpenAI`` used in unit tests.
 
-    The fake does not perform any I/O. ``messages.create`` returns a
-    deterministic ``Message``-shaped object whose single ``content`` block is
-    a ``ToolUseBlock`` carrying a caller-supplied ``tool_input``.
+    The fake does not perform any I/O. ``chat.completions.create`` returns a
+    deterministic ``ChatCompletion``-shaped object whose single
+    ``tool_calls`` entry carries a caller-supplied ``tool_input``.
     """
 
     def __init__(self, tool_input: dict[str, Any] | None = None) -> None:
         self._tool_input = tool_input or {}
-        self.messages = _FakeMessages(self._tool_input)
+        self.chat = _FakeChat(self._tool_input)
 
 
-class _FakeMessages:
+class _FakeChat:
+    def __init__(self, tool_input: dict[str, Any]) -> None:
+        self.completions = _FakeCompletions(tool_input)
+
+
+class _FakeCompletions:
     def __init__(self, tool_input: dict[str, Any]) -> None:
         self._tool_input = tool_input
 
     async def create(self, **kwargs: Any) -> Any:
-        from anthropic.types import Message, ToolUseBlock, Usage  # late import
-
-        # Pull out the tool_choice's tool name to label the response block.
-        tool_choice = kwargs.get("tool_choice", {})
-        tool_name = tool_choice.get("name", "emit_profile")
-        block = ToolUseBlock(
-            type="tool_use",
-            id="toolu_fake_0001",
-            name=tool_name,
-            input=self._tool_input,
+        from openai.types.chat import (  # late import
+            ChatCompletion,
+            ChatCompletionMessage,
+            ChatCompletionMessageToolCall,
         )
-        usage = Usage(input_tokens=1, output_tokens=1)
-        return Message(
-            id="msg_fake",
-            type="message",
+        from openai.types.chat.chat_completion import Choice
+        from openai.types.chat.chat_completion_message_tool_call import Function
+        from openai.types.completion_usage import CompletionUsage
+
+        tool_choice = kwargs.get("tool_choice", {})
+        tool_name = "emit_profile"
+        if isinstance(tool_choice, dict):
+            fn = tool_choice.get("function") or {}
+            if isinstance(fn, dict):
+                tool_name = fn.get("name", tool_name)
+
+        tool_call = ChatCompletionMessageToolCall(
+            id="call_fake_0001",
+            type="function",
+            function=Function(name=tool_name, arguments=json.dumps(self._tool_input)),
+        )
+        message = ChatCompletionMessage(
             role="assistant",
-            content=[block],
-            model=kwargs.get("model", "claude-sonnet-4-6"),
-            stop_reason="tool_use",
-            stop_sequence=None,
+            content=None,
+            tool_calls=[tool_call],
+        )
+        choice = Choice(
+            index=0,
+            finish_reason="tool_calls",
+            message=message,
+            logprobs=None,
+        )
+        usage = CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        return ChatCompletion(
+            id="chatcmpl_fake",
+            object="chat.completion",
+            created=0,
+            model=kwargs.get("model", "gpt-5.4-mini"),
+            choices=[choice],
             usage=usage,
         )
 
 
 @pytest.fixture()
-def fake_anthropic() -> type[FakeAsyncAnthropic]:
+def fake_openai() -> type[FakeAsyncOpenAI]:
     """Expose the fake so tests can build instances with custom tool_inputs."""
-    return FakeAsyncAnthropic
+    return FakeAsyncOpenAI

@@ -16,28 +16,28 @@ def _write_keys(p: Path, content: str) -> Path:
 
 
 def test_parses_simple_key_value(tmp_path: Path) -> None:
-    f = _write_keys(tmp_path / "k.env", "OPENAI_API_KEY=sk-abc\nANTHROPIC_API_KEY=sk-ant-xyz\n")
+    f = _write_keys(tmp_path / "k.env", "OPENAI_API_KEY=sk-abc\nMY_PERSONAL_TOKEN=ignored\n")
     loaded = keys.load_keys_file(f)
-    assert loaded == {"OPENAI_API_KEY": "sk-abc", "ANTHROPIC_API_KEY": "sk-ant-xyz"}
+    assert loaded == {"OPENAI_API_KEY": "sk-abc", "MY_PERSONAL_TOKEN": "ignored"}
 
 
 def test_strips_quotes_and_comments(tmp_path: Path) -> None:
     f = _write_keys(
         tmp_path / "k.env",
-        "# top comment\nOPENAI_API_KEY=\"sk-abc\"\n\nANTHROPIC_API_KEY='sk-ant-xyz'\n# trailing\n",
+        "# top comment\nOPENAI_API_KEY=\"sk-abc\"\n\nAIDER_MODEL='gpt-5.4-mini'\n# trailing\n",
     )
     loaded = keys.load_keys_file(f)
-    assert loaded == {"OPENAI_API_KEY": "sk-abc", "ANTHROPIC_API_KEY": "sk-ant-xyz"}
+    assert loaded == {"OPENAI_API_KEY": "sk-abc", "AIDER_MODEL": "gpt-5.4-mini"}
 
 
 def test_filter_to_allowlist_drops_unknown_keys(tmp_path: Path) -> None:
     raw = {"OPENAI_API_KEY": "x", "MY_PERSONAL_TOKEN": "y", "ANTHROPIC_API_KEY": "z"}
     out = keys.filter_to_allowlist(raw)
-    assert out == {"OPENAI_API_KEY": "x", "ANTHROPIC_API_KEY": "z"}
+    assert out == {"OPENAI_API_KEY": "x"}
 
 
-def test_continue_api_key_in_allowlist() -> None:
-    assert "CONTINUE_API_KEY" in keys.KEY_ALLOWLIST
+def test_allowlist_is_openai_only() -> None:
+    assert keys.KEY_ALLOWLIST == frozenset({"OPENAI_API_KEY"})
 
 
 def test_compute_env_for_adapter_passes_only_required_and_optional(tmp_path: Path) -> None:
@@ -45,9 +45,9 @@ def test_compute_env_for_adapter_passes_only_required_and_optional(tmp_path: Pat
     env, missing = keys.compute_env_for_adapter(
         loaded,
         env_required=["OPENAI_API_KEY"],
-        env_optional=["ANTHROPIC_API_KEY", "AIDER_MODEL"],
+        env_optional=["AIDER_MODEL"],
     )
-    assert env == {"OPENAI_API_KEY": "sk-x", "ANTHROPIC_API_KEY": "sk-ant-y"}
+    assert env == {"OPENAI_API_KEY": "sk-x"}
     assert missing == []
 
 
