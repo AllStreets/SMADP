@@ -245,7 +245,16 @@ def _extract_tool_input(response: ChatCompletion, expected_tool_name: str) -> di
     message = response.choices[0].message
     finish_reason = response.choices[0].finish_reason
     tool_calls = message.tool_calls or []
-    matches = [tc for tc in tool_calls if tc.function and tc.function.name == expected_tool_name]
+    matches: list[Any] = []
+    for tc in tool_calls:
+        # Recent openai SDKs split tool calls into function-typed and custom-typed
+        # variants. We only emit "function"-type tools, so filter to that variant
+        # before accessing .function.
+        if getattr(tc, "type", None) != "function":
+            continue
+        fn = getattr(tc, "function", None)
+        if fn is not None and getattr(fn, "name", None) == expected_tool_name:
+            matches.append(tc)
     if not matches:
         raise LLMError(
             f"Model did not call tool {expected_tool_name!r}; finish_reason={finish_reason}"
