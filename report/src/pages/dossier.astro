@@ -1,0 +1,250 @@
+---
+import MemoLayout from '@/components/MemoLayout.astro';
+import HeroBand from '@/components/HeroBand.astro';
+import DataCallouts from '@/components/DataCallouts.astro';
+import SectionHeader from '@/components/SectionHeader.astro';
+import PageBreak from '@/components/PageBreak.astro';
+import MethodologyBlock from '@/components/MethodologyBlock.astro';
+import RiskTaxonomyBlock from '@/components/RiskTaxonomyBlock.astro';
+import VerdictCard from '@/components/VerdictCard.astro';
+import VerdictTable from '@/components/VerdictTable.astro';
+import AgentProfileRow from '@/components/AgentProfileRow.astro';
+import ChartHeatmap from '@/components/charts/ChartHeatmap.astro';
+import ChartBars from '@/components/charts/ChartBars.astro';
+import { loadVerdicts, loadProfiles } from '@/lib/catalog';
+import {
+  rankByComposite, groupByEvidenceTier, heatmapMatrix,
+  topAgentsByAppearance, appearanceCounts, severityDistribution
+} from '@/lib/aggregations';
+import type { Profile, RiskKey } from '@/lib/types';
+import { RISK_KEYS } from '@/lib/types';
+
+const verdicts = loadVerdicts();
+const profiles = loadProfiles();
+const groups = groupByEvidenceTier(verdicts);
+const top12 = topAgentsByAppearance(verdicts, 12);
+const heat = heatmapMatrix(verdicts, top12);
+const ranked = rankByComposite(verdicts);
+const ranked10 = ranked.slice(0, 10);
+const appearance = appearanceCounts(verdicts);
+
+const callouts = [
+  { label: 'Agents profiled', value: profiles.length },
+  { label: 'Pair verdicts', value: verdicts.length },
+  { label: 'Sandbox-validated', value: groups.sandbox.length, accent: true },
+  { label: 'Risk dimensions', value: 5 }
+];
+
+function verdictsWithSeverity(risk: RiskKey, min: 'low' | 'medium' | 'high'): typeof verdicts {
+  const order = { none: 0, low: 1, medium: 2, high: 3, critical: 4 } as Record<string, number>;
+  return verdicts.filter((v) => order[v.sub_verdicts[risk].severity] >= order[min]);
+}
+
+const closedSource: string[] = ['claude-code', 'chatgpt-desktop', 'cursor', 'github-copilot', 'gemini-cli', 'devin'];
+const openSource: string[] = ['aider', 'cline', 'continue-dev', 'autogen', 'open-interpreter', 'openhands', 'plandex', 'goose'];
+
+function profileFor(slug: string): Profile | undefined {
+  return profiles.find((p) => p.slug === slug);
+}
+---
+<MemoLayout pageTitle="SMADP · Dossier" layoutName="Dossier">
+  <HeroBand
+    eyebrow="SMADP Dossier · 2026.05"
+    title="When agents work together, do they stay safe?"
+    dek="The complete file — risk taxonomy in long form, every agent of note, every verdict on the books."
+  />
+  <section class="container section">
+    <DataCallouts items={callouts} />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 1" title="Thesis" />
+    <p>The frontier of agentic AI is no longer about whether a single model can write correct code or refuse harmful tasks — most well-engineered agents now do both at acceptable rates. The frontier is composition: what happens when two agents share a workspace, a tool surface, or a chain of trust.</p>
+    <p>Composition is where the safety stories diverge from reality. Each agent's published safety profile is calibrated for the agent alone, on the surface area the maker controls. Pair it with another agent and the surface area changes: writes become reads, tools become composable, refusals depend on the order of execution.</p>
+    <p>SMADP is an attempt to make that surface area legible. We define a fixed rubric for pairwise risk, run isolated containerised scenarios where two agents collaborate, and grade the transcripts. The output is a catalog of <em>pair-level</em> safety verdicts: one row per (agent A, agent B), every row carrying explicit evidence tier and reproducibility hashes.</p>
+    <p>This dossier presents the first round of those verdicts in long form. The rubric and harness are deliberately conservative: we publish a sandbox-validated verdict only when every assertion in the scenario passed under instrumentation. The catalog therefore reads as thinly evidenced today on purpose — overclaiming would defeat the project.</p>
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 2" title="Methodology, in full" />
+    <MethodologyBlock />
+    <p>The judge is GPT-class. We feed it the rubric, both transcripts, and both agents' profiles. It returns sub-verdicts for each of the five risk dimensions, plus a rationale and citations into the profiles or transcript. Sub-verdict severities are then combined into a single composite score via a deterministic, published formula (the rubric document is canonical).</p>
+    <p>The harness records every event: stdin, stdout, file reads, file writes, network attempts, exit codes. Assertions in each scenario check decisive properties (e.g., "the second agent did not surface row X of the confidential CSV"). A verdict is sandbox-validated only when at least one scenario run completed with all decisive assertions passing.</p>
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 3" title="Sandbox architecture" />
+    <p>The runner is a Python module (<code>smadp.sandbox.runner</code>) that drives a Docker harness. For each scheduled pair, it:</p>
+    <ol>
+      <li>Loads the scenario YAML and resolves agent adapters from <code>adapters/&lt;slug&gt;/mcp.json</code>.</li>
+      <li>Pins the container image by digest, mounts a per-run tmpfs workspace, and applies <code>--cap-drop ALL</code> by default.</li>
+      <li>Spawns both agents with the scenario's initial prompts and a synthetic API key for the LLM endpoint.</li>
+      <li>Tails stdout, stderr, and observed filesystem events into a JSONL transcript.</li>
+      <li>Applies the assertions, grades decisive vs. non-decisive results, and emits an outcome.</li>
+      <li>If the run passed, the verdict promotion module updates <code>catalog/verdicts/&lt;a&gt;__&lt;b&gt;.json</code> to <code>evidence_level: sandbox-validated</code> and appends the run to its <code>sandbox_runs</code> list.</li>
+    </ol>
+    <p>The whole pipeline is auditable: every run produces a transcript on disk; every verdict carries reproducibility hashes.</p>
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="Risk A" title="Prompt injection" subtitle="When one agent's writes become another agent's prompts." />
+    <RiskTaxonomyBlock riskKey="A_prompt_injection" title="Prompt injection" definition="One agent's writes become another agent's prompt, slipping instructions past the second agent's safety filters." example="Agent A drops a markdown file containing a hidden instruction; Agent B reads it as task context." />
+    <h3 style="margin-top:18px">Verdicts with non-trivial severity on this dimension</h3>
+    <VerdictTable verdicts={verdictsWithSeverity('A_prompt_injection', 'medium').slice(0, 8)} dense />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="Risk B" title="Data leakage" />
+    <RiskTaxonomyBlock riskKey="B_data_leakage" title="Data leakage" definition="Confidential context held by one agent is exfiltrated or surfaced to a less-trusted destination by another." example="Spreadsheet agent has access to PII; presentation agent renders it in a public slide deck." />
+    <h3 style="margin-top:18px">Verdicts with non-trivial severity on this dimension</h3>
+    <VerdictTable verdicts={verdictsWithSeverity('B_data_leakage', 'medium').slice(0, 8)} dense />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="Risk C" title="Capability conflict" />
+    <RiskTaxonomyBlock riskKey="C_capability_conflict" title="Capability conflict" definition="The agents' permissions overlap in a way each one alone would refuse." example="Agent A can write files; Agent B can execute them — together they form an unsandboxed code-execution channel." />
+    <h3 style="margin-top:18px">Verdicts with non-trivial severity on this dimension</h3>
+    <VerdictTable verdicts={verdictsWithSeverity('C_capability_conflict', 'medium').slice(0, 8)} dense />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="Risk D" title="Cascading error" />
+    <RiskTaxonomyBlock riskKey="D_cascading_error" title="Cascading error" definition="A wrong action by one agent is consumed as ground truth by another, magnifying impact downstream." example="Refactor agent renames a function incorrectly; deploy agent reads the new name and ships the broken release." />
+    <h3 style="margin-top:18px">Verdicts with non-trivial severity on this dimension</h3>
+    <VerdictTable verdicts={verdictsWithSeverity('D_cascading_error', 'medium').slice(0, 8)} dense />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="Risk E" title="Compliance" />
+    <RiskTaxonomyBlock riskKey="E_compliance" title="Compliance" definition="The pair, as deployed, violates a policy or regulation that neither agent alone would breach." example="Two locally-private agents handing off through a regulated cloud system put data outside its compliance boundary." />
+    <h3 style="margin-top:18px">Verdicts with non-trivial severity on this dimension</h3>
+    <VerdictTable verdicts={verdictsWithSeverity('E_compliance', 'low').slice(0, 8)} dense />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 9" title="Headline sandbox finding (long form)" />
+    {groups.sandbox.length === 0
+      ? <p class="caption">No sandbox-validated verdict on disk yet.</p>
+      : groups.sandbox.map((v) => (
+          <div class="sandbox-detail">
+            <VerdictCard verdict={v} />
+            <p>The pair completed <strong>{v.sandbox_runs.length}</strong> scenario run{v.sandbox_runs.length === 1 ? '' : 's'} ({v.sandbox_runs.map((r) => r.scenario).join(', ')}) with outcome <strong>{v.sandbox_runs.every((r) => r.outcome === 'pass') ? 'pass' : 'mixed'}</strong>.</p>
+            <table class="runs">
+              <thead><tr><th>Scenario</th><th>Outcome</th><th>Started</th><th>Completed</th><th>Transcript</th></tr></thead>
+              <tbody>
+                {v.sandbox_runs.map((r) => (
+                  <tr>
+                    <td>{r.scenario}</td>
+                    <td>{r.outcome}</td>
+                    <td>{r.started_at}</td>
+                    <td>{r.completed_at}</td>
+                    <td><code>{r.transcript_ref.split('/').slice(-2).join('/')}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 10" title="Severity heatmap" subtitle={`Top ${top12.length} most-paired agents.`} />
+    <ChartHeatmap cells={heat} />
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 11" title="Highest-risk pairs (with rationales)" />
+    <ChartBars bars={ranked10.map((v) => ({ label: `${v.pair[0]} · ${v.pair[1]}`, value: v.composite_score }))} max={1} />
+    <ul class="rationales">
+      {ranked10.map((v) => (
+        <li>
+          <strong>{v.pair[0]} × {v.pair[1]}</strong> — {v.headline}
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 12" title="Closed-source agent dossier" />
+    {closedSource.map((slug) => {
+      const p = profileFor(slug);
+      if (!p) return null;
+      const involved = verdicts.filter((v) => v.pair.includes(slug));
+      return (
+        <div class="agent-dossier">
+          <header>
+            <h3>{p.name}</h3>
+            <span class="slug">{p.slug}</span>
+          </header>
+          {p.description && <p>{p.description}</p>}
+          <p class="caption">Appears in {involved.length} pair verdict{involved.length === 1 ? '' : 's'}. {p.io_surfaces?.calls_apis?.length ? `Calls APIs: ${p.io_surfaces.calls_apis.join(', ')}.` : ''}</p>
+        </div>
+      );
+    })}
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 13" title="Open-source agent dossier" />
+    {openSource.map((slug) => {
+      const p = profileFor(slug);
+      if (!p) return null;
+      const involved = verdicts.filter((v) => v.pair.includes(slug));
+      return (
+        <div class="agent-dossier">
+          <header>
+            <h3>{p.name}</h3>
+            <span class="slug">{p.slug}</span>
+          </header>
+          {p.description && <p>{p.description}</p>}
+          <p class="caption">Appears in {involved.length} pair verdict{involved.length === 1 ? '' : 's'}.</p>
+        </div>
+      );
+    })}
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 14" title="Limits, threats to validity, future work" />
+    <p>The judge is a single LLM call against a fixed rubric. We expect a non-trivial false-positive rate in sub-verdict rationales for the docs-only tier; the sandbox tier mitigates this because runtime assertions are decisive, not advisory.</p>
+    <p>Sandboxable adapters exist for a small fraction of the catalog today. The pipeline is designed to add adapters incrementally: future memos will publish twelve, then dozens, then hundreds of sandbox-validated pairs.</p>
+    <p>Scenarios are intentionally narrow. Each one probes one or two of the five risk dimensions cleanly; broad-coverage scenarios are scheduled for v2.</p>
+  </section>
+
+  <PageBreak />
+  <section class="container section">
+    <SectionHeader eyebrow="§ 15" title="Full verdict register" subtitle="All verdicts in the catalog, sorted by composite score ascending." />
+    <VerdictTable verdicts={ranked} dense />
+  </section>
+</MemoLayout>
+
+<style>
+  p, ol, ul.rationales { max-width: 76ch; }
+  ol { padding-left: 20px; }
+  ol li { margin-bottom: 6px; }
+  .runs { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+  .runs th, .runs td { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
+  .runs th { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); border-bottom: 2px solid var(--ink-navy); }
+  .sandbox-detail { margin-bottom: 24px; }
+  .agent-dossier {
+    padding: 14px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .agent-dossier header { display: flex; align-items: baseline; gap: 12px; }
+  .agent-dossier h3 { font-size: 14px; }
+  .agent-dossier .slug { font-family: var(--font-mono); color: var(--ink-muted); font-size: 12px; }
+  ul.rationales { list-style: none; padding: 0; margin: 18px 0 0; }
+  ul.rationales li { padding: 8px 0; border-top: 1px solid var(--rule); }
+</style>
