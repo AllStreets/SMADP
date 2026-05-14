@@ -41,9 +41,13 @@ test('Dossier layout lists every risk dimension', async ({ page }) => {
   }
 });
 
-test('Export button is present on layout pages', async ({ page }) => {
+test('Download PDF link is present on layout pages', async ({ page }) => {
   for (const route of ['/brief', '/prospectus', '/dossier']) {
     await page.goto(route);
-    await expect(page.getByRole('button', { name: /Export PDF/i })).toBeVisible();
+    const link = page.getByRole('link', { name: /Download PDF/i });
+    await expect(link).toBeVisible();
+    const href = await link.getAttribute('href');
+    expect(href).toBe(`${route}.pdf`);
+    expect(await link.getAttribute('download')).toBeTruthy();
   }
 });
