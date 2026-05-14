@@ -3,6 +3,7 @@ import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { resolve } from 'node:path';
+import { copyFile, mkdir } from 'node:fs/promises';
 
 const ROUTES = [
   { slug: 'brief',      path: '/brief'      },
@@ -13,6 +14,7 @@ const ROUTES = [
 const PORT = 4322;
 const HOST = `http://127.0.0.1:${PORT}`;
 const DIST = resolve(process.cwd(), 'dist');
+const PUBLIC = resolve(process.cwd(), 'public');
 
 async function waitForServer(url, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
@@ -38,6 +40,7 @@ async function main() {
 
   try {
     await waitForServer(HOST + '/');
+    await mkdir(PUBLIC, { recursive: true });
     const browser = await chromium.launch();
     try {
       for (const { slug, path } of ROUTES) {
@@ -45,13 +48,14 @@ async function main() {
         const page = await ctx.newPage();
         await page.emulateMedia({ media: 'print' });
         await page.goto(HOST + path, { waitUntil: 'networkidle' });
-        const out = resolve(DIST, `${slug}.pdf`);
+        const distOut = resolve(DIST, `${slug}.pdf`);
         await page.pdf({
-          path: out,
+          path: distOut,
           format: 'Letter',
           printBackground: true,
           preferCSSPageSize: true
         });
+        await copyFile(distOut, resolve(PUBLIC, `${slug}.pdf`));
         await ctx.close();
         console.log(`pdf · ${slug}.pdf`);
       }

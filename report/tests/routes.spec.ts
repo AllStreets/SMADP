@@ -18,7 +18,7 @@ for (const route of routes) {
 
 test('picker links to all three layouts', async ({ page }) => {
   await page.goto('/');
-  const picker = page.locator('.picker');
+  const picker = page.locator('.picker-grid');
   for (const name of ['Brief', 'Prospectus', 'Dossier']) {
     await expect(picker.getByRole('link', { name: new RegExp(name) })).toBeVisible();
   }
