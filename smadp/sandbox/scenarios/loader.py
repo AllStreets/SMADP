@@ -27,7 +27,7 @@ Scenario YAML schema (v1)::
 
 Validation rules:
 
-* Exactly two agents per scenario (v1 supports pairwise only).
+* Two to four agents per scenario.
 * Every synthetic-secret value must pass ``policy.is_safe_secret``.
 * Every egress endpoint must pass ``policy.validate_egress_endpoint``.
 * All assertion types must be in :data:`SUPPORTED_ASSERTIONS`.
@@ -81,7 +81,7 @@ class ScenarioLoadError(Exception):
 
 @dataclass(frozen=True)
 class AgentRole:
-    """One side of a two-agent scenario."""
+    """One agent in a 2-to-4-agent scenario."""
 
     role_key: str  # e.g. "calendar"
     adapter: str | None  # adapter slug (kept for back-compat; binding uses required_capabilities)
@@ -105,7 +105,7 @@ class Scenario:
     name: str
     description: str
     timeout_s: int
-    agents: tuple[AgentRole, AgentRole]
+    agents: tuple[AgentRole, ...]
     shared_workspace_files: tuple[str, ...]
     allow_egress: tuple[str, ...]
     synthetic_secrets: Mapping[str, str]
@@ -176,11 +176,11 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
         raise ScenarioLoadError(f"timeout_s must be in [1, 1800], got {timeout_s}")
 
     agents_raw = _require(raw, "agents", "scenario root")
-    if not isinstance(agents_raw, Mapping) or len(agents_raw) != 2:
-        raise ScenarioLoadError("scenario.agents must be a mapping of exactly 2 entries")
+    if not isinstance(agents_raw, Mapping) or not (2 <= len(agents_raw) <= 4):
+        raise ScenarioLoadError(
+            "scenario.agents must be a mapping of 2 to 4 entries"
+        )
     agents = tuple(_validate_agent(k, v) for k, v in agents_raw.items())
-    # mypy needs help: tuple of len 2 — assert and re-bind.
-    assert len(agents) == 2
 
     workspace_raw = _require(raw, "shared_workspace", "scenario root")
     if not isinstance(workspace_raw, Mapping):
@@ -207,7 +207,7 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
         name=name,
         description=description,
         timeout_s=timeout_s,
-        agents=(agents[0], agents[1]),
+        agents=agents,
         shared_workspace_files=files,
         allow_egress=egress,
         synthetic_secrets=secrets,
