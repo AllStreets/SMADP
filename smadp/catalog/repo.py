@@ -19,7 +19,7 @@ from typing import Any
 from smadp.config import Config, load_config
 from smadp.schemas import Chain, Evidence, Profile, Verdict
 from smadp.schemas.profile import VerificationStatus
-from smadp.utils.slug import pair_filename, sort_pair
+from smadp.utils.slug import pair_filename, participants_filename, sort_pair
 
 
 class CatalogError(RuntimeError):
@@ -50,8 +50,16 @@ class CatalogRepo:
             return self.config.profiles_dir / f"{slug}.json"
         return self.config.unverified_profiles_dir / f"{slug}.json"
 
-    def verdict_path(self, slug_a: str, slug_b: str) -> Path:
-        return self.config.verdicts_dir / pair_filename(slug_a, slug_b)
+    def verdict_path(self, *participants: str) -> Path:
+        """Path to a verdict for a set of 2-4 participating agents.
+
+        Length-2 callers can still write ``verdict_path(slug_a, slug_b)``;
+        the resulting filename matches the legacy ``pair_filename`` output.
+        """
+        if len(participants) == 2:
+            # Preserve identical bytes/path semantics for the 2-agent case.
+            return self.config.verdicts_dir / pair_filename(*participants)
+        return self.config.verdicts_dir / participants_filename(participants)
 
     def evidence_path(self, ref: str) -> Path:
         if ref.startswith("sha256:"):
@@ -171,25 +179,33 @@ class CatalogRepo:
                 yield slug
 
     # ---------------------------------------------------------------- verdicts
-    def load_verdict(self, slug_a: str, slug_b: str) -> Verdict:
-        path = self.verdict_path(slug_a, slug_b)
+    def load_verdict(self, *participants: str) -> Verdict:
+        """Load the verdict for 2-4 participating agents.
+
+        Backwards compatible: ``load_verdict(slug_a, slug_b)`` continues to
+        work because participants is variadic-positional.
+        """
+        path = self.verdict_path(*participants)
         if not path.exists():
-            raise NotFoundError(f"verdict not found: {slug_a} <> {slug_b}")
+            raise NotFoundError(f"verdict not found: {list(participants)}")
         return Verdict.model_validate(self._read_json(path))
 
-    def verdict_exists(self, slug_a: str, slug_b: str) -> bool:
-        return self.verdict_path(slug_a, slug_b).exists()
+    def verdict_exists(self, *participants: str) -> bool:
+        return self.verdict_path(*participants).exists()
 
     def save_verdict(self, verdict: Verdict) -> Path:
-        a, b = verdict.pair
-        # Pydantic enforces alphabetization, but be defensive in case the
-        # validator was bypassed via model_construct().
-        if a > b:
-            raise CatalogError(f"verdict pair must be alphabetized; got ({a!r}, {b!r})")
-        path = self.verdict_path(a, b)
+        # Canonical N-ary path: derive from ``participants``.
+        participants = list(verdict.participants)
+        if list(participants) != sorted(participants):
+            raise CatalogError(
+                f"verdict participants must be alphabetized; got {participants}"
+            )
+        path = self.verdict_path(*participants)
         payload = verdict.model_dump(mode="json", exclude_none=False)
-        # Pydantic emits `pair` as a list — make sure that survives.
-        payload["pair"] = [a, b]
+        # Pydantic emits `pair` as a list — make sure that survives for N=2.
+        if len(participants) == 2:
+            payload["pair"] = [participants[0], participants[1]]
+        payload["participants"] = list(participants)
         self._atomic_write_json(path, payload)
         return path
 
@@ -209,10 +225,10 @@ class CatalogRepo:
                 continue
             if evidence_level is not None and verdict.evidence_level != evidence_level:
                 continue
-            if slug is not None and slug not in verdict.pair:
+            if slug is not None and slug not in verdict.participants:
                 continue
             results.append(verdict)
-        results.sort(key=lambda v: (v.pair[0], v.pair[1]))
+        results.sort(key=lambda v: tuple(v.participants))
         return results
 
     # ---------------------------------------------------------------- evidence

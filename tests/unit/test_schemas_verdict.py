@@ -71,6 +71,117 @@ def test_invalid_verdict_id_rejected(sample_verdict: dict[str, Any]) -> None:
         Verdict.model_validate(payload)
 
 
+# ----------------------------------------------------- participants (N-ary)
+class TestParticipants:
+    """Verdict schema: N-ary participants generalization."""
+
+    def test_legacy_pair_only_derives_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        # Legacy seed verdict files have `pair` but no `participants`.
+        payload = deepcopy(sample_verdict)
+        payload.pop("participants", None)
+        v = Verdict.model_validate(payload)
+        assert v.participants == list(v.pair)  # type: ignore[arg-type]
+        assert len(v.participants) == 2
+
+    def test_participants_only_derives_legacy_pair(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        # New-style payload: only participants, no pair.
+        payload = deepcopy(sample_verdict)
+        a, b = payload["pair"]
+        payload["participants"] = [a, b]
+        del payload["pair"]
+        v = Verdict.model_validate(payload)
+        assert v.participants == [a, b]
+        assert tuple(v.pair) == (a, b)  # type: ignore[arg-type]
+
+    def test_accepts_three_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["aider", "autogen", "continue-dev"]
+        del payload["pair"]
+        v = Verdict.model_validate(payload)
+        assert v.participants == ["aider", "autogen", "continue-dev"]
+        assert v.pair is None  # N>=3 has no legacy pair
+
+    def test_accepts_four_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["aa", "bb", "cc", "dd"]
+        del payload["pair"]
+        v = Verdict.model_validate(payload)
+        assert v.participants == ["aa", "bb", "cc", "dd"]
+        assert v.pair is None
+
+    def test_rejects_five_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["aa", "bb", "cc", "dd", "ee"]
+        del payload["pair"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_rejects_one_participant(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["solo-agent"]
+        del payload["pair"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_rejects_unalphabetized_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["zebra", "aardvark", "moose"]
+        del payload["pair"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_rejects_duplicate_participants(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["aider", "aider", "cursor"]
+        del payload["pair"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_rejects_pair_set_for_n_ary(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        # If a caller sets pair for a 3-agent verdict, that's a bug.
+        payload = deepcopy(sample_verdict)
+        payload["participants"] = ["aa", "bb", "cc"]
+        payload["pair"] = ["aa", "bb"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_pair_disagrees_with_participants_raises(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload["pair"] = ["aa", "bb"]
+        payload["participants"] = ["xx", "yy"]
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+    def test_neither_pair_nor_participants_raises(
+        self, sample_verdict: dict[str, Any]
+    ) -> None:
+        payload = deepcopy(sample_verdict)
+        payload.pop("pair", None)
+        payload.pop("participants", None)
+        with pytest.raises(ValidationError):
+            Verdict.model_validate(payload)
+
+
 # ----------------------------------------------------------- SubVerdicts model
 class TestSubVerdicts:
     @staticmethod

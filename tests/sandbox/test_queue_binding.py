@@ -74,3 +74,58 @@ def test_legacy_rows_get_null_role_columns(tmp_config: Config) -> None:
     rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
     assert rows["legacy_run"]["role_a"] is None
     assert rows["legacy_run"]["role_b"] is None
+
+
+def test_enqueue_populates_participants_json(tmp_config: Config) -> None:
+    """N-ary forward-compat: enqueue writes a participants_json blob too."""
+    run_id = queue.enqueue_sandbox_run(
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+    )
+    rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
+    row = rows[run_id]
+    participants = queue.participants_for_row(row)
+    assert len(participants) == 2
+    assert {p["slug"] for p in participants} == {"aider", "continue-dev"}
+    assert {p["role"] for p in participants} == {"calendar", "email"}
+
+
+def test_participants_for_row_falls_back_to_pair_columns(tmp_config: Config) -> None:
+    """Rows enqueued before participants_json was added still decode."""
+    # Simulate a pre-migration row.
+    queue.enqueue_sandbox_run(
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+    )
+    db_path = tmp_config.cache_dir / "sandbox-queue.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at, "
+            "role_a, role_b) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
+            (
+                "legacy_run_2",
+                "alpha",
+                "bravo",
+                "calendar_email",
+                "2025-01-01T00:00:00Z",
+                "calendar",
+                "email",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
+    legacy_row = rows["legacy_run_2"]
+    # participants_json is NULL on the legacy row.
+    assert legacy_row["participants_json"] is None
+    parts = queue.participants_for_row(legacy_row)
+    assert parts == [
+        {"role": "calendar", "slug": "alpha"},
+        {"role": "email", "slug": "bravo"},
+    ]

@@ -34,3 +34,25 @@ def all_pairs(slugs: Iterable[str]) -> list[tuple[str, str]]:
         for b in items[i + 1 :]:
             seen.add(sort_pair(a, b))
     return sorted(seen)
+
+
+def sort_participants(slugs: Iterable[str]) -> list[str]:
+    """Return slugs sorted alphabetically. The canonical filename order."""
+    return sorted(normalize_slug(s) for s in slugs)
+
+
+def participants_filename(slugs: Iterable[str]) -> str:
+    """Return the verdict filename for a participating-agents set.
+
+    Length 2: 'alice__bob.json' (matches existing pair_filename output).
+    Length 3: 'alice__bob__carol.json'.
+    Length 4: 'alice__bob__carol__dan.json'.
+    """
+    sorted_slugs = sort_participants(slugs)
+    if not (2 <= len(sorted_slugs) <= 4):
+        raise ValueError(
+            f"participants_filename requires 2-4 slugs, got {len(sorted_slugs)}"
+        )
+    if len(set(sorted_slugs)) != len(sorted_slugs):
+        raise ValueError(f"participants must be unique slugs; got {sorted_slugs}")
+    return "__".join(sorted_slugs) + ".json"

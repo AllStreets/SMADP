@@ -96,12 +96,23 @@ class SubVerdicts(BaseModel):
 
 
 class Verdict(BaseModel):
-    """Authoritative model for `catalog/verdicts/<a>__<b>.json`."""
+    """Authoritative model for ``catalog/verdicts/<slug1>__...__<slugN>.json``.
+
+    Historically this held a strict 2-agent ``pair`` field. The N-ary
+    generalization (Autopilot Task 3) introduces ``participants`` — the
+    canonical list of 2-4 alphabetized slugs. ``pair`` is retained as a
+    legacy convenience for length-2 verdicts so existing call sites that
+    read ``verdict.pair[0]`` continue to work; it is auto-derived from
+    (and auto-syncs to) ``participants``. For N >= 3, ``pair`` is ``None``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["1.0"] = "1.0"
-    pair: tuple[str, str]
+    # Legacy 2-agent field. New code should read ``participants`` instead.
+    pair: tuple[str, str] | None = None
+    # Canonical N-ary participant slug list (length 2-4, alphabetized).
+    participants: list[str] = Field(default_factory=list)
     verdict_id: str
     generated_at: datetime
     model: VerdictModel
@@ -116,7 +127,9 @@ class Verdict(BaseModel):
 
     @field_validator("pair")
     @classmethod
-    def _validate_pair(cls, v: tuple[str, str]) -> tuple[str, str]:
+    def _validate_pair(cls, v: tuple[str, str] | None) -> tuple[str, str] | None:
+        if v is None:
+            return None
         a, b = v
         for slug in (a, b):
             if not SLUG_RE.match(slug):
@@ -133,3 +146,59 @@ class Verdict(BaseModel):
         if not VERDICT_ID_RE.match(v):
             raise ValueError(f"Invalid verdict_id: {v!r}")
         return v
+
+    @model_validator(mode="after")
+    def _sync_participants_and_pair(self) -> Verdict:
+        """Cross-validate the legacy ``pair`` field with N-ary ``participants``.
+
+        Compatibility rules:
+        * If ``participants`` is empty but ``pair`` is set → derive participants
+          from pair (legacy verdict files).
+        * If ``participants`` is set with length 2 and ``pair`` is None → derive
+          pair from participants (so old call sites still work).
+        * If both are set, they must agree (same alphabetized 2-tuple).
+        * ``participants`` must be a unique alphabetized list of 2-4 slugs.
+        """
+        # 1) Bring participants up from legacy pair if needed.
+        if not self.participants and self.pair is not None:
+            self.participants = list(self.pair)
+
+        # 2) Length check.
+        n = len(self.participants)
+        if not (2 <= n <= 4):
+            raise ValueError(
+                f"Verdict requires participants (list of 2-4 slugs); got {n}"
+            )
+
+        # 3) Per-slug validation.
+        for slug in self.participants:
+            if not SLUG_RE.match(slug):
+                raise ValueError(f"Invalid slug in participants: {slug!r}")
+        if len(set(self.participants)) != n:
+            raise ValueError(
+                f"participants must be unique slugs; got {self.participants}"
+            )
+        if list(self.participants) != sorted(self.participants):
+            raise ValueError(
+                f"participants must be alphabetized; got {self.participants}"
+            )
+
+        # 4) Sync pair for length-2 verdicts (legacy compat).
+        if n == 2:
+            derived = (self.participants[0], self.participants[1])
+            if self.pair is None:
+                self.pair = derived
+            elif tuple(self.pair) != derived:
+                raise ValueError(
+                    f"pair {self.pair!r} disagrees with participants "
+                    f"{self.participants!r}"
+                )
+        else:
+            # N >= 3: pair is not meaningful; reject if a caller tried to set it.
+            if self.pair is not None:
+                raise ValueError(
+                    "pair must be None for N-ary verdicts (3+ participants); "
+                    f"got pair={self.pair!r}, participants={self.participants!r}"
+                )
+
+        return self

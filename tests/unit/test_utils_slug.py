@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from smadp.utils.slug import all_pairs, normalize_slug, pair_filename, sort_pair
+from smadp.utils.slug import (
+    all_pairs,
+    normalize_slug,
+    pair_filename,
+    participants_filename,
+    sort_pair,
+    sort_participants,
+)
 
 
 class TestNormalizeSlug:
@@ -80,3 +87,42 @@ class TestAllPairs:
         # different positions can still collide; we just verify the
         # documented contract on a plain list.
         assert all_pairs(["a", "b"]) == [("a", "b")]
+
+
+class TestSortParticipants:
+    def test_alphabetical(self) -> None:
+        assert sort_participants(["zebra", "apple", "mango"]) == [
+            "apple",
+            "mango",
+            "zebra",
+        ]
+
+    def test_normalizes_each(self) -> None:
+        # sort_participants must apply normalize_slug to each entry.
+        assert sort_participants(["Bob", "  ALICE  "]) == ["alice", "bob"]
+
+
+class TestParticipantsFilename:
+    def test_two(self) -> None:
+        assert participants_filename(["bob", "alice"]) == "alice__bob.json"
+
+    def test_three(self) -> None:
+        assert participants_filename(["c", "a", "b"]) == "a__b__c.json"
+
+    def test_four(self) -> None:
+        assert participants_filename(["d", "c", "b", "a"]) == "a__b__c__d.json"
+
+    def test_matches_pair_filename_for_two(self) -> None:
+        # Length-2 must produce the same filename as the existing pair helper.
+        assert participants_filename(["aider", "claude-code"]) == pair_filename(
+            "aider", "claude-code"
+        )
+
+    @pytest.mark.parametrize("slugs", [[], ["solo"], ["a", "b", "c", "d", "e"]])
+    def test_rejects_out_of_range(self, slugs: list[str]) -> None:
+        with pytest.raises(ValueError):
+            participants_filename(slugs)
+
+    def test_rejects_duplicates(self) -> None:
+        with pytest.raises(ValueError):
+            participants_filename(["aider", "aider", "cursor"])

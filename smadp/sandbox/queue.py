@@ -22,6 +22,7 @@ this module never touches a container.
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 from collections.abc import Iterator
@@ -63,7 +64,8 @@ CREATE TABLE IF NOT EXISTS runs (
     outcome TEXT,
     error TEXT,
     role_a TEXT,
-    role_b TEXT
+    role_b TEXT,
+    participants_json TEXT       -- '[{"role": "...", "slug": "..."}, ...]' for N-ary
 );
 CREATE INDEX IF NOT EXISTS runs_state_created
     ON runs(state, created_at);
@@ -94,10 +96,11 @@ def _connect(config: Config) -> sqlite3.Connection:
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
-    # Additive migration for DBs created before role_a/role_b existed.
+    # Additive migration for DBs created before role_a/role_b/participants_json
+    # existed. Each column is TEXT and nullable so a no-op backfill is safe.
     cur = conn.execute("PRAGMA table_info(runs)")
     existing_cols = {row[1] for row in cur.fetchall()}
-    for col in ("role_a", "role_b"):
+    for col in ("role_a", "role_b", "participants_json"):
         if col not in existing_cols:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
 
@@ -218,14 +221,36 @@ def enqueue_sandbox_run(
         caps_b=caps_b,
     )
 
+    # Forward-compat: also populate participants_json so the row is shaped
+    # like an N-ary row for the rest of the pipeline (Task 3+ readers fall
+    # through to slug_a/slug_b when this column is NULL, so legacy rows are
+    # still readable — see ``participants_for_row``).
+    participants_payload = json.dumps(
+        [
+            {"role": binding.role_a, "slug": a_sorted},
+            {"role": binding.role_b, "slug": b_sorted},
+        ],
+        separators=(",", ":"),
+    )
+
     conn = _connect(cfg)
     try:
         _ensure_schema(conn)
         with _transaction(conn):
             conn.execute(
-                "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at, role_a, role_b) "
-                "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
-                (run_id, a_sorted, b_sorted, scenario, now_iso, binding.role_a, binding.role_b),
+                "INSERT INTO runs(id, slug_a, slug_b, scenario, state, "
+                "created_at, role_a, role_b, participants_json) "
+                "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+                (
+                    run_id,
+                    a_sorted,
+                    b_sorted,
+                    scenario,
+                    now_iso,
+                    binding.role_a,
+                    binding.role_b,
+                    participants_payload,
+                ),
             )
         log.info(
             "sandbox.queue.enqueued",
@@ -239,6 +264,28 @@ def enqueue_sandbox_run(
         return run_id
     finally:
         conn.close()
+
+
+def participants_for_row(row: dict[str, Any]) -> list[dict[str, str]]:
+    """Decode the participants list (role+slug) for a queue row.
+
+    Returns a list of ``{"role": ..., "slug": ...}`` dicts in scenario role
+    order. For backwards compatibility with rows enqueued before the
+    ``participants_json`` column existed, falls back to the legacy
+    ``slug_a``/``slug_b``/``role_a``/``role_b`` pair.
+    """
+    raw = row.get("participants_json")
+    if raw:
+        decoded = json.loads(raw)
+        if not isinstance(decoded, list):
+            raise ValueError(
+                f"participants_json must decode to a list; got {type(decoded).__name__}"
+            )
+        return decoded
+    return [
+        {"role": row.get("role_a") or "role_a", "slug": row["slug_a"]},
+        {"role": row.get("role_b") or "role_b", "slug": row["slug_b"]},
+    ]
 
 
 def get_run_status(run_id: str, *, config: Config | None = None) -> SandboxRun:
@@ -449,4 +496,5 @@ __all__ = [
     "list_pending",
     "mark_completed",
     "mark_failed",
+    "participants_for_row",
 ]
