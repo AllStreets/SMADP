@@ -1,14 +1,8 @@
-"""Decide which scenario role each adapter in a pair plays.
-
-A scenario declares two roles, each with `required_capabilities`. An adapter
-declares its capabilities in `mcp.json` under the `capabilities` block. This
-module finds an assignment of (slug → role) such that every role's required
-capabilities are satisfied by its assigned adapter, then returns the chosen
-(role_a, role_b) pair so the queue and runner can persist it.
-"""
+"""Decide which scenario role each adapter plays (N-ary; N in 2..4)."""
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,14 +19,12 @@ class ScenarioBindingError(RuntimeError):
 
 @dataclass(frozen=True)
 class BindingResult:
-    """The chosen role for slug_a and slug_b respectively."""
+    """A mapping from role_key → adapter slug."""
 
-    role_a: str
-    role_b: str
+    role_to_slug: dict[str, str]
 
 
 def _adapter_satisfies_role(role: AgentRole, caps: Mapping[str, Any]) -> tuple[bool, str | None]:
-    """Return (ok, missing_capability_name)."""
     for cap in role.required_capabilities:
         value = caps.get(cap)
         if cap == "network_egress":
@@ -44,6 +36,58 @@ def _adapter_satisfies_role(role: AgentRole, caps: Mapping[str, Any]) -> tuple[b
     return True, None
 
 
+def bind_scenario(
+    scenario: Scenario,
+    *,
+    agents: Mapping[str, Mapping[str, Any]],
+) -> BindingResult:
+    """Find an assignment of (role_key → slug) that satisfies every role.
+
+    Tries every permutation of len(scenario.agents) slugs across the role keys
+    (in scenario-declared order). The first assignment whose required
+    capabilities are all satisfied wins. Deterministic: insertion order of
+    ``agents`` defines the tiebreak.
+    """
+    role_order = tuple(role.role_key for role in scenario.agents)
+    roles_by_key = {role.role_key: role for role in scenario.agents}
+    slugs = list(agents.keys())
+
+    if len(slugs) < len(scenario.agents):
+        raise ScenarioBindingError(
+            f"Scenario {scenario.name!r} needs {len(scenario.agents)} agents; "
+            f"only {len(slugs)} candidate(s) provided"
+        )
+
+    last_miss: list[str] = []
+    for perm in itertools.permutations(slugs, len(scenario.agents)):
+        mapping = dict(zip(role_order, perm, strict=True))
+        ok = True
+        miss: list[str] = []
+        for role_key, slug in mapping.items():
+            role = roles_by_key[role_key]
+            satisfied, missing = _adapter_satisfies_role(role, agents[slug])
+            if not satisfied:
+                ok = False
+                miss.append(f"{slug}→{role_key}:{missing}")
+        if ok:
+            return BindingResult(role_to_slug=mapping)
+        last_miss = miss
+
+    raise ScenarioBindingError(
+        f"No valid binding for scenario {scenario.name!r} on candidates "
+        f"{slugs}. Most-recent permutation missed: {last_miss}"
+    )
+
+
+# ---- Legacy length-2 alias (delete after one release cycle) ---------------
+
+
+@dataclass(frozen=True)
+class _LegacyBindingResult:
+    role_a: str
+    role_b: str
+
+
 def bind_scenario_to_pair(
     scenario: Scenario,
     *,
@@ -51,31 +95,16 @@ def bind_scenario_to_pair(
     caps_a: Mapping[str, Any],
     slug_b: str,
     caps_b: Mapping[str, Any],
-) -> BindingResult:
-    """Pick a role-assignment that satisfies every role's required_capabilities.
+) -> _LegacyBindingResult:
+    """Length-2 shim that delegates to bind_scenario.
 
-    Tries (slug_a→roles[0], slug_b→roles[1]) first, then the swapped form. The
-    first assignment that satisfies both roles wins — deterministic and total.
+    Returns role_a (the role bound to slug_a) and role_b (bound to slug_b).
     """
-    role_0, role_1 = scenario.agents
-
-    # First permutation.
-    ok_a, missing_a = _adapter_satisfies_role(role_0, caps_a)
-    ok_b, missing_b = _adapter_satisfies_role(role_1, caps_b)
-    if ok_a and ok_b:
-        return BindingResult(role_a=role_0.role_key, role_b=role_1.role_key)
-
-    # Swapped permutation.
-    ok_a2, missing_a2 = _adapter_satisfies_role(role_1, caps_a)
-    ok_b2, missing_b2 = _adapter_satisfies_role(role_0, caps_b)
-    if ok_a2 and ok_b2:
-        return BindingResult(role_a=role_1.role_key, role_b=role_0.role_key)
-
-    # Neither fit — report the most specific missing capability.
-    raise ScenarioBindingError(
-        f"No valid binding for scenario {scenario.name!r} on pair ({slug_a}, {slug_b}). "
-        f"Direct assignment misses ({slug_a}: {missing_a or '-'}, {slug_b}: {missing_b or '-'}); "
-        f"swapped misses ({slug_a}: {missing_a2 or '-'}, {slug_b}: {missing_b2 or '-'})."
+    result = bind_scenario(scenario, agents={slug_a: caps_a, slug_b: caps_b})
+    inverse = {slug: role for role, slug in result.role_to_slug.items()}
+    return _LegacyBindingResult(
+        role_a=inverse[slug_a],
+        role_b=inverse[slug_b],
     )
 
 
@@ -95,6 +124,7 @@ def load_adapter_capabilities(slug: str, *, config: Config | None = None) -> dic
 __all__ = [
     "BindingResult",
     "ScenarioBindingError",
+    "bind_scenario",
     "bind_scenario_to_pair",
     "load_adapter_capabilities",
 ]
