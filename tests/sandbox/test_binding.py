@@ -9,6 +9,7 @@ import pytest
 from smadp.sandbox.binding import (
     ScenarioBindingError,
     _LegacyBindingResult,
+    bind_scenario,
     bind_scenario_to_pair,
 )
 from smadp.sandbox.scenarios.loader import AgentRole, Assertion, Scenario
@@ -164,8 +165,6 @@ def test_symmetric_scenario_returns_direct_assignment() -> None:
 
 
 # --- N-ary binder tests --------------------------------------------------
-
-from smadp.sandbox.binding import bind_scenario
 
 
 def _role(key: str, caps: tuple[str, ...]) -> AgentRole:

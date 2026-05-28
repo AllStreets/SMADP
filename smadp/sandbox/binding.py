@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from smadp.config import Config, load_config
@@ -19,9 +20,16 @@ class ScenarioBindingError(RuntimeError):
 
 @dataclass(frozen=True)
 class BindingResult:
-    """A mapping from role_key → adapter slug."""
+    """A mapping from role_key → adapter slug. The mapping is read-only."""
 
-    role_to_slug: dict[str, str]
+    role_to_slug: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.role_to_slug, MappingProxyType):
+            # Freeze the underlying dict via a read-only proxy.
+            object.__setattr__(
+                self, "role_to_slug", MappingProxyType(dict(self.role_to_slug))
+            )
 
 
 def _adapter_satisfies_role(role: AgentRole, caps: Mapping[str, Any]) -> tuple[bool, str | None]:
@@ -47,6 +55,11 @@ def bind_scenario(
     (in scenario-declared order). The first assignment whose required
     capabilities are all satisfied wins. Deterministic: insertion order of
     ``agents`` defines the tiebreak.
+
+    Diagnostics:
+        On failure, the error reports the missing capabilities from the last
+        permutation tried (arbitrary among unsatisfiable permutations). This
+        is a sample for debugging, not a "closest fit" report.
     """
     role_order = tuple(role.role_key for role in scenario.agents)
     roles_by_key = {role.role_key: role for role in scenario.agents}
@@ -75,7 +88,8 @@ def bind_scenario(
 
     raise ScenarioBindingError(
         f"No valid binding for scenario {scenario.name!r} on candidates "
-        f"{slugs}. Most-recent permutation missed: {last_miss}"
+        f"{slugs}. Sample miss (from last permutation tried; diagnostic only): "
+        f"{last_miss}"
     )
 
 
