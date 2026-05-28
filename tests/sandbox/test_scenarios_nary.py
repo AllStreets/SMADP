@@ -83,6 +83,7 @@ def test_loader_accepts_four_agents(tmp_path: Path) -> None:
     scenario = load_scenario_from_path(path)
 
     assert len(scenario.agents) == 4
+    assert tuple(a.role_key for a in scenario.agents) == ("a", "b", "c", "d")
 
 
 def test_loader_rejects_one_agent(tmp_path: Path) -> None:
