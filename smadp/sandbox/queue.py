@@ -269,10 +269,11 @@ def enqueue_sandbox_run(
 def participants_for_row(row: dict[str, Any]) -> list[dict[str, str]]:
     """Decode the participants list (role+slug) for a queue row.
 
-    Returns a list of ``{"role": ..., "slug": ...}`` dicts in scenario role
-    order. For backwards compatibility with rows enqueued before the
-    ``participants_json`` column existed, falls back to the legacy
-    ``slug_a``/``slug_b``/``role_a``/``role_b`` pair.
+    Prefers the canonical participants_json column. Falls back to the legacy
+    slug_a/slug_b/role_a/role_b columns for rows enqueued before the N-ary
+    migration. Raises if the legacy columns are present but the role values
+    are NULL — that indicates a row enqueued by a pre-binding-aware runner,
+    which can't be re-played safely.
     """
     raw = row.get("participants_json")
     if raw:
@@ -282,9 +283,18 @@ def participants_for_row(row: dict[str, Any]) -> list[dict[str, str]]:
                 f"participants_json must decode to a list; got {type(decoded).__name__}"
             )
         return decoded
+
+    role_a = row.get("role_a")
+    role_b = row.get("role_b")
+    if role_a is None or role_b is None:
+        raise ValueError(
+            f"queue row id={row.get('id')!r} has no participants_json and "
+            f"role_a/role_b are NULL — cannot decode participants for "
+            f"slug_a={row.get('slug_a')!r}, slug_b={row.get('slug_b')!r}"
+        )
     return [
-        {"role": row.get("role_a") or "role_a", "slug": row["slug_a"]},
-        {"role": row.get("role_b") or "role_b", "slug": row["slug_b"]},
+        {"role": role_a, "slug": row["slug_a"]},
+        {"role": role_b, "slug": row["slug_b"]},
     ]
 
 

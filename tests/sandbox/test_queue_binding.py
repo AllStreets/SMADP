@@ -129,3 +129,45 @@ def test_participants_for_row_falls_back_to_pair_columns(tmp_config: Config) -> 
         {"role": "calendar", "slug": "alpha"},
         {"role": "email", "slug": "bravo"},
     ]
+
+
+def test_participants_for_row_raises_when_role_columns_null(
+    tmp_config: Config,
+) -> None:
+    """Rows with no participants_json AND NULL role columns can't be decoded.
+
+    These rows would have been enqueued by a pre-binding-aware runner; silently
+    falling back to literal "role_a"/"role_b" sentinels would mis-wire env vars
+    downstream, so we raise loudly instead.
+    """
+    # Need the schema to exist first; enqueue a valid row to bootstrap it.
+    queue.enqueue_sandbox_run(
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+    )
+    db_path = tmp_config.cache_dir / "sandbox-queue.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO runs(id, slug_a, slug_b, scenario, state, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (
+                "broken_legacy_run",
+                "alpha",
+                "bravo",
+                "calendar_email",
+                "2025-01-01T00:00:00Z",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
+    broken_row = rows["broken_legacy_run"]
+    assert broken_row["participants_json"] is None
+    assert broken_row["role_a"] is None
+    assert broken_row["role_b"] is None
+    with pytest.raises(ValueError, match="role_a/role_b are NULL"):
+        queue.participants_for_row(broken_row)
