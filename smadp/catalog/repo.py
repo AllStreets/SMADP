@@ -61,6 +61,19 @@ class CatalogRepo:
             return self.config.verdicts_dir / pair_filename(*participants)
         return self.config.verdicts_dir / participants_filename(participants)
 
+    def pending_path(self, *participants: str) -> Path:
+        """Path to a pending (unreviewed) verdict for a set of 2-4 participants.
+
+        Uses the same filename convention as ``verdict_path`` but lands under
+        ``catalog/pending/`` instead of ``catalog/verdicts/``. The pending dir
+        holds verdicts that were seeded by an automated sandbox run for a
+        first-time agent combination; a human reviewer is expected to move
+        them into ``verdicts/`` to publish.
+        """
+        if len(participants) == 2:
+            return self.config.pending_dir / pair_filename(*participants)
+        return self.config.pending_dir / participants_filename(participants)
+
     def evidence_path(self, ref: str) -> Path:
         if ref.startswith("sha256:"):
             sha = ref.removeprefix("sha256:")
@@ -179,33 +192,64 @@ class CatalogRepo:
                 yield slug
 
     # ---------------------------------------------------------------- verdicts
-    def load_verdict(self, *participants: str) -> Verdict:
+    def load_verdict(
+        self, *participants: str, include_pending: bool = False
+    ) -> Verdict:
         """Load the verdict for 2-4 participating agents.
 
         Backwards compatible: ``load_verdict(slug_a, slug_b)`` continues to
         work because participants is variadic-positional.
+
+        When ``include_pending`` is True, falls back to ``catalog/pending/``
+        if no published verdict exists. The published path is always preferred
+        when both exist.
         """
         path = self.verdict_path(*participants)
-        if not path.exists():
-            raise NotFoundError(f"verdict not found: {list(participants)}")
-        return Verdict.model_validate(self._read_json(path))
+        if path.exists():
+            return Verdict.model_validate(self._read_json(path))
+        if include_pending:
+            pending = self.pending_path(*participants)
+            if pending.exists():
+                return Verdict.model_validate(self._read_json(pending))
+        raise NotFoundError(f"verdict not found: {list(participants)}")
 
     def verdict_exists(self, *participants: str) -> bool:
         return self.verdict_path(*participants).exists()
 
-    def save_verdict(self, verdict: Verdict) -> Path:
-        # Canonical N-ary path: derive from ``participants``.
+    def pending_verdict_exists(self, *participants: str) -> bool:
+        return self.pending_path(*participants).exists()
+
+    def _build_verdict_payload(self, verdict: Verdict) -> tuple[list[str], dict[str, Any]]:
+        """Shared payload builder for save_verdict / save_pending_verdict."""
         participants = list(verdict.participants)
         if list(participants) != sorted(participants):
             raise CatalogError(
                 f"verdict participants must be alphabetized; got {participants}"
             )
-        path = self.verdict_path(*participants)
         payload = verdict.model_dump(mode="json", exclude_none=False)
         # Pydantic emits `pair` as a list — make sure that survives for N=2.
         if len(participants) == 2:
             payload["pair"] = [participants[0], participants[1]]
         payload["participants"] = list(participants)
+        return participants, payload
+
+    def save_verdict(self, verdict: Verdict) -> Path:
+        # Canonical N-ary path: derive from ``participants``.
+        participants, payload = self._build_verdict_payload(verdict)
+        path = self.verdict_path(*participants)
+        self._atomic_write_json(path, payload)
+        return path
+
+    def save_pending_verdict(self, verdict: Verdict) -> Path:
+        """Atomically write a verdict to ``catalog/pending/<key>.json``.
+
+        Used to stash first-time, agent-seeded verdicts for human review
+        before they are promoted into the published ``verdicts/`` directory.
+        The on-disk shape matches ``save_verdict`` so a reviewer can simply
+        ``mv`` the file across directories to publish it.
+        """
+        participants, payload = self._build_verdict_payload(verdict)
+        path = self.pending_path(*participants)
         self._atomic_write_json(path, payload)
         return path
 

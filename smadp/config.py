@@ -95,6 +95,18 @@ class Config:
         return self.catalog_dir / "verdicts"
 
     @property
+    def pending_dir(self) -> Path:
+        """Holding pen for first-time/agentically-seeded verdicts awaiting human review.
+
+        Verdicts here have the same schema as ``verdicts_dir`` but are NOT
+        considered published — the report site and public API ignore them. A
+        sandbox run targeting an agent combination with no prior verdict file
+        seeds an initial verdict here; a reviewer then promotes it (file move)
+        into ``verdicts_dir``.
+        """
+        return self.catalog_dir / "pending"
+
+    @property
     def evidence_dir(self) -> Path:
         return self.catalog_dir / "_evidence"
 
@@ -120,6 +132,7 @@ class Config:
             self.unverified_profiles_dir,
             self.chains_dir,
             self.verdicts_dir,
+            self.pending_dir,
             self.evidence_dir,
             self.chronicle_dir,
             self.cache_dir,

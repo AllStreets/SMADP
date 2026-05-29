@@ -39,16 +39,20 @@ from typing import Any
 import structlog
 
 from smadp.catalog.chronicle import Chronicle
-from smadp.catalog.repo import CatalogRepo, NotFoundError
+from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config
 from smadp.sandbox import queue
 from smadp.schemas.verdict import (
     Citation,
     EvidenceLevel,
+    Reproducibility,
     SandboxOutcome,
     SandboxRun,
     Severity,
     SubVerdict,
+    SubVerdicts,
+    Verdict,
+    VerdictModel,
 )
 from smadp.utils.time import utcnow
 
@@ -100,15 +104,37 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
             f"run {run_id!r} is in state {row['state']!r}; promotion requires 'completed'"
         )
 
+    # Canonical N-ary identity for the run: derive participants from the row.
+    participants_list = queue.participants_for_row(row)
+    participants = [p["slug"] for p in participants_list]
+    roles = [p["role"] for p in participants_list]
+    # Legacy length-2 tuple still used by the chronicle event below (chronicle
+    # migration to N-ary is a future task).
     slug_a, slug_b = row["slug_a"], row["slug_b"]
+
     repo = CatalogRepo(config)
-    try:
-        verdict = repo.load_verdict(slug_a, slug_b)
-    except NotFoundError as exc:
-        raise VerdictMissingError(
-            f"no verdict for pair ({slug_a}, {slug_b}); generate one first with "
-            f"`smadp verdict {slug_a} {slug_b}`"
-        ) from exc
+    published_exists = repo.verdict_path(*participants).exists()
+    pending_exists = repo.pending_path(*participants).exists()
+
+    if published_exists:
+        # Established agent combination: mutate the published verdict in place.
+        target_dir = "verdicts"
+        verdict = repo.load_verdict(*participants)
+    elif pending_exists:
+        # First-time combination from a prior run; still under human review.
+        # Subsequent runs accumulate evidence on the pending file until it is
+        # promoted to verdicts/ by a reviewer.
+        target_dir = "pending"
+        verdict = repo.load_verdict(*participants, include_pending=True)
+    else:
+        # Truly first-time: seed a minimal verdict so the accumulation logic
+        # below has something to mutate, and land it in pending/ for review.
+        target_dir = "pending"
+        verdict = _seed_initial_verdict(
+            participants=participants,
+            roles=roles,
+            scenario=row["scenario"],
+        )
 
     transcript_path = Path(row["transcript_path"]) if row["transcript_path"] else None
     sandbox_run = _build_sandbox_run(row, transcript_path)
@@ -137,7 +163,11 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
             "generated_at": utcnow(),
         }
     )
-    repo.save_verdict(persisted)
+    if target_dir == "pending":
+        repo.save_pending_verdict(persisted)
+    else:
+        repo.save_verdict(persisted)
+        _touch_rebuild_request(config)
 
     Chronicle(config).record(
         "sandbox.run.completed",
@@ -259,6 +289,95 @@ def _iter_transcript_events(path: Path) -> Iterable[dict[str, Any]]:
                 error=str(exc),
             )
             continue
+
+
+_PLACEHOLDER_HASH = "sha256:" + "0" * 64
+
+
+def _seed_initial_verdict(
+    *,
+    participants: list[str],
+    roles: list[str],
+    scenario: str,
+) -> Verdict:
+    """Build a minimal verdict skeleton for a first-time agent combination.
+
+    The accumulation logic in :func:`promote_from_run` will immediately apply
+    the new ``SandboxRun``, set ``evidence_level``, and (on policy violations)
+    bump severities. This skeleton just gives those mutations something to
+    attach to. The verdict is written to ``catalog/pending/`` for human review
+    before it is allowed into the published catalog.
+    """
+    sorted_participants = sorted(participants)
+    # Verdict.verdict_id must match v_YYYY-MM-DD_<slug>__<slug>_<4-8 hex>.
+    today = utcnow().strftime("%Y-%m-%d")
+    suffix_seed = "__".join(sorted_participants).encode("utf-8")
+    suffix = hashlib.sha256(suffix_seed).hexdigest()[:6]
+    # The regex requires exactly two slugs in the id (legacy 2-agent format).
+    # Use the first and last sorted participants as the visible anchors; the
+    # full participants list lives in the verdict body.
+    id_slug_left = sorted_participants[0]
+    id_slug_right = sorted_participants[-1] if len(sorted_participants) > 1 else sorted_participants[0]
+    verdict_id = f"v_{today}_{id_slug_left}__{id_slug_right}_{suffix}"
+
+    roles_quote = ", ".join(f"{r}={s}" for r, s in zip(roles, participants, strict=False)) or scenario
+    placeholder_citation = Citation(
+        profile_field="name",
+        quote=f"seeded by sandbox run; roles: {roles_quote}",
+    )
+    placeholder_subverdict = SubVerdict(
+        severity="none",
+        rationale=(
+            "Seeded by an automated sandbox run for a first-time agent "
+            "combination; awaiting reviewer assessment."
+        ),
+        citations=[placeholder_citation],
+    )
+
+    return Verdict(
+        schema_version="1.0",
+        participants=sorted_participants,
+        verdict_id=verdict_id,
+        generated_at=utcnow(),
+        model=VerdictModel(
+            name="sandbox-seed",
+            id="sandbox-seed",
+            rubric_version="1.0",
+        ),
+        evidence_level="unverified-profile",
+        confidence=0.3,
+        composite_score=0.0,
+        headline=(
+            f"Seeded from sandbox run ({scenario}); awaiting reviewer."
+        ),
+        sub_verdicts=SubVerdicts(
+            A_prompt_injection=placeholder_subverdict,
+            B_data_leakage=placeholder_subverdict,
+            C_capability_conflict=placeholder_subverdict,
+            D_cascading_error=placeholder_subverdict,
+            E_compliance=placeholder_subverdict,
+        ),
+        framework_mappings={},
+        reproducibility=Reproducibility(
+            rubric_url="/_meta/rubric/1.0.json",
+            profile_a_hash=_PLACEHOLDER_HASH,
+            profile_b_hash=_PLACEHOLDER_HASH,
+            evidence_bundle_hash=_PLACEHOLDER_HASH,
+        ),
+        sandbox_runs=[],
+    )
+
+
+def _touch_rebuild_request(config: Config) -> None:
+    """Signal the report-site launchd watcher to rebuild the static site.
+
+    Only called when a write lands in ``catalog/verdicts/`` (the published
+    surface). Writes to ``catalog/pending/`` are NOT public, so they do not
+    trigger a rebuild.
+    """
+    sentinel = config.repo_root / "report" / ".rebuild-requested"
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.touch()
 
 
 __all__ = [
