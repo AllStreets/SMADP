@@ -29,5 +29,13 @@ def test_code_review_chain_binds_against_real_adapters(tmp_path: Path) -> None:
         for slug in ("aider", "autogen", "continue-dev")
     }
     result = bind_scenario(scenario, agents=agents)
-    assert set(result.role_to_slug.keys()) == {"planner", "executor", "reviewer"}
-    assert set(result.role_to_slug.values()) == {"aider", "autogen", "continue-dev"}
+    # Pins the deterministic-tiebreak contract in bind_scenario's docstring:
+    # "Deterministic: insertion order of `agents` defines the tiebreak."
+    # All three adapters satisfy the requested caps, so the first permutation
+    # wins and the mapping is the insertion order of `agents` against the
+    # scenario-declared role order.
+    assert dict(result.role_to_slug) == {
+        "planner": "aider",
+        "executor": "autogen",
+        "reviewer": "continue-dev",
+    }
