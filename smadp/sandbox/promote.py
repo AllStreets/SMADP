@@ -78,10 +78,6 @@ class PromotionError(RuntimeError):
     """Base for all promotion errors."""
 
 
-class VerdictMissingError(PromotionError):
-    """The verdict for the pair does not exist; run `smadp verdict <a> <b>` first."""
-
-
 class RunNotCompletedError(PromotionError):
     """Refuse to promote from a queue row whose state is not 'completed'."""
 
@@ -313,26 +309,39 @@ def _seed_initial_verdict(
     today = utcnow().strftime("%Y-%m-%d")
     suffix_seed = "__".join(sorted_participants).encode("utf-8")
     suffix = hashlib.sha256(suffix_seed).hexdigest()[:6]
-    # The regex requires exactly two slugs in the id (legacy 2-agent format).
-    # Use the first and last sorted participants as the visible anchors; the
-    # full participants list lives in the verdict body.
+    # Lossy two-slug encoding for N>=3: the schema's VERDICT_ID_RE
+    # (smadp/schemas/verdict.py) forces exactly two slug segments, so we
+    # encode only first+last sorted participants as visible anchors. Middle
+    # participants are NOT searchable via verdict_id — ``verdict.participants``
+    # is the canonical identity list, and the hash suffix disambiguates
+    # different N-ary combinations that share the same first+last anchors.
+    # Lifting this restriction is a schema migration out of scope for Task 4.
     id_slug_left = sorted_participants[0]
     id_slug_right = sorted_participants[-1] if len(sorted_participants) > 1 else sorted_participants[0]
     verdict_id = f"v_{today}_{id_slug_left}__{id_slug_right}_{suffix}"
 
     roles_quote = ", ".join(f"{r}={s}" for r, s in zip(roles, participants, strict=False)) or scenario
-    placeholder_citation = Citation(
-        profile_field="name",
-        quote=f"seeded by sandbox run; roles: {roles_quote}",
-    )
-    placeholder_subverdict = SubVerdict(
-        severity="none",
-        rationale=(
-            "Seeded by an automated sandbox run for a first-time agent "
-            "combination; awaiting reviewer assessment."
-        ),
-        citations=[placeholder_citation],
-    )
+
+    def _fresh_placeholder() -> SubVerdict:
+        # Build a brand-new SubVerdict (and its Citation) per axis so axis
+        # mutations cannot accidentally alias across all five axes. Pydantic
+        # v2 keeps the same reference if we shared a single instance, and
+        # while today's mutations go through model_copy(update=...), a future
+        # in-place mutation that forgets to copy would corrupt all five at
+        # once. Cheap insurance.
+        return SubVerdict(
+            severity="none",
+            rationale=(
+                "Seeded by an automated sandbox run for a first-time agent "
+                "combination; awaiting reviewer assessment."
+            ),
+            citations=[
+                Citation(
+                    profile_field="name",
+                    quote=f"seeded by sandbox run; roles: {roles_quote}",
+                )
+            ],
+        )
 
     return Verdict(
         schema_version="1.0",
@@ -351,11 +360,11 @@ def _seed_initial_verdict(
             f"Seeded from sandbox run ({scenario}); awaiting reviewer."
         ),
         sub_verdicts=SubVerdicts(
-            A_prompt_injection=placeholder_subverdict,
-            B_data_leakage=placeholder_subverdict,
-            C_capability_conflict=placeholder_subverdict,
-            D_cascading_error=placeholder_subverdict,
-            E_compliance=placeholder_subverdict,
+            A_prompt_injection=_fresh_placeholder(),
+            B_data_leakage=_fresh_placeholder(),
+            C_capability_conflict=_fresh_placeholder(),
+            D_cascading_error=_fresh_placeholder(),
+            E_compliance=_fresh_placeholder(),
         ),
         framework_mappings={},
         reproducibility=Reproducibility(
@@ -376,14 +385,23 @@ def _touch_rebuild_request(config: Config) -> None:
     trigger a rebuild.
     """
     sentinel = config.repo_root / "report" / ".rebuild-requested"
-    sentinel.parent.mkdir(parents=True, exist_ok=True)
-    sentinel.touch()
+    try:
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.touch()
+    except OSError as exc:
+        # Rebuild sentinel is an optimization — losing it is recoverable, do
+        # not fail the run. The next successful promote re-touches it, and
+        # the launchd watcher's WatchPaths fires periodically anyway.
+        log.warning(
+            "sandbox.promote.rebuild_sentinel_touch_failed",
+            sentinel=str(sentinel),
+            error=str(exc),
+        )
 
 
 __all__ = [
     "PromotionError",
     "PromotionResult",
     "RunNotCompletedError",
-    "VerdictMissingError",
     "promote_from_run",
 ]

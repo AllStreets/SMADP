@@ -135,13 +135,6 @@ async def run_worker(
                 await _execute_run(claimed.run_id, config=cfg, env_passthrough=env)
                 _promote_from_run(claimed.run_id, config=cfg)
                 summary.runs_completed += 1
-            except promote.VerdictMissingError as exc:
-                summary.runs_failed += 1
-                log.error(
-                    "sandbox.worker.promote_missing_verdict",
-                    run_id=claimed.run_id,
-                    error=str(exc),
-                )
             except Exception as exc:
                 summary.runs_failed += 1
                 log.error(
