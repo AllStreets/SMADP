@@ -74,6 +74,11 @@ _POLICY_TO_SUBVERDICT: dict[str, str] = {
     "outer_wallclock_timeout": "D_cascading_error",
 }
 
+# Module-level latch so the dollar-cost-stub warning fires exactly once per
+# process (operators need to know the cap is a no-op, but spamming the log on
+# every promote defeats the purpose).
+_dollar_cost_warned = False
+
 
 class PromotionError(RuntimeError):
     """Base for all promotion errors."""
@@ -192,6 +197,8 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     # `runs_today` is the harder guarantee the daily cap relies on.
     budget_path = config.repo_root / "state" / "budget.json"
     actual_dollars = _estimate_dollars_from_row(row)
+    # Count all completed runs against the daily cap regardless of outcome --
+    # we paid for the compute (and the cap is about throughput, not success rate).
     record_run_actual(budget_path, dollars=actual_dollars)
 
     return result
@@ -417,6 +424,17 @@ def _estimate_dollars_from_row(row: dict[str, Any]) -> float:
     guarantee, and `record_run_actual` still increments `runs_today` even
     when dollars is 0.0.
     """
+    # TODO(autopilot-v2): wire token counts -> dollars via config/model_prices.yaml.
+    global _dollar_cost_warned
+    if not _dollar_cost_warned:
+        _dollar_cost_warned = True
+        log.warning(
+            "autopilot.budget.cost_estimator_is_stub",
+            note=(
+                "dollar-cost estimator returns 0.0 in v1; dollars_per_day cap "
+                "is effectively a no-op. runs_per_day still enforced."
+            ),
+        )
     return 0.0
 
 

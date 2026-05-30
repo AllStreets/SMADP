@@ -24,8 +24,8 @@ from smadp.autopilot.pause import is_paused
 from smadp.autopilot.priority import load_priority
 from smadp.config import Config
 from smadp.sandbox import queue as sandbox_queue
-from smadp.sandbox.binding import bind_scenario, load_adapter_capabilities
-from smadp.sandbox.scenarios.loader import load_scenario
+from smadp.sandbox.binding import ScenarioBindingError, bind_scenario, load_adapter_capabilities
+from smadp.sandbox.scenarios.loader import ScenarioLoadError, load_scenario
 
 log = structlog.get_logger(__name__)
 
@@ -79,7 +79,16 @@ def run_tick(*, repo_root: Path, dry_run: bool) -> TickSummary:
             scenario = load_scenario(scenario_name)
             agents = {slug: load_adapter_capabilities(slug, config=sandbox_config) for slug in agent_slugs}
             binding = bind_scenario(scenario, agents=agents)
-        except Exception as exc:
+        # Narrow catch -- these are "this entry isn't bindable right now",
+        # distinct from genuine bugs (KeyError on a malformed priority entry,
+        # TypeError from a refactor, etc.). Let unexpected exceptions propagate
+        # so they surface as stack traces instead of silent reason="no_work".
+        except (
+            ScenarioBindingError,
+            ScenarioLoadError,
+            FileNotFoundError,
+            ValueError,
+        ) as exc:
             log.warning(
                 "autopilot.tick.priority_skip",
                 scenario=scenario_name,
