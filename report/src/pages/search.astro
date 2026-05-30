@@ -27,9 +27,12 @@ const records = verdicts.map((v) => {
     sevByDim[k] = sev;
     if (SEVERITY_RANK[sev] > maxRank) { maxRank = SEVERITY_RANK[sev]; maxSeverity = sev; }
   }
+  const kind = v.kind ?? (v.participants.length === 2 ? 'pair' : 'chain');
+  const joiner = kind === 'chain' ? ' → ' : ' × ';
   return {
     id: v.verdict_id,
     pair: v.participants,
+    kind,
     headline: v.headline,
     evidence: v.evidence_level,
     composite: v.composite_score,
@@ -37,10 +40,9 @@ const records = verdicts.map((v) => {
     sev: sevByDim,
     maxSeverity,
     frameworks: Object.keys(v.framework_mappings ?? {}),
-    pairText: `${v.participants[0]} × ${v.participants[1]}`.toLowerCase(),
+    pairText: v.participants.join(joiner).toLowerCase(),
     search: [
-      v.participants[0],
-      v.participants[1],
+      ...v.participants,
       v.headline,
       v.evidence_level,
       ...Object.keys(v.framework_mappings ?? {})
@@ -53,7 +55,8 @@ const stats = {
   agents: allAgents.length,
   frameworks: allFrameworks.length,
   sandbox: records.filter((r) => r.evidence === 'sandbox-validated').length,
-  pairs: records.length
+  pairs: records.filter((r) => r.kind === 'pair').length,
+  chains: records.filter((r) => r.kind === 'chain').length
 };
 
 // Categories that get a tab — quick-filter shortcuts
@@ -118,6 +121,15 @@ const categoryCount = (id: string) =>
     <!-- MAIN GRID: facets sidebar + results -->
     <section class="container search-body">
       <aside class="facets">
+        <div class="facet-block">
+          <div class="facet-eyebrow">Kind</div>
+          <div class="facet-options facet-kind" role="group" aria-label="Verdict kind">
+            <label><input type="radio" name="kind" data-facet="kind" value="all" checked /><span>All <span class="facet-kind-n">{stats.total}</span></span></label>
+            <label><input type="radio" name="kind" data-facet="kind" value="pair" /><span>Pairs <span class="facet-kind-n">{stats.pairs}</span></span></label>
+            <label><input type="radio" name="kind" data-facet="kind" value="chain" /><span>Chains <span class="facet-kind-n">{stats.chains}</span></span></label>
+          </div>
+        </div>
+
         <div class="facet-block">
           <div class="facet-eyebrow">Evidence tier</div>
           <div class="facet-options" role="group" aria-label="Evidence tier">
@@ -190,6 +202,7 @@ const categoryCount = (id: string) =>
             <li
               class="sv-card"
               data-pair={r.pair.join('|')}
+              data-kind={r.kind}
               data-evidence={r.evidence}
               data-maxrank={SEVERITY_RANK[r.maxSeverity]}
               data-composite={r.composite}
@@ -201,9 +214,23 @@ const categoryCount = (id: string) =>
             >
               <div class="sv-top">
                 <div class="sv-pair">
-                  <span class="sv-a">{r.pair[0]}</span>
-                  <span class="sv-x" aria-hidden="true">×</span>
-                  <span class="sv-b">{r.pair[1]}</span>
+                  {r.kind === 'chain' ? (
+                    <>
+                      {r.pair.map((p, i) => (
+                        <>
+                          {i > 0 && <span class="sv-x sv-x-chain" aria-hidden="true">→</span>}
+                          <span class="sv-a">{p}</span>
+                        </>
+                      ))}
+                      <span class="sv-kind-tag" aria-label="chain verdict">chain · {r.pair.length}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span class="sv-a">{r.pair[0]}</span>
+                      <span class="sv-x" aria-hidden="true">×</span>
+                      <span class="sv-b">{r.pair[1]}</span>
+                    </>
+                  )}
                 </div>
                 <div class="sv-tags">
                   <span class={`sv-evi sv-evi-${r.evidence}`}>{r.evidence}</span>
@@ -242,6 +269,7 @@ const categoryCount = (id: string) =>
   type Facets = {
     q: string;
     cat: string;
+    kind: string;
     evidence: Set<string>;
     sevmin: number;
     dim: Set<string>;
@@ -267,6 +295,7 @@ const categoryCount = (id: string) =>
   const facets: Facets = {
     q: '',
     cat: 'all',
+    kind: 'all',
     evidence: new Set(['sandbox-validated', 'profile-verified', 'docs-only', 'unverified-profile']),
     sevmin: 0,
     dim: new Set(['A_prompt_injection', 'B_data_leakage', 'C_capability_conflict', 'D_cascading_error', 'E_compliance']),
@@ -289,6 +318,7 @@ const categoryCount = (id: string) =>
 
   function passes(card: HTMLElement): boolean {
     if (!passesCat(card)) return false;
+    if (facets.kind !== 'all' && card.dataset.kind !== facets.kind) return false;
     if (facets.q && !(card.dataset.search ?? '').includes(facets.q)) return false;
     if (!facets.evidence.has(card.dataset.evidence ?? '')) return false;
     if (Number(card.dataset.maxrank) < facets.sevmin) return false;
@@ -344,6 +374,9 @@ const categoryCount = (id: string) =>
   document.querySelectorAll<HTMLInputElement>('[data-facet="sevmin"]').forEach((rb) => {
     rb.addEventListener('change', () => { if (rb.checked) { facets.sevmin = Number(rb.value); render(); } });
   });
+  document.querySelectorAll<HTMLInputElement>('[data-facet="kind"]').forEach((rb) => {
+    rb.addEventListener('change', () => { if (rb.checked) { facets.kind = rb.value; render(); } });
+  });
   document.querySelectorAll<HTMLInputElement>('[data-facet="dim"]').forEach((cb) => {
     cb.addEventListener('change', () => {
       if (cb.checked) facets.dim.add(cb.value);
@@ -371,11 +404,14 @@ const categoryCount = (id: string) =>
     facets.framework = '';
     facets.sort = 'composite-asc';
     facets.cat = 'all';
+    facets.kind = 'all';
     document.querySelectorAll<HTMLInputElement>('[data-facet]').forEach((i) => {
       if (i.type === 'checkbox') i.checked = true;
     });
     const sevNone = document.querySelector<HTMLInputElement>('input[name="sevmin"][value="0"]');
     if (sevNone) sevNone.checked = true;
+    const kindAll = document.querySelector<HTMLInputElement>('input[name="kind"][value="all"]');
+    if (kindAll) kindAll.checked = true;
     agentSel.value = '';
     if (fwSel) fwSel.value = '';
     sortBy.value = 'composite-asc';
@@ -588,6 +624,25 @@ const categoryCount = (id: string) =>
     color: var(--cream); letter-spacing: -0.01em;
   }
   .sv-x { color: var(--gold); font-style: italic; margin: 0 8px; }
+  .sv-x-chain { font-style: normal; font-family: var(--font-mono); font-size: 0.85em; }
+  .sv-kind-tag {
+    margin-left: 12px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-navy);
+    background: var(--gold);
+    padding: 2px 8px;
+    vertical-align: middle;
+  }
+  .facet-kind-n {
+    color: var(--cream-soft);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    margin-left: 4px;
+  }
   .sv-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .sv-evi, .sv-sev {
     font-family: var(--font-mono); font-size: 10px;
