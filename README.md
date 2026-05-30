@@ -399,6 +399,7 @@ sed "s|/PATH/TO/SMADP|$PWD|g" scripts/launchd/com.smadp.autopilot.loop.plist \
   > ~/Library/LaunchAgents/com.smadp.autopilot.loop.plist
 sed "s|/PATH/TO/SMADP|$PWD|g" scripts/launchd/com.smadp.autopilot.watch.plist \
   > ~/Library/LaunchAgents/com.smadp.autopilot.watch.plist
+mkdir -p state
 launchctl load ~/Library/LaunchAgents/com.smadp.autopilot.loop.plist
 launchctl load ~/Library/LaunchAgents/com.smadp.autopilot.watch.plist
 

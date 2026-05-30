@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+mkdir -p "$REPO_ROOT/state"
+
 # Ensure the venv is on PATH; the plist points launchd at this script.
 if [ -d "$REPO_ROOT/.venv" ]; then
   export PATH="$REPO_ROOT/.venv/bin:$PATH"
