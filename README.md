@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/SMADP-v0.2.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/agents-100-A78BFA?style=for-the-badge" alt="Agents"/>&nbsp;<img src="https://img.shields.io/badge/verdicts-104-A78BFA?style=for-the-badge" alt="Verdicts"/>&nbsp;<img src="https://img.shields.io/badge/chains-6-A78BFA?style=for-the-badge" alt="Chains"/>&nbsp;<img src="https://img.shields.io/badge/License-Apache_2.0-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
+  <img src="https://img.shields.io/badge/SMADP-v0.2.0-7C3AED?style=for-the-badge" alt="Version"/>&nbsp;<img src="https://img.shields.io/badge/Python-3.11+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>&nbsp;<img src="https://img.shields.io/badge/agents-100-A78BFA?style=for-the-badge" alt="Agents"/>&nbsp;<img src="https://img.shields.io/badge/verdicts-104-A78BFA?style=for-the-badge" alt="Verdicts"/>&nbsp;<img src="https://img.shields.io/badge/chains-6-A78BFA?style=for-the-badge" alt="Chains"/>&nbsp;<img src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge" alt="License"/>&nbsp;<img src="https://img.shields.io/badge/status-alpha-EA580C?style=for-the-badge" alt="Status"/>
 </p>
 
 <p align="center">
@@ -390,7 +390,7 @@ Each batch authors evidence files, flips `verification.status` to `verified`, an
 
 ## License
 
-Apache-2.0. The catalog is publicly redistributable. Each profiled agent retains its upstream license — see the `vendor` field on every catalog entry.
+MIT. The catalog is publicly redistributable. Each profiled agent retains its upstream license — see the `vendor` field on every catalog entry.
 
 ---
 
