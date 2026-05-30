@@ -55,6 +55,17 @@ test('Search page renders filter UI and verdict cards', async ({ page }) => {
   await expect(page.locator('.sv-card').first()).toBeVisible();
 });
 
+test('/pending renders empty state when no pending verdicts', async ({ page }) => {
+  await page.goto('/pending');
+  await expect(page.locator('.empty, .pending-table')).toBeVisible();
+  await expect(page.locator('h1')).toContainText('Pending verdicts');
+});
+
+test('/search has kind filter', async ({ page }) => {
+  await page.goto('/search');
+  await expect(page.getByRole('radio', { name: /Chains/i })).toBeVisible();
+});
+
 test('Download PDF link is present on layout pages', async ({ page }) => {
   for (const route of ['/primer', '/prospectus', '/dossier']) {
     await page.goto(route);

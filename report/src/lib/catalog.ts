@@ -78,6 +78,13 @@ export function loadVerdicts(): Verdict[] {
 
 export function loadPendingVerdicts(): Verdict[] {
   if (!existsSync(PENDING_DIR)) return [];
+  let entries: string[];
+  try {
+    entries = readdirSync(PENDING_DIR);
+  } catch {
+    return [];
+  }
+  if (!entries.some((n) => n.endsWith('.json'))) return [];
   return readJsonDir<RawVerdict>(PENDING_DIR, 'pending verdict').map(deriveParticipants);
 }
 
