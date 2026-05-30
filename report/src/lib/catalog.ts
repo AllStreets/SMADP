@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Profile, Verdict } from './types';
@@ -6,8 +6,11 @@ import type { Profile, Verdict } from './types';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../..');
 const VERDICT_DIR = join(REPO_ROOT, 'catalog', 'verdicts');
+const PENDING_DIR = join(REPO_ROOT, 'catalog', 'pending');
 const PROFILE_DIR = join(REPO_ROOT, 'catalog', 'profiles');
 const EVIDENCE_DIR = join(REPO_ROOT, 'catalog', '_evidence');
+
+type RawVerdict = Omit<Verdict, 'participants'> & { participants?: string[] };
 
 export interface EvidenceBundle {
   sha256: string;
@@ -51,9 +54,9 @@ function readJsonDir<T>(dir: string, label: string): T[] {
   return out;
 }
 
-function deriveParticipants(v: Verdict): Verdict {
+function deriveParticipants(v: RawVerdict): Verdict {
   if (v.participants && v.participants.length >= 2) {
-    return { ...v, kind: v.participants.length === 2 ? 'pair' : 'chain' };
+    return { ...v, participants: v.participants, kind: v.participants.length === 2 ? 'pair' : 'chain' };
   }
   if (v.pair && v.pair.length === 2) {
     return { ...v, participants: [...v.pair], kind: 'pair' };
@@ -68,21 +71,14 @@ let _profiles: Profile[] | null = null;
 
 export function loadVerdicts(): Verdict[] {
   if (_verdicts === null) {
-    _verdicts = readJsonDir<Verdict>(VERDICT_DIR, 'verdict').map(deriveParticipants);
+    _verdicts = readJsonDir<RawVerdict>(VERDICT_DIR, 'verdict').map(deriveParticipants);
   }
   return _verdicts;
 }
 
 export function loadPendingVerdicts(): Verdict[] {
-  const pendingDir = join(REPO_ROOT, 'catalog', 'pending');
-  try {
-    return readJsonDir<Verdict>(pendingDir, 'pending verdict').map(deriveParticipants);
-  } catch (err) {
-    if ((err as CatalogError).message.includes('contained no .json files')) {
-      return [];
-    }
-    throw err;
-  }
+  if (!existsSync(PENDING_DIR)) return [];
+  return readJsonDir<RawVerdict>(PENDING_DIR, 'pending verdict').map(deriveParticipants);
 }
 
 export function loadProfiles(): Profile[] {
