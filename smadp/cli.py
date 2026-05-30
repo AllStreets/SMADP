@@ -775,6 +775,21 @@ def autopilot_tick(ctx: click.Context, dry_run: bool) -> None:
         click.echo(f"enqueued {summary.enqueued} (reason: {summary.reason})")
 
 
+@autopilot.command("approve")
+@click.argument("key")
+@click.pass_context
+def autopilot_approve(ctx: click.Context, key: str) -> None:
+    """Publish a pending verdict by moving it to catalog/verdicts/."""
+    from smadp.autopilot.approve import ApproveError, approve
+
+    cfg = _config_from_ctx(ctx)
+    try:
+        approve(key=key, repo_root=cfg.repo_root)
+    except ApproveError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"approved {key}")
+
+
 # --------------------------------------------------------------------- helpers
 def _print_json(obj: Any) -> None:
     text = json.dumps(obj, indent=2, default=str, sort_keys=True)
