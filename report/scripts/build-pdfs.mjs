@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { copyFile, mkdir } from 'node:fs/promises';
 
 const ROUTES = [
-  { slug: 'brief',      path: '/brief'      },
+  { slug: 'primer',     path: '/primer'     },
   { slug: 'prospectus', path: '/prospectus' },
   { slug: 'dossier',    path: '/dossier'    }
 ];

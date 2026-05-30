@@ -1,0 +1,764 @@
+---
+import MemoLayout from '@/components/MemoLayout.astro';
+import SectionIcon from '@/components/SectionIcon.astro';
+import { loadVerdicts, loadProfiles, loadEvidenceMap } from '@/lib/catalog';
+import { RISK_KEYS } from '@/lib/types';
+import type { EvidenceBundle } from '@/lib/catalog';
+
+const verdicts = loadVerdicts();
+const profiles = loadProfiles();
+const evidence = loadEvidenceMap();
+
+// ----- Collect every distinct sha256 evidence_ref used by any verdict or profile -----
+type UsageSite = { kind: 'verdict'; pair: string; dim: string } | { kind: 'profile'; slug: string } | { kind: 'verdict_repro'; pair: string; field: string };
+const usageBySha = new Map<string, UsageSite[]>();
+
+const normalize = (ref: string) => ref.replace(/^sha256:/, '');
+const recordUse = (ref: string | undefined, site: UsageSite) => {
+  if (!ref) return;
+  const sha = normalize(ref);
+  if (!/^[0-9a-f]{64}$/.test(sha)) return;
+  const arr = usageBySha.get(sha) ?? [];
+  arr.push(site);
+  usageBySha.set(sha, arr);
+};
+
+for (const v of verdicts) {
+  const pair = `${v.pair[0]} × ${v.pair[1]}`;
+  for (const k of RISK_KEYS) {
+    const sub = v.sub_verdicts[k];
+    if (!sub) continue;
+    for (const c of sub.citations ?? []) {
+      recordUse(c.evidence_ref, { kind: 'verdict', pair, dim: k });
+    }
+  }
+  // reproducibility hashes — only count real (non-zero) digests
+  const repro = (v as any).reproducibility ?? {};
+  for (const field of ['evidence_bundle_hash', 'profile_a_hash', 'profile_b_hash']) {
+    const ref = repro[field];
+    if (typeof ref === 'string' && !/0{64}$/.test(ref)) {
+      recordUse(ref, { kind: 'verdict_repro', pair, field });
+    }
+  }
+}
+for (const p of profiles as any[]) {
+  const refs: string[] = Array.isArray(p.evidence_refs) ? p.evidence_refs : [];
+  for (const r of refs) recordUse(r, { kind: 'profile', slug: p.slug });
+}
+
+// ----- Build the references list, sorted by usage count desc -----
+type Ref = {
+  sha: string;
+  bundle: EvidenceBundle | null;
+  uses: UsageSite[];
+  useCount: number;
+  domain: string;
+};
+const domainOf = (url?: string) => {
+  if (!url) return '—';
+  try { return new URL(url).hostname.replace(/^www\./, ''); }
+  catch { return '—'; }
+};
+
+const refList: Ref[] = [...usageBySha.entries()].map(([sha, uses]) => {
+  const bundle = evidence.get(sha) ?? null;
+  return {
+    sha,
+    bundle,
+    uses,
+    useCount: uses.length,
+    domain: domainOf(bundle?.source_url)
+  };
+}).sort((a, b) => b.useCount - a.useCount || a.domain.localeCompare(b.domain));
+
+// ----- Profile-field citations (no sha — point back to the profile that asserts the fact) -----
+type ProfileCite = { field: string; verdicts: Set<string> };
+const profileCiteMap = new Map<string, ProfileCite>();
+for (const v of verdicts) {
+  const pair = `${v.pair[0]} × ${v.pair[1]}`;
+  for (const k of RISK_KEYS) {
+    const sub = v.sub_verdicts[k];
+    if (!sub) continue;
+    for (const c of sub.citations ?? []) {
+      if (!c.profile_field) continue;
+      const key = c.profile_field;
+      const entry = profileCiteMap.get(key) ?? { field: key, verdicts: new Set<string>() };
+      entry.verdicts.add(pair);
+      profileCiteMap.set(key, entry);
+    }
+  }
+}
+const profileCites = [...profileCiteMap.values()]
+  .sort((a, b) => b.verdicts.size - a.verdicts.size || a.field.localeCompare(b.field));
+
+// ----- Framework mappings: which standards/frameworks are referenced from verdicts -----
+const fwMap = new Map<string, Set<string>>();
+for (const v of verdicts) {
+  for (const [fw, ids] of Object.entries(v.framework_mappings ?? {})) {
+    const set = fwMap.get(fw) ?? new Set<string>();
+    for (const id of ids) set.add(id);
+    fwMap.set(fw, set);
+  }
+}
+const frameworks = [...fwMap.entries()]
+  .map(([fw, ids]) => ({ fw, ids: [...ids].sort() }))
+  .sort((a, b) => b.ids.length - a.ids.length || a.fw.localeCompare(b.fw));
+
+// ----- Agent homepages + primary docs URLs (always credit upstream) -----
+const upstream = profiles.map((p: any) => ({
+  slug: p.slug,
+  name: p.name ?? p.slug,
+  homepage: p.homepage as string | undefined,
+  docs_urls: (Array.isArray(p.docs_urls) ? p.docs_urls : []) as string[]
+})).sort((a, b) => a.slug.localeCompare(b.slug));
+
+const stats = {
+  refs: refList.length,
+  profileCites: profileCites.length,
+  frameworks: frameworks.length,
+  profiles: profiles.length,
+  verdicts: verdicts.length
+};
+
+const shortSha = (sha: string) => sha.slice(0, 12);
+
+// ----- Live-growth metadata: this page is regenerated on every build, so the
+// stamp below tells the reader exactly when the current snapshot was assembled.
+const buildIso = new Date().toISOString();
+const buildStamp = `${buildIso.slice(0, 10)} · ${buildIso.slice(11, 16)} UTC`;
+---
+<MemoLayout pageTitle="SMADP · References" layoutName="SMADP">
+  <div class="refs-page">
+
+    <header class="refs-hero">
+      <div class="container">
+        <div class="refs-eyebrow">
+          <span class="rh-mark">[ Receipts ]</span>
+          <span class="rh-dot" aria-hidden="true">·</span>
+          <span>Every claim is anchored to a citable source.</span>
+        </div>
+        <h1 class="refs-title">References &amp; receipts.</h1>
+        <p class="refs-dek">
+          SMADP commits every assertion to a sha256-pinned evidence bundle. Profile-level
+          facts cite the upstream docs they were extracted from; verdict-level reasoning
+          cites the profile fields and evidence bundles it relied on. Nothing on this site
+          asserts a fact it cannot trace back to a URL, a transcript, or a fielded profile.
+        </p>
+        <div class="refs-stats">
+          <div class="rs-cell"><span class="rs-num">{stats.refs}</span><span class="rs-lab">Evidence bundles cited</span></div>
+          <div class="rs-cell"><span class="rs-num">{stats.profileCites}</span><span class="rs-lab">Profile-field citations</span></div>
+          <div class="rs-cell"><span class="rs-num">{stats.frameworks}</span><span class="rs-lab">Frameworks mapped</span></div>
+          <div class="rs-cell"><span class="rs-num">{stats.profiles}</span><span class="rs-lab">Upstream projects credited</span></div>
+        </div>
+
+        <aside class="refs-live" aria-label="Live-growth notice">
+          <span class="rl-pulse" aria-hidden="true"></span>
+          <div class="rl-body">
+            <span class="rl-head">Live receipts ledger</span>
+            <p class="rl-copy">
+              This page is regenerated on every build. New verdicts written to
+              <code>catalog/verdicts/</code> and new bundles dropped into
+              <code>catalog/_evidence/</code> appear here automatically the next
+              time the site is rebuilt — no manual edit required.
+            </p>
+          </div>
+          <div class="rl-stamp">
+            <span class="rl-stamp-lab">Snapshot</span>
+            <time class="rl-stamp-val" datetime={buildIso}>{buildStamp}</time>
+            <span class="rl-stamp-meta">{stats.verdicts} verdicts · {stats.refs} bundles · {stats.profiles} agents</span>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <!-- §1 EVIDENCE BUNDLES -->
+    <section class="container refs-section">
+      <div class="rs-head">
+        <div class="rs-num-tag"><SectionIcon name="evidence" size={14} /> <span>01 · Evidence</span></div>
+        <h2 class="rs-h">Evidence bundles</h2>
+        <p class="rs-sub">
+          Each row is a content-addressed bundle stored in <code>catalog/_evidence/sha256-&lt;digest&gt;.json</code>.
+          Bundles include the original URL, the fetched timestamp, and a verbatim quote. The site never
+          re-summarises a quote without linking back to its bundle.
+        </p>
+      </div>
+
+      <ol class="refs-table">
+        <li class="rt-row rt-head">
+          <span>SHA-256</span>
+          <span>Source</span>
+          <span>Quote</span>
+          <span class="rt-uses">Cited by</span>
+        </li>
+        {refList.map((r) => (
+          <li class="rt-row">
+            <span class="rt-sha"><code>{shortSha(r.sha)}…</code></span>
+            <span class="rt-src">
+              {r.bundle?.source_url ? (
+                <a href={r.bundle.source_url} target="_blank" rel="noopener noreferrer">
+                  <span class="rt-domain">{r.domain}</span>
+                  <span class="rt-path">{(() => { try { return new URL(r.bundle!.source_url!).pathname; } catch { return ''; } })()}</span>
+                </a>
+              ) : (
+                <span class="rt-domain rt-missing">bundle missing</span>
+              )}
+              <span class="rt-meta">
+                {r.bundle?.fetched_at && <span>fetched {r.bundle.fetched_at.slice(0,10)}</span>}
+                {r.bundle?.valid_status && <span class={`rt-valid rt-valid-${r.bundle.valid_status}`}>{r.bundle.valid_status}</span>}
+              </span>
+            </span>
+            <span class="rt-quote">{r.bundle?.quote ? `"${r.bundle.quote}"` : <em>no quote on file</em>}</span>
+            <span class="rt-uses">
+              <span class="rt-use-count">{r.useCount}</span>
+              <span class="rt-use-detail">{[...new Set(r.uses.map((u) => u.kind === 'verdict' ? u.pair : u.kind === 'profile' ? u.slug : `${u.pair} repro`))].slice(0, 3).join(' · ')}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <!-- §2 PROFILE-FIELD CITATIONS -->
+    <section class="container refs-section">
+      <div class="rs-head">
+        <div class="rs-num-tag"><SectionIcon name="citations" size={14} /> <span>02 · Citations</span></div>
+        <h2 class="rs-h">Profile-field citations</h2>
+        <p class="rs-sub">
+          Verdicts cite the exact profile field they relied on. If a profile field is wrong,
+          the verdict downstream of it is wrong too — and every consumer can see exactly which
+          field was load-bearing.
+        </p>
+      </div>
+      <ul class="refs-fields">
+        {profileCites.map((c) => (
+          <li class="rf-row">
+            <code class="rf-field">{c.field}</code>
+            <span class="rf-count">{c.verdicts.size} verdict{c.verdicts.size === 1 ? '' : 's'}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <!-- §3 FRAMEWORK MAPPINGS -->
+    <section class="container refs-section">
+      <div class="rs-head">
+        <div class="rs-num-tag"><SectionIcon name="framework" size={14} /> <span>03 · Frameworks</span></div>
+        <h2 class="rs-h">Framework mappings</h2>
+        <p class="rs-sub">
+          Where a verdict touches a published control or risk taxonomy, the verdict's
+          <code>framework_mappings</code> block records every relevant control identifier.
+          The frameworks themselves are the canonical references — SMADP does not paraphrase them.
+        </p>
+      </div>
+      {frameworks.length === 0 ? (
+        <p class="rs-empty">No framework mappings have been recorded yet in the verdict catalog.</p>
+      ) : (
+        <ul class="refs-frameworks">
+          {frameworks.map((f) => (
+            <li class="rfw-row">
+              <span class="rfw-name">{f.fw}</span>
+              <span class="rfw-ids">{f.ids.map((id) => <code>{id}</code>)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+
+    <!-- §4 UPSTREAM PROJECTS -->
+    <section class="container refs-section">
+      <div class="rs-head">
+        <div class="rs-num-tag"><SectionIcon name="upstream" size={14} /> <span>04 · Upstream</span></div>
+        <h2 class="rs-h">Upstream projects &amp; documentation</h2>
+        <p class="rs-sub">
+          Every agent profile on the site is built from the project's own homepage and documentation.
+          We credit each upstream below — and when you find something we missed, the link points
+          to the place to file the correction.
+        </p>
+      </div>
+      <ul class="refs-upstream">
+        {upstream.map((u) => (
+          <li class="rup-row">
+            <span class="rup-name">
+              {u.homepage
+                ? <a href={u.homepage} target="_blank" rel="noopener noreferrer">{u.name}</a>
+                : <span>{u.name}</span>}
+              <code class="rup-slug">{u.slug}</code>
+            </span>
+            <span class="rup-docs">
+              {u.docs_urls.length === 0
+                ? <em class="rup-empty">homepage only</em>
+                : u.docs_urls.map((d) => (
+                    <a class="rup-doc" href={d} target="_blank" rel="noopener noreferrer">{domainOf(d)}{(() => { try { return new URL(d).pathname; } catch { return ''; } })()}</a>
+                  ))
+              }
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <!-- §5 METHODOLOGY -->
+    <section class="container refs-section refs-method">
+      <div class="rs-head">
+        <div class="rs-num-tag"><SectionIcon name="reproducibility" size={14} /> <span>05 · Reproducibility</span></div>
+        <h2 class="rs-h">Methodology &amp; reproducibility</h2>
+        <p class="rs-sub">
+          The rubric, the evidence-tier ladder, and the per-verdict reproducibility block are
+          the load-bearing methodology references. They are checked in and versioned.
+        </p>
+      </div>
+      <ul class="refs-method-list">
+        <li><span class="rml-name">Rubric · v1.0</span><code>catalog/_meta/rubric/1.0.json</code></li>
+        <li><span class="rml-name">Evidence-tier ladder</span><code>docs-only → profile-verified → sandbox-validated</code></li>
+        <li><span class="rml-name">Per-verdict reproducibility</span><code>reproducibility.{`{evidence_bundle_hash, profile_a_hash, profile_b_hash}`}</code></li>
+        <li><span class="rml-name">Sandbox harness</span><code>smadp sandbox …</code> · transcripts at <code>~/Library/Caches/smadp/sandbox-runs/</code></li>
+        <li><span class="rml-name">Source repository</span><a href="https://github.com/AllStreets/ONEXUS-Agents" target="_blank" rel="noopener noreferrer">ONEXUS-Agents</a> · sibling profile source</li>
+      </ul>
+    </section>
+
+    <!-- LIVE GROWTH FOOTER -->
+    <footer class="refs-footer container">
+      <div class="rf-head">
+        <span class="rf-eyebrow">[ How this page grows ]</span>
+        <h3 class="rf-title">A receipts ledger that writes itself.</h3>
+      </div>
+      <ol class="rf-flow">
+        <li>
+          <span class="rf-step">01</span>
+          <span class="rf-step-head">Verdict lands</span>
+          <span class="rf-step-body">A new file is written to <code>catalog/verdicts/&lt;a&gt;__&lt;b&gt;.json</code> — either by the sandbox runner or hand-authored.</span>
+        </li>
+        <li>
+          <span class="rf-step">02</span>
+          <span class="rf-step-head">Evidence pinned</span>
+          <span class="rf-step-body">Every cited claim sha256-pins to a bundle under <code>catalog/_evidence/</code>.</span>
+        </li>
+        <li>
+          <span class="rf-step">03</span>
+          <span class="rf-step-head">Site rebuilds</span>
+          <span class="rf-step-body"><code>pnpm build</code> re-scans the catalog and rewrites this page from scratch. No human edits this template.</span>
+        </li>
+        <li>
+          <span class="rf-step">04</span>
+          <span class="rf-step-head">Receipts appear</span>
+          <span class="rf-step-body">New rows show up in sections 01–04 with their citation counts and framework mappings. Old rows update their <em>cited-by</em> counts.</span>
+        </li>
+      </ol>
+      <p class="rf-stamp">
+        Current snapshot built <time datetime={buildIso}>{buildStamp}</time> from
+        <strong>{stats.verdicts}</strong> verdicts and
+        <strong>{stats.refs}</strong> evidence bundles.
+        The next rebuild will overwrite this stamp.
+      </p>
+    </footer>
+
+  </div>
+</MemoLayout>
+
+<style>
+  .refs-page {
+    background: var(--ink-navy);
+    color: var(--cream);
+    min-height: calc(100vh - 80px);
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .refs-page::before {
+    content: "";
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(245,233,204,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(245,233,204,0.035) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+  .refs-page::after {
+    content: "";
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(60% 50% at 80% 14%, rgba(201,165,92,0.08) 0%, transparent 70%),
+      radial-gradient(60% 60% at 14% 86%, rgba(61,90,140,0.18) 0%, transparent 75%);
+  }
+  .refs-page > * { position: relative; z-index: 1; }
+
+  /* HERO */
+  .refs-hero { padding: 84px 0 56px; }
+  .refs-eyebrow {
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  .refs-eyebrow > :not(.rh-mark) { color: var(--cream-soft); letter-spacing: 0.16em; }
+  .rh-dot { opacity: 0.55; }
+  .refs-title {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-weight: 500;
+    font-size: clamp(40px, 6vw, 84px);
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+    color: var(--cream);
+    margin: 24px 0 18px;
+    max-width: 14ch;
+  }
+  .refs-dek {
+    color: var(--cream-soft);
+    font-size: clamp(14px, 1.2vw, 17px);
+    line-height: 1.6;
+    max-width: 68ch;
+    margin: 0 0 36px;
+  }
+  .refs-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 1px solid rgba(245,233,204,0.12);
+    border-bottom: 1px solid rgba(245,233,204,0.12);
+  }
+  .rs-cell {
+    padding: 22px 26px 22px 0;
+    border-right: 1px solid rgba(245,233,204,0.10);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .rs-cell:last-child { border-right: none; }
+  .rs-num {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: clamp(28px, 3.4vw, 44px);
+    color: var(--cream);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .rs-lab {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-soft);
+  }
+
+  /* LIVE-GROWTH BANNER */
+  .refs-live {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 20px;
+    align-items: start;
+    padding: 18px 22px;
+    border: 1px solid rgba(201,165,92,0.28);
+    background:
+      linear-gradient(180deg, rgba(201,165,92,0.06), rgba(201,165,92,0.02));
+    box-shadow: inset 3px 0 0 var(--gold);
+  }
+  .rl-pulse {
+    width: 10px; height: 10px; margin-top: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    box-shadow: 0 0 0 0 rgba(201,165,92,0.6);
+    animation: rl-pulse 2.6s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  @keyframes rl-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(201,165,92,0.55); }
+    70%  { box-shadow: 0 0 0 14px rgba(201,165,92,0);    }
+    100% { box-shadow: 0 0 0 0   rgba(201,165,92,0);    }
+  }
+  .rl-body { display: flex; flex-direction: column; gap: 4px; }
+  .rl-head {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .rl-copy { color: var(--cream-soft); font-size: 13px; line-height: 1.55; margin: 0; max-width: 70ch; }
+  .rl-copy code { background: rgba(245,233,204,0.10); color: var(--cream); padding: 1px 6px; font-size: 11.5px; }
+  .rl-stamp {
+    display: flex; flex-direction: column; gap: 4px;
+    text-align: right;
+    border-left: 1px solid rgba(245,233,204,0.10);
+    padding-left: 20px;
+  }
+  .rl-stamp-lab {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--cream-soft);
+  }
+  .rl-stamp-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--cream);
+    font-variant-numeric: tabular-nums;
+  }
+  .rl-stamp-meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--cream-soft);
+    letter-spacing: 0.08em;
+  }
+  @media (max-width: 768px) {
+    .refs-live { grid-template-columns: 14px 1fr; }
+    .rl-stamp {
+      grid-column: 1 / -1; border-left: none; padding-left: 0;
+      border-top: 1px solid rgba(245,233,204,0.10);
+      padding-top: 12px; text-align: left;
+    }
+  }
+
+  /* SECTIONS */
+  .refs-section { padding: 56px 0; border-bottom: 1px solid rgba(245,233,204,0.08); }
+  .refs-section:last-child { border-bottom: none; }
+  .rs-head { max-width: 70ch; margin-bottom: 26px; }
+  .rs-num-tag {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.20em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+  .rs-num-tag svg { color: var(--gold); }
+  .rs-h {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: clamp(24px, 2.8vw, 36px);
+    color: var(--cream);
+    letter-spacing: -0.015em;
+    margin: 6px 0 12px;
+    font-weight: 500;
+  }
+  .rs-sub { color: var(--cream-soft); font-size: 14px; line-height: 1.6; margin: 0; }
+  .rs-sub code, .refs-section code {
+    background: rgba(245,233,204,0.10);
+    color: var(--cream);
+    padding: 1px 6px;
+    font-size: 12px;
+  }
+  .rs-empty { color: var(--cream-soft); font-style: italic; font-size: 14px; }
+
+  /* §1 EVIDENCE BUNDLES TABLE */
+  .refs-table {
+    list-style: none; padding: 0; margin: 0;
+    border-top: 1px solid rgba(245,233,204,0.12);
+  }
+  .rt-row {
+    display: grid;
+    grid-template-columns: 130px 1.3fr 2.0fr 1.0fr;
+    gap: 20px;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(245,233,204,0.08);
+    align-items: start;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .rt-head {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-soft);
+    padding: 12px 0;
+  }
+  .rt-sha code { font-family: var(--font-mono); color: var(--gold); background: rgba(201,165,92,0.08); }
+  .rt-src a { color: var(--cream); text-decoration: none; border-bottom: 1px solid rgba(201,165,92,0.45); }
+  .rt-src a:hover { border-bottom-color: var(--gold); color: var(--gold); }
+  .rt-domain { display: block; font-weight: 600; color: var(--cream); }
+  .rt-missing { color: var(--sev-medium); font-style: italic; }
+  .rt-path { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--cream-soft); margin-top: 2px; word-break: break-all; }
+  .rt-meta {
+    display: flex; gap: 12px; margin-top: 4px;
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--cream-soft); letter-spacing: 0.10em; text-transform: uppercase;
+  }
+  .rt-valid-valid { color: var(--sev-low); }
+  .rt-valid-stale, .rt-valid-broken { color: var(--sev-high); }
+  .rt-quote { color: var(--cream-soft); font-style: italic; font-size: 13px; }
+  .rt-quote em { color: var(--cream-soft); opacity: 0.55; }
+  .rt-uses { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .rt-use-count {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: 22px;
+    color: var(--gold);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .rt-use-detail { font-family: var(--font-mono); font-size: 10.5px; color: var(--cream-soft); letter-spacing: 0.06em; }
+
+  /* §2 PROFILE FIELDS */
+  .refs-fields { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid rgba(245,233,204,0.12); }
+  .rf-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px 12px 0;
+    border-bottom: 1px solid rgba(245,233,204,0.08);
+    border-right: 1px solid rgba(245,233,204,0.08);
+    font-size: 12.5px;
+  }
+  .rf-row:nth-child(2n) { border-right: none; padding-right: 0; }
+  .rf-field { color: var(--cream); background: rgba(245,233,204,0.08); }
+  .rf-count { color: var(--cream-soft); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.10em; }
+
+  /* §3 FRAMEWORKS */
+  .refs-frameworks { list-style: none; padding: 0; margin: 0; }
+  .rfw-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(245,233,204,0.08);
+  }
+  .rfw-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .rfw-ids { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rfw-ids code { color: var(--cream); }
+
+  /* §4 UPSTREAM */
+  .refs-upstream {
+    list-style: none; padding: 0; margin: 0;
+    border-top: 1px solid rgba(245,233,204,0.12);
+  }
+  .rup-row {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 24px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(245,233,204,0.08);
+    align-items: center;
+  }
+  .rup-name { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .rup-name a {
+    color: var(--cream);
+    text-decoration: none;
+    border-bottom: 1px solid var(--gold);
+  }
+  .rup-name a:hover { color: var(--gold); }
+  .rup-slug { font-size: 10.5px; color: var(--cream-soft); background: rgba(245,233,204,0.06); width: max-content; }
+  .rup-docs { display: flex; flex-wrap: wrap; gap: 10px; }
+  .rup-doc {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--cream-soft);
+    background: rgba(245,233,204,0.06);
+    padding: 4px 8px;
+    text-decoration: none;
+    border: 1px solid rgba(245,233,204,0.10);
+    word-break: break-all;
+  }
+  .rup-doc:hover { color: var(--gold); border-color: var(--gold); }
+  .rup-empty { color: var(--cream-soft); opacity: 0.6; }
+
+  /* §5 METHODOLOGY */
+  .refs-method-list { list-style: none; padding: 0; margin: 0; border-top: 1px solid rgba(245,233,204,0.12); }
+  .refs-method-list li {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 24px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(245,233,204,0.08);
+    font-size: 13px;
+  }
+  .rml-name { color: var(--cream); font-weight: 600; }
+  .refs-method-list a { color: var(--cream); border-bottom: 1px solid var(--gold); text-decoration: none; }
+  .refs-method-list a:hover { color: var(--gold); }
+
+  /* LIVE-GROWTH FOOTER */
+  .refs-footer {
+    padding: 64px 0 96px;
+    margin-top: 24px;
+    border-top: 1px solid rgba(245,233,204,0.12);
+  }
+  .rf-head { margin-bottom: 32px; max-width: 60ch; }
+  .rf-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .rf-title {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: clamp(26px, 3vw, 40px);
+    color: var(--cream);
+    letter-spacing: -0.015em;
+    margin: 8px 0 0;
+    font-weight: 500;
+  }
+  .rf-flow {
+    list-style: none; padding: 0; margin: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 1px solid rgba(245,233,204,0.10);
+    border-bottom: 1px solid rgba(245,233,204,0.10);
+  }
+  .rf-flow li {
+    padding: 22px 22px 22px 0;
+    border-right: 1px solid rgba(245,233,204,0.08);
+    display: flex; flex-direction: column; gap: 8px;
+    position: relative;
+  }
+  .rf-flow li:first-child { padding-left: 0; }
+  .rf-flow li:not(:first-child) { padding-left: 22px; }
+  .rf-flow li:last-child { border-right: none; }
+  .rf-step {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.20em;
+    color: var(--gold);
+  }
+  .rf-step-head {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: 19px;
+    color: var(--cream);
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .rf-step-body { color: var(--cream-soft); font-size: 13px; line-height: 1.55; }
+  .rf-step-body code {
+    background: rgba(245,233,204,0.08);
+    color: var(--cream);
+    padding: 1px 5px;
+    font-size: 11.5px;
+  }
+  .rf-stamp {
+    margin: 22px 0 0;
+    color: var(--cream-soft);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .rf-stamp strong, .rf-stamp time {
+    color: var(--cream);
+    font-variant-numeric: tabular-nums;
+  }
+  .rf-stamp time { font-family: var(--font-mono); font-size: 12.5px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 1024px) {
+    .refs-stats { grid-template-columns: 1fr 1fr; }
+    .rs-cell:nth-child(2n) { border-right: none; }
+    .rt-row { grid-template-columns: 100px 1fr 1fr; }
+    .rt-row .rt-uses { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 10px; }
+    .refs-fields { grid-template-columns: 1fr; }
+    .rf-row { border-right: none; }
+    .rup-row, .rfw-row, .refs-method-list li { grid-template-columns: 1fr; gap: 6px; }
+  }
+  @media (max-width: 640px) {
+    .refs-stats { grid-template-columns: 1fr; }
+    .rs-cell { border-right: none; border-bottom: 1px solid rgba(245,233,204,0.10); }
+    .rt-row { grid-template-columns: 1fr; }
+  }
+
+  /* PRINT */
+  @media print {
+    .refs-page { background: var(--paper); color: var(--ink-body); }
+    .refs-page::before, .refs-page::after { display: none; }
+    .refs-title, .rs-h, .rt-domain, .rs-num, .rml-name { color: var(--ink-navy); }
+    .refs-dek, .rs-sub, .rt-quote, .rs-lab, .rf-count, .rup-slug, .rt-use-detail { color: var(--ink-body); }
+    a { color: var(--ink-navy); }
+  }
+</style>

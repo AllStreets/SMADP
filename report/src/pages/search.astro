@@ -1,0 +1,655 @@
+---
+import MemoLayout from '@/components/MemoLayout.astro';
+import { loadVerdicts, loadProfiles } from '@/lib/catalog';
+import { RISK_KEYS } from '@/lib/types';
+import type { Severity } from '@/lib/types';
+
+const verdicts = loadVerdicts();
+const profiles = loadProfiles();
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  none: 0, low: 1, medium: 2, high: 3, critical: 4
+};
+
+// All distinct agent slugs that appear in any pair
+const allAgents = [...new Set(verdicts.flatMap((v) => v.pair))].sort();
+
+// All frameworks referenced in any verdict
+const allFrameworks = [...new Set(verdicts.flatMap((v) => Object.keys(v.framework_mappings ?? {})))].sort();
+
+// Pre-compute a lean record per verdict for client-side filtering
+const records = verdicts.map((v) => {
+  let maxRank = 0;
+  let maxSeverity: Severity = 'none';
+  const sevByDim: Record<string, Severity> = {};
+  for (const k of RISK_KEYS) {
+    const sev = (v.sub_verdicts[k]?.severity ?? 'none') as Severity;
+    sevByDim[k] = sev;
+    if (SEVERITY_RANK[sev] > maxRank) { maxRank = SEVERITY_RANK[sev]; maxSeverity = sev; }
+  }
+  return {
+    id: v.verdict_id,
+    pair: v.pair,
+    headline: v.headline,
+    evidence: v.evidence_level,
+    composite: v.composite_score,
+    confidence: v.confidence,
+    sev: sevByDim,
+    maxSeverity,
+    frameworks: Object.keys(v.framework_mappings ?? {}),
+    pairText: `${v.pair[0]} × ${v.pair[1]}`.toLowerCase(),
+    search: [
+      v.pair[0],
+      v.pair[1],
+      v.headline,
+      v.evidence_level,
+      ...Object.keys(v.framework_mappings ?? {})
+    ].join(' ').toLowerCase()
+  };
+});
+
+const stats = {
+  total: records.length,
+  agents: allAgents.length,
+  frameworks: allFrameworks.length,
+  sandbox: records.filter((r) => r.evidence === 'sandbox-validated').length,
+  pairs: records.length
+};
+
+// Categories that get a tab — quick-filter shortcuts
+const categories = [
+  { id: 'all',       label: 'All verdicts',        filter: () => true },
+  { id: 'sandbox',   label: 'Sandbox-validated',   filter: (r: any) => r.evidence === 'sandbox-validated' },
+  { id: 'profile',   label: 'Profile-verified',    filter: (r: any) => r.evidence === 'profile-verified' },
+  { id: 'docs',      label: 'Docs-only',           filter: (r: any) => r.evidence === 'docs-only' },
+  { id: 'critical',  label: 'Critical or high',    filter: (r: any) => r.maxSeverity === 'critical' || r.maxSeverity === 'high' },
+  { id: 'aider',     label: 'Aider pairs',         filter: (r: any) => r.pair.includes('aider') }
+];
+
+const categoryCount = (id: string) =>
+  records.filter(categories.find((c) => c.id === id)!.filter).length;
+---
+<MemoLayout pageTitle="SMADP · Search" layoutName="SMADP">
+  <div class="search-page">
+
+    <!-- HERO -->
+    <header class="search-hero">
+      <div class="container">
+        <div class="sh-eyebrow">
+          <span class="sh-mark">[ Search · The whole catalog, in one query ]</span>
+          <span class="sh-dot" aria-hidden="true">·</span>
+          <span>Filter, slice, and surface every verdict on file.</span>
+        </div>
+        <h1 class="sh-title">
+          Find the seam <em>that affects you</em>.
+        </h1>
+        <p class="sh-dek">
+          Search across every pair verdict in the catalog. Filter by evidence tier, by
+          worst-case severity, by individual risk dimension, by agent, or by mapped
+          framework control. Everything indexes off the source of truth — no rebuild
+          required to change the query.
+        </p>
+
+        <!-- THE SEARCH BAR -->
+        <div class="search-bar">
+          <svg class="sb-icon" viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="search-q" type="text" placeholder="Search agent, pair, headline, framework…" autocomplete="off" spellcheck="false" />
+          <div id="search-meta" class="sb-meta">{stats.total} verdicts · {stats.agents} agents · {stats.frameworks} frameworks indexed</div>
+        </div>
+
+        <!-- QUICK CATEGORY TABS -->
+        <div class="cat-row" role="tablist" aria-label="Quick categories">
+          {categories.map((c, i) => (
+            <button
+              type="button"
+              class={`cat-tab ${i === 0 ? 'is-active' : ''}`}
+              data-cat={c.id}
+              role="tab"
+              aria-selected={i === 0 ? 'true' : 'false'}
+            >
+              <span class="cat-label">{c.label}</span>
+              <span class="cat-count">{categoryCount(c.id)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN GRID: facets sidebar + results -->
+    <section class="container search-body">
+      <aside class="facets">
+        <div class="facet-block">
+          <div class="facet-eyebrow">Evidence tier</div>
+          <div class="facet-options" role="group" aria-label="Evidence tier">
+            <label><input type="checkbox" data-facet="evidence" value="sandbox-validated" checked /><span>Sandbox-validated</span></label>
+            <label><input type="checkbox" data-facet="evidence" value="profile-verified" checked /><span>Profile-verified</span></label>
+            <label><input type="checkbox" data-facet="evidence" value="docs-only" checked /><span>Docs-only</span></label>
+            <label><input type="checkbox" data-facet="evidence" value="unverified-profile" checked /><span>Unverified-profile</span></label>
+          </div>
+        </div>
+
+        <div class="facet-block">
+          <div class="facet-eyebrow">Max severity ≥</div>
+          <div class="facet-options" role="group" aria-label="Max severity threshold">
+            <label><input type="radio" name="sevmin" data-facet="sevmin" value="0" checked /><span>None</span></label>
+            <label><input type="radio" name="sevmin" data-facet="sevmin" value="1" /><span>Low</span></label>
+            <label><input type="radio" name="sevmin" data-facet="sevmin" value="2" /><span>Medium</span></label>
+            <label><input type="radio" name="sevmin" data-facet="sevmin" value="3" /><span>High</span></label>
+            <label><input type="radio" name="sevmin" data-facet="sevmin" value="4" /><span>Critical only</span></label>
+          </div>
+        </div>
+
+        <div class="facet-block">
+          <div class="facet-eyebrow">Risk dimension</div>
+          <div class="facet-options" role="group" aria-label="Risk dimension">
+            {RISK_KEYS.map((k) => (
+              <label><input type="checkbox" data-facet="dim" value={k} checked /><span><code>{k[0]}</code> {k.split('_').slice(1).join(' ')}</span></label>
+            ))}
+          </div>
+        </div>
+
+        <div class="facet-block">
+          <div class="facet-eyebrow">Agent</div>
+          <select id="agent-select" data-facet="agent">
+            <option value="">— any agent —</option>
+            {allAgents.map((a) => <option value={a}>{a}</option>)}
+          </select>
+        </div>
+
+        {allFrameworks.length > 0 && (
+          <div class="facet-block">
+            <div class="facet-eyebrow">Framework</div>
+            <select id="framework-select" data-facet="framework">
+              <option value="">— any framework —</option>
+              {allFrameworks.map((f) => <option value={f}>{f}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div class="facet-block">
+          <button type="button" class="facet-clear" id="facet-clear">Reset filters</button>
+        </div>
+      </aside>
+
+      <div class="results">
+        <div class="results-head">
+          <h2 class="results-h">Results <span id="result-count">{records.length}</span> <span class="results-of">of {records.length}</span></h2>
+          <div class="results-sort">
+            <label for="sort-by">Sort</label>
+            <select id="sort-by">
+              <option value="composite-asc">Most severe (composite ↑)</option>
+              <option value="composite-desc">Least severe (composite ↓)</option>
+              <option value="confidence-desc">Highest confidence</option>
+              <option value="pair-asc">Pair name (A→Z)</option>
+            </select>
+          </div>
+        </div>
+
+        <ol class="search-verdicts" id="search-results">
+          {records.map((r) => (
+            <li
+              class="sv-card"
+              data-pair={r.pair.join('|')}
+              data-evidence={r.evidence}
+              data-maxrank={SEVERITY_RANK[r.maxSeverity]}
+              data-composite={r.composite}
+              data-confidence={r.confidence}
+              data-dims={RISK_KEYS.filter((k) => SEVERITY_RANK[r.sev[k]] > 0).join(',')}
+              data-frameworks={r.frameworks.join(',')}
+              data-search={r.search}
+              data-pair-text={r.pairText}
+            >
+              <div class="sv-top">
+                <div class="sv-pair">
+                  <span class="sv-a">{r.pair[0]}</span>
+                  <span class="sv-x" aria-hidden="true">×</span>
+                  <span class="sv-b">{r.pair[1]}</span>
+                </div>
+                <div class="sv-tags">
+                  <span class={`sv-evi sv-evi-${r.evidence}`}>{r.evidence}</span>
+                  <span class={`sv-sev sv-sev-${r.maxSeverity}`}>{r.maxSeverity}</span>
+                </div>
+              </div>
+              <p class="sv-headline">{r.headline}</p>
+              <div class="sv-fingerprint">
+                {RISK_KEYS.map((k) => (
+                  <span class={`sv-dim sv-dim-${r.sev[k]}`} title={`${k}: ${r.sev[k]}`}>
+                    <span class="sv-dim-l">{k[0]}</span>
+                    <span class="sv-dim-bar"></span>
+                  </span>
+                ))}
+              </div>
+              <div class="sv-meta">
+                <span>composite <strong>{r.composite.toFixed(2)}</strong></span>
+                <span>confidence <strong>{r.confidence.toFixed(2)}</strong></span>
+                {r.frameworks.length > 0 && <span>{r.frameworks.join(' · ')}</span>}
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div id="empty-state" class="sv-empty" hidden>
+          <div class="se-eyebrow">No matches</div>
+          <p>Try widening the severity threshold, re-enabling an evidence tier, or clearing the search box.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</MemoLayout>
+
+<script>
+  type Facets = {
+    q: string;
+    cat: string;
+    evidence: Set<string>;
+    sevmin: number;
+    dim: Set<string>;
+    agent: string;
+    framework: string;
+    sort: string;
+  };
+
+  const SEVERITY_RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('.sv-card'));
+  const total = cards.length;
+  const countEl  = document.getElementById('result-count')!;
+  const empty    = document.getElementById('empty-state')!;
+  const list     = document.getElementById('search-results')!;
+  const searchQ  = document.getElementById('search-q') as HTMLInputElement;
+  const sortBy   = document.getElementById('sort-by') as HTMLSelectElement;
+  const agentSel = document.getElementById('agent-select') as HTMLSelectElement;
+  const fwSel    = document.getElementById('framework-select') as HTMLSelectElement | null;
+  const clearBtn = document.getElementById('facet-clear')!;
+  const tabs     = Array.from(document.querySelectorAll<HTMLButtonElement>('.cat-tab'));
+
+  const facets: Facets = {
+    q: '',
+    cat: 'all',
+    evidence: new Set(['sandbox-validated', 'profile-verified', 'docs-only', 'unverified-profile']),
+    sevmin: 0,
+    dim: new Set(['A_prompt_injection', 'B_data_leakage', 'C_capability_conflict', 'D_cascading_error', 'E_compliance']),
+    agent: '',
+    framework: '',
+    sort: 'composite-asc'
+  };
+
+  function passesCat(card: HTMLElement): boolean {
+    switch (facets.cat) {
+      case 'all':      return true;
+      case 'sandbox':  return card.dataset.evidence === 'sandbox-validated';
+      case 'profile':  return card.dataset.evidence === 'profile-verified';
+      case 'docs':     return card.dataset.evidence === 'docs-only';
+      case 'critical': return Number(card.dataset.maxrank) >= 3;
+      case 'aider':    return (card.dataset.pair ?? '').split('|').includes('aider');
+      default:         return true;
+    }
+  }
+
+  function passes(card: HTMLElement): boolean {
+    if (!passesCat(card)) return false;
+    if (facets.q && !(card.dataset.search ?? '').includes(facets.q)) return false;
+    if (!facets.evidence.has(card.dataset.evidence ?? '')) return false;
+    if (Number(card.dataset.maxrank) < facets.sevmin) return false;
+    if (facets.dim.size < 5) {
+      const cardDims = (card.dataset.dims ?? '').split(',').filter(Boolean);
+      // require ANY of the selected dims to be present with non-zero severity
+      if (!cardDims.some((d) => facets.dim.has(d))) return false;
+    }
+    if (facets.agent && !(card.dataset.pair ?? '').split('|').includes(facets.agent)) return false;
+    if (facets.framework && !(card.dataset.frameworks ?? '').split(',').includes(facets.framework)) return false;
+    return true;
+  }
+
+  function applySort(visible: HTMLElement[]): HTMLElement[] {
+    const cmp = (a: HTMLElement, b: HTMLElement) => {
+      switch (facets.sort) {
+        case 'composite-asc':   return Number(a.dataset.composite)  - Number(b.dataset.composite);
+        case 'composite-desc':  return Number(b.dataset.composite)  - Number(a.dataset.composite);
+        case 'confidence-desc': return Number(b.dataset.confidence) - Number(a.dataset.confidence);
+        case 'pair-asc':        return (a.dataset.pairText ?? '').localeCompare(b.dataset.pairText ?? '');
+        default:                return 0;
+      }
+    };
+    return [...visible].sort(cmp);
+  }
+
+  function render() {
+    const visible: HTMLElement[] = [];
+    for (const c of cards) {
+      if (passes(c)) visible.push(c);
+      else c.hidden = true;
+    }
+    const sorted = applySort(visible);
+    for (const c of sorted) { c.hidden = false; list.appendChild(c); }
+    countEl.textContent = String(sorted.length);
+    empty.hidden = sorted.length !== 0;
+    list.hidden = sorted.length === 0;
+  }
+
+  // wire input
+  searchQ.addEventListener('input', () => { facets.q = searchQ.value.trim().toLowerCase(); render(); });
+  sortBy.addEventListener('change', () => { facets.sort = sortBy.value; render(); });
+  agentSel.addEventListener('change', () => { facets.agent = agentSel.value; render(); });
+  fwSel?.addEventListener('change', () => { facets.framework = fwSel.value; render(); });
+
+  document.querySelectorAll<HTMLInputElement>('[data-facet="evidence"]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) facets.evidence.add(cb.value);
+      else facets.evidence.delete(cb.value);
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLInputElement>('[data-facet="sevmin"]').forEach((rb) => {
+    rb.addEventListener('change', () => { if (rb.checked) { facets.sevmin = Number(rb.value); render(); } });
+  });
+  document.querySelectorAll<HTMLInputElement>('[data-facet="dim"]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) facets.dim.add(cb.value);
+      else facets.dim.delete(cb.value);
+      render();
+    });
+  });
+
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => {
+      tabs.forEach((t) => { t.classList.remove('is-active'); t.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('is-active'); tab.setAttribute('aria-selected', 'true');
+      facets.cat = tab.dataset.cat ?? 'all';
+      render();
+    });
+  }
+
+  clearBtn.addEventListener('click', () => {
+    searchQ.value = '';
+    facets.q = '';
+    facets.evidence = new Set(['sandbox-validated', 'profile-verified', 'docs-only', 'unverified-profile']);
+    facets.sevmin = 0;
+    facets.dim = new Set(['A_prompt_injection', 'B_data_leakage', 'C_capability_conflict', 'D_cascading_error', 'E_compliance']);
+    facets.agent = '';
+    facets.framework = '';
+    facets.sort = 'composite-asc';
+    facets.cat = 'all';
+    document.querySelectorAll<HTMLInputElement>('[data-facet]').forEach((i) => {
+      if (i.type === 'checkbox') i.checked = true;
+    });
+    const sevNone = document.querySelector<HTMLInputElement>('input[name="sevmin"][value="0"]');
+    if (sevNone) sevNone.checked = true;
+    agentSel.value = '';
+    if (fwSel) fwSel.value = '';
+    sortBy.value = 'composite-asc';
+    tabs.forEach((t) => { t.classList.remove('is-active'); t.setAttribute('aria-selected', 'false'); });
+    tabs[0]?.classList.add('is-active'); tabs[0]?.setAttribute('aria-selected', 'true');
+    render();
+  });
+
+  render();
+</script>
+
+<style>
+  .search-page {
+    background: var(--ink-navy);
+    color: var(--cream);
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-height: calc(100vh - 80px);
+  }
+  .search-page::before {
+    content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(245,233,204,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(245,233,204,0.035) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+  .search-page::after {
+    content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(50% 50% at 92% 8%, rgba(201,165,92,0.10) 0%, transparent 70%),
+      radial-gradient(60% 60% at 8% 92%, rgba(61,90,140,0.20) 0%, transparent 75%);
+  }
+  .search-page > * { position: relative; z-index: 1; }
+
+  /* HERO */
+  .search-hero { padding: 72px 0 30px; }
+  .sh-eyebrow {
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.22em;
+    color: var(--gold); text-transform: uppercase;
+  }
+  .sh-eyebrow > :not(.sh-mark) { color: var(--cream-soft); letter-spacing: 0.16em; }
+  .sh-dot { opacity: 0.55; }
+  .sh-title {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-weight: 500;
+    font-size: clamp(38px, 5.4vw, 76px);
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+    color: var(--cream);
+    margin: 22px 0 14px;
+    max-width: 16ch;
+  }
+  .sh-title em { font-style: italic; color: var(--gold); }
+  .sh-dek { color: var(--cream-soft); font-size: clamp(14px, 1.2vw, 17px); line-height: 1.6; max-width: 72ch; margin: 0 0 30px; }
+
+  /* SEARCH BAR */
+  .search-bar {
+    position: relative;
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 18px;
+    background: rgba(11,27,58,0.55);
+    border: 1px solid rgba(245,233,204,0.18);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  }
+  .sb-icon { color: var(--gold); flex-shrink: 0; }
+  #search-q {
+    background: transparent; border: none; outline: none;
+    color: var(--cream); font-family: var(--font-sans);
+    font-size: clamp(16px, 1.4vw, 20px);
+    letter-spacing: 0.005em;
+    width: 100%;
+  }
+  #search-q::placeholder { color: rgba(245,233,204,0.45); }
+  #search-q:focus { outline: none; }
+  .search-bar:focus-within { border-color: var(--gold); box-shadow: 0 16px 36px rgba(0,0,0,0.55), 0 0 0 2px rgba(201,165,92,0.18); }
+  .sb-meta {
+    font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: 0.16em; color: var(--cream-soft);
+    text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* CAT TABS */
+  .cat-row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 16px;
+  }
+  .cat-tab {
+    appearance: none;
+    background: transparent; color: var(--cream-soft);
+    border: 1px solid rgba(245,233,204,0.18);
+    padding: 8px 14px;
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 10px;
+    transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  }
+  .cat-tab:hover { border-color: var(--gold); color: var(--cream); }
+  .cat-tab.is-active { background: var(--gold); color: var(--ink-navy); border-color: var(--gold); }
+  .cat-count {
+    font-family: var(--font-sans); font-size: 11px; letter-spacing: 0;
+    background: rgba(11,27,58,0.20); color: inherit; padding: 1px 7px;
+  }
+  .cat-tab.is-active .cat-count { background: rgba(11,27,58,0.20); }
+
+  /* BODY GRID */
+  .search-body {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 36px;
+    padding: 28px 0 88px;
+    align-items: start;
+  }
+
+  /* FACETS */
+  .facets {
+    position: sticky; top: 80px;
+    display: grid; gap: 22px;
+    padding: 22px 22px 22px 0;
+    border-right: 1px solid rgba(245,233,204,0.10);
+  }
+  .facet-block { display: grid; gap: 10px; }
+  .facet-eyebrow {
+    font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--gold);
+  }
+  .facet-options { display: grid; gap: 6px; }
+  .facet-options label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--cream-soft);
+    cursor: pointer; user-select: none;
+  }
+  .facet-options input { accent-color: var(--gold); }
+  .facet-options code {
+    background: rgba(245,233,204,0.08); color: var(--gold);
+    padding: 0 5px; font-family: var(--font-mono); font-size: 11px;
+  }
+  .facets select {
+    background: rgba(11,27,58,0.55);
+    color: var(--cream);
+    border: 1px solid rgba(245,233,204,0.18);
+    padding: 8px 10px;
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+  }
+  .facets select:focus { outline: none; border-color: var(--gold); }
+  .facet-clear {
+    appearance: none;
+    background: transparent;
+    color: var(--cream);
+    border: 1px solid rgba(245,233,204,0.20);
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .facet-clear:hover { background: var(--gold); color: var(--ink-navy); border-color: var(--gold); }
+
+  /* RESULTS */
+  .results-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 18px;
+    border-bottom: 1px solid rgba(245,233,204,0.12);
+    padding-bottom: 14px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .results-h {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: clamp(22px, 2.4vw, 30px);
+    color: var(--cream); letter-spacing: -0.015em; margin: 0; font-weight: 500;
+  }
+  .results-h span#result-count { color: var(--gold); margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .results-of { color: var(--cream-soft); font-size: 14px; font-family: var(--font-mono); letter-spacing: 0.10em; margin-left: 4px; }
+  .results-sort { display: flex; align-items: center; gap: 10px; }
+  .results-sort label {
+    font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--cream-soft);
+  }
+  .results-sort select {
+    background: rgba(11,27,58,0.55); color: var(--cream);
+    border: 1px solid rgba(245,233,204,0.18);
+    padding: 8px 10px; font-family: var(--font-sans); font-size: 12.5px;
+  }
+
+  /* VERDICT CARDS */
+  .search-verdicts {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; gap: 12px;
+  }
+  .sv-card {
+    background: rgba(245,233,204,0.04);
+    border: 1px solid rgba(245,233,204,0.10);
+    padding: 18px 22px;
+    display: grid; gap: 10px;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  }
+  .sv-card:hover {
+    background: rgba(245,233,204,0.08);
+    border-color: var(--gold);
+    transform: translateY(-2px);
+  }
+  .sv-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .sv-pair {
+    font-family: "Iowan Old Style", "Palatino", "Georgia", serif;
+    font-size: clamp(18px, 1.9vw, 24px);
+    color: var(--cream); letter-spacing: -0.01em;
+  }
+  .sv-x { color: var(--gold); font-style: italic; margin: 0 8px; }
+  .sv-tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sv-evi, .sv-sev {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 4px 9px; font-weight: 600;
+  }
+  .sv-evi-sandbox-validated   { background: var(--gold); color: var(--ink-navy); }
+  .sv-evi-profile-verified    { background: var(--blue-mid); color: var(--cream); }
+  .sv-evi-docs-only           { background: var(--cream-soft); color: var(--ink-navy); }
+  .sv-evi-unverified-profile  { background: rgba(245,233,204,0.10); color: var(--cream-soft); }
+  .sv-sev-none     { background: rgba(245,233,204,0.08); color: var(--cream-soft); }
+  .sv-sev-low      { background: var(--sev-low); color: var(--cream); }
+  .sv-sev-medium   { background: var(--sev-medium); color: var(--ink-navy); }
+  .sv-sev-high     { background: var(--sev-high); color: var(--cream); }
+  .sv-sev-critical { background: var(--sev-critical); color: var(--cream); }
+
+  .sv-headline { color: var(--cream-soft); font-size: 13.5px; line-height: 1.55; margin: 0; max-width: 80ch; }
+
+  .sv-fingerprint { display: flex; gap: 6px; align-items: center; }
+  .sv-dim {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px 4px 6px;
+    background: rgba(245,233,204,0.05);
+    border: 1px solid rgba(245,233,204,0.10);
+    font-family: var(--font-mono); font-size: 10.5px;
+  }
+  .sv-dim-l { color: var(--gold); font-weight: 700; }
+  .sv-dim-bar { display: inline-block; width: 22px; height: 4px; background: rgba(245,233,204,0.08); }
+  .sv-dim-none     .sv-dim-bar { background: rgba(245,233,204,0.08); }
+  .sv-dim-low      .sv-dim-bar { background: var(--sev-low); }
+  .sv-dim-medium   .sv-dim-bar { background: var(--sev-medium); }
+  .sv-dim-high     .sv-dim-bar { background: var(--sev-high); }
+  .sv-dim-critical .sv-dim-bar { background: var(--sev-critical); }
+
+  .sv-meta {
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+    font-family: var(--font-mono); font-size: 10.5px;
+    letter-spacing: 0.10em; text-transform: uppercase;
+    color: var(--cream-soft);
+  }
+  .sv-meta strong { color: var(--cream); margin-left: 4px; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+
+  /* EMPTY */
+  .sv-empty {
+    padding: 40px 28px;
+    border: 1px dashed rgba(245,233,204,0.20);
+    text-align: center;
+    color: var(--cream-soft);
+  }
+  .se-eyebrow {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.20em; color: var(--gold);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 1024px) {
+    .search-body { grid-template-columns: 1fr; gap: 24px; }
+    .facets { position: static; border-right: none; padding: 0 0 18px; border-bottom: 1px solid rgba(245,233,204,0.12); }
+  }
+  @media (max-width: 640px) {
+    .sb-meta { display: none; }
+    .results-head { flex-direction: column; align-items: flex-start; }
+  }
+</style>
