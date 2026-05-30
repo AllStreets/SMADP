@@ -12,7 +12,10 @@ def approve(*, key: str, repo_root: Path) -> None:
     if not pending.exists():
         raise ApproveError(f"no pending verdict at {pending}")
     verdicts.parent.mkdir(parents=True, exist_ok=True)
-    pending.rename(verdicts)
+    try:
+        pending.rename(verdicts)
+    except OSError as exc:
+        raise ApproveError(f"could not move {pending} -> {verdicts}: {exc}") from exc
     sentinel = repo_root / "report" / ".rebuild-requested"
     sentinel.parent.mkdir(parents=True, exist_ok=True)
     sentinel.touch()

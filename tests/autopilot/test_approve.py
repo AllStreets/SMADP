@@ -33,3 +33,18 @@ def test_approve_errors_on_missing_pending(tmp_path: Path) -> None:
     (tmp_path / "catalog" / "verdicts").mkdir(parents=True)
     with pytest.raises(ApproveError, match="no pending verdict"):
         approve(key="alice__bob", repo_root=tmp_path)
+
+
+def test_approve_wraps_rename_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pending = tmp_path / "catalog" / "pending"
+    verdicts = tmp_path / "catalog" / "verdicts"
+    pending.mkdir(parents=True)
+    verdicts.mkdir(parents=True)
+    (pending / "alice__bob.json").write_text("{}")
+
+    def boom(self: Path, target: Path) -> Path:
+        raise OSError("simulated cross-device move")
+
+    monkeypatch.setattr(Path, "rename", boom)
+    with pytest.raises(ApproveError, match="could not move"):
+        approve(key="alice__bob", repo_root=tmp_path)
