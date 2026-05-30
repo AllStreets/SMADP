@@ -6,7 +6,7 @@ describe('catalog loaders', () => {
     const verdicts = loadVerdicts();
     expect(verdicts.length).toBeGreaterThan(0);
     for (const v of verdicts) {
-      expect(v.pair).toHaveLength(2);
+      expect(v.participants.length).toBeGreaterThanOrEqual(2);
       expect(v.sub_verdicts).toBeDefined();
       expect(v.sub_verdicts.A_prompt_injection).toBeDefined();
     }
