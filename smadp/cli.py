@@ -7,6 +7,7 @@ even in environments where those subsystems aren't installed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from datetime import datetime
@@ -233,7 +234,16 @@ def verdict(ctx: click.Context, slug_a: str, slug_b: str, regenerate: bool) -> N
     profile_b = repo.load_profile(b)
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as p:
         p.add_task(f"Generating verdict {a} <> {b}", total=None)
-        new_verdict = _gv(profile_a=profile_a, profile_b=profile_b)  # type: ignore[misc]
+        new_verdict = asyncio.run(
+            _gv(
+                a,
+                b,
+                profile_a=profile_a,
+                profile_b=profile_b,
+                evidence={},
+                config=cfg,
+            )
+        )
     repo.save_verdict(new_verdict)
     chronicle.record(
         "verdict.regenerated" if regenerate else "verdict.generated",
@@ -401,10 +411,15 @@ def evaluate(ctx: click.Context, agents: tuple[str, ...], scenario: str | None) 
                     progress.advance(task)
                     continue
                 try:
-                    v = generate_verdict(  # type: ignore[misc]
-                        profile_a=repo.load_profile(a),
-                        profile_b=repo.load_profile(b),
-                        scenario=scenario,
+                    v = asyncio.run(
+                        generate_verdict(  # type: ignore[misc]
+                            a,
+                            b,
+                            profile_a=repo.load_profile(a),
+                            profile_b=repo.load_profile(b),
+                            evidence={},
+                            config=cfg,
+                        )
                     )
                     repo.save_verdict(v)
                     chronicle.record(

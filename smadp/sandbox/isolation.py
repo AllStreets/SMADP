@@ -330,17 +330,22 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
         argv.append("--read-only")
 
     # tmpfs for the working directory; noexec/nosuid; size-capped.
+    # Pass uid/gid from spec.user so the mount root is owned by the container's
+    # non-root user. (mode=1777 alone is silently ignored when --cap-drop ALL
+    # is set, leaving the tmpfs at 0755 root-owned and unwritable.)
+    uid_str, _, gid_str = spec.user.partition(":")
+    tmpfs_owner = f"uid={uid_str},gid={gid_str or uid_str}"
     argv.extend(
         [
             "--tmpfs",
-            f"{spec.working_dir}:rw,noexec,nosuid,nodev,size={spec.tmpfs_size_mb}m",
+            f"{spec.working_dir}:rw,noexec,nosuid,nodev,size={spec.tmpfs_size_mb}m,{tmpfs_owner}",
         ]
     )
     # /tmp also as tmpfs so the read-only root works for tools that scribble.
     argv.extend(
         [
             "--tmpfs",
-            "/tmp:rw,noexec,nosuid,nodev,size=64m",  # noqa: S108 — inside container
+            f"/tmp:rw,noexec,nosuid,nodev,size=64m,{tmpfs_owner}",  # noqa: S108 — inside container
         ]
     )
 
@@ -368,12 +373,20 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
     for key, value in sorted(spec.extra_labels.items()):
         argv.extend(["--label", f"{key}={value}"])
 
+    # Override the image's ENTRYPOINT with args[0]. Without this, docker
+    # treats spec.args as positional args appended to the image's ENTRYPOINT,
+    # which silently breaks adapters whose images set ENTRYPOINT (e.g.
+    # paulgauthier/aider). The ContainerSpec.args docstring promises the
+    # caller's args fully replace ENTRYPOINT — this flag enforces that.
+    argv.extend(["--entrypoint", spec.args[0]])
+
     # Image — last positional before command. Pinned by digest; verified
     # above by ``assert_image_approved``.
     argv.append(spec.image_digest)
 
-    # Command + args inside the container.
-    argv.extend(spec.args)
+    # Remaining args become CMD; together with --entrypoint they form the
+    # full command line inside the container.
+    argv.extend(spec.args[1:])
 
     return argv
 

@@ -64,10 +64,13 @@ async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateRespon
                 )
                 continue
             try:
-                verdict = generate_verdict(  # type: ignore[misc]
+                verdict = await generate_verdict(  # type: ignore[misc]
+                    a,
+                    b,
                     profile_a=repo.load_profile(a),
                     profile_b=repo.load_profile(b),
-                    scenario=payload.scenario,
+                    evidence={},
+                    config=cfg,
                 )
                 repo.save_verdict(verdict)
                 chronicle.record(
