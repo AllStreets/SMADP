@@ -388,6 +388,34 @@ Each batch authors evidence files, flips `verification.status` to `verified`, an
 
 ---
 
+## Autopilot (autonomous growth)
+
+After the per-pair and per-chain smoke tests pass manually, enable the launchd
+loop so the catalog grows without per-step direction:
+
+````bash
+# One-time install
+sed "s|/PATH/TO/SMADP|$PWD|g" scripts/launchd/com.smadp.autopilot.loop.plist \
+  > ~/Library/LaunchAgents/com.smadp.autopilot.loop.plist
+sed "s|/PATH/TO/SMADP|$PWD|g" scripts/launchd/com.smadp.autopilot.watch.plist \
+  > ~/Library/LaunchAgents/com.smadp.autopilot.watch.plist
+launchctl load ~/Library/LaunchAgents/com.smadp.autopilot.loop.plist
+launchctl load ~/Library/LaunchAgents/com.smadp.autopilot.watch.plist
+
+# Pause:  touch state/PAUSED
+# Resume: rm state/PAUSED
+# Uninstall:
+#   launchctl unload ~/Library/LaunchAgents/com.smadp.autopilot.*.plist
+#   rm ~/Library/LaunchAgents/com.smadp.autopilot.*.plist
+````
+
+Budget caps live in `config/autopilot.yaml`. Priority entries live in
+`catalog/priority.yaml`. First-time agent-combination verdicts land in
+`catalog/pending/`; review and publish with
+`smadp autopilot approve <key>`.
+
+---
+
 ## License
 
 MIT. The catalog is publicly redistributable. Each profiled agent retains its upstream license — see the `vendor` field on every catalog entry.
