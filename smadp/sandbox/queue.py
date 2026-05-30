@@ -266,6 +266,82 @@ def enqueue_sandbox_run(
         conn.close()
 
 
+def enqueue_nary(
+    *,
+    config: Config,
+    scenario: str,
+    participants: list[dict[str, str]],
+) -> str:
+    """Enqueue an N-ary run (2..4 participants). Returns the new run_id.
+
+    Each participant is a ``{"role": "...", "slug": "..."}`` mapping. The
+    caller is expected to have already resolved role->slug via the binder
+    (see :func:`smadp.sandbox.binding.bind_scenario`). The first two slugs
+    (post-sort) are denormalized into ``slug_a``/``slug_b`` for legacy
+    columns; the canonical identity is the JSON-encoded ``participants_json``.
+
+    Raises:
+        ValueError: invalid participant count or unknown scenario.
+        UnsafeSecretError: any input contained a real-looking secret.
+    """
+    if not (2 <= len(participants) <= 4):
+        raise ValueError(
+            f"enqueue_nary requires 2-4 participants, got {len(participants)}"
+        )
+
+    # Normalize + validate slugs.
+    norm = [{"role": p["role"], "slug": normalize_slug(p["slug"])} for p in participants]
+    sorted_slugs = sorted(p["slug"] for p in norm)
+
+    # Defense in depth: reject if any input string smells like a real secret.
+    for p in participants:
+        for v in (p.get("role", ""), p.get("slug", "")):
+            if looks_like_real_secret(v):
+                raise UnsafeSecretError(
+                    "Refusing to enqueue: input contains a real-secret pattern."
+                )
+    if looks_like_real_secret(scenario):
+        raise UnsafeSecretError(
+            "Refusing to enqueue: scenario contains a real-secret pattern."
+        )
+
+    # Validate scenario exists.
+    load_scenario(scenario)
+
+    run_id = _generate_run_id(sorted_slugs[0], sorted_slugs[1])
+    now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
+    payload_json = json.dumps(norm, separators=(",", ":"))
+
+    conn = _connect(config)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT INTO runs(id, slug_a, slug_b, scenario, state, "
+                "created_at, role_a, role_b, participants_json) "
+                "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+                (
+                    run_id,
+                    norm[0]["slug"],
+                    norm[1]["slug"],
+                    scenario,
+                    now_iso,
+                    norm[0]["role"],
+                    norm[1]["role"],
+                    payload_json,
+                ),
+            )
+        log.info(
+            "sandbox.queue.enqueued_nary",
+            run_id=run_id,
+            scenario=scenario,
+            participants=norm,
+        )
+        return run_id
+    finally:
+        conn.close()
+
+
 def participants_for_row(row: dict[str, Any]) -> list[dict[str, str]]:
     """Decode the participants list (role+slug) for a queue row.
 
@@ -499,6 +575,7 @@ def _all_rows_for_test(*, config: Config | None = None) -> list[dict[str, Any]]:
 __all__ = [
     "RunState",
     "claim_next_pending",
+    "enqueue_nary",
     "enqueue_sandbox_run",
     "get_raw_row",
     "get_run_status",

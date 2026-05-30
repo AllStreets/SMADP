@@ -739,6 +739,27 @@ def chronicle(ctx: click.Context, tail: bool, since: str | None, limit: int) -> 
         console.print("[dim]--tail not yet implemented; printed snapshot[/]")
 
 
+# ------------------------------------------------------------------- autopilot
+@cli.group()
+def autopilot() -> None:
+    """Autonomous growth of pair and chain verdicts."""
+
+
+@autopilot.command("tick")
+@click.option("--dry-run", is_flag=True, help="Show what would be enqueued without writing")
+@click.pass_context
+def autopilot_tick(ctx: click.Context, dry_run: bool) -> None:
+    """Plan the next batch of sandbox runs and enqueue them."""
+    from smadp.autopilot.tick import run_tick
+
+    cfg = _config_from_ctx(ctx)
+    summary = run_tick(repo_root=cfg.repo_root, dry_run=dry_run)
+    if dry_run:
+        click.echo(f"would enqueue {summary.would_enqueue} (reason: {summary.reason})")
+    else:
+        click.echo(f"enqueued {summary.enqueued} (reason: {summary.reason})")
+
+
 # --------------------------------------------------------------------- helpers
 def _print_json(obj: Any) -> None:
     text = json.dumps(obj, indent=2, default=str, sort_keys=True)

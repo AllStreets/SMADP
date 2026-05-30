@@ -38,6 +38,7 @@ from typing import Any
 
 import structlog
 
+from smadp.autopilot.budget import record_run_actual
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config
@@ -185,6 +186,14 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
         level_changed_to=result.evidence_level_changed_to,
         bumps=result.severity_bumps,
     )
+
+    # Autopilot budget post-flight: increment runs_today (and dollars when we
+    # have a real per-adapter cost). The dollar estimator is a v1 stub --
+    # `runs_today` is the harder guarantee the daily cap relies on.
+    budget_path = config.repo_root / "state" / "budget.json"
+    actual_dollars = _estimate_dollars_from_row(row)
+    record_run_actual(budget_path, dollars=actual_dollars)
+
     return result
 
 
@@ -397,6 +406,18 @@ def _touch_rebuild_request(config: Config) -> None:
             sentinel=str(sentinel),
             error=str(exc),
         )
+
+
+def _estimate_dollars_from_row(row: dict[str, Any]) -> float:
+    """Estimate actual cost from token counts recorded in the queue row.
+
+    v1 stub: returns 0.0. The runner does not yet record per-adapter token
+    counts; v2 will read `config/model_prices.yaml` and multiply by the
+    `tokens_in`/`tokens_out` columns. The daily-runs cap is the harder
+    guarantee, and `record_run_actual` still increments `runs_today` even
+    when dollars is 0.0.
+    """
+    return 0.0
 
 
 __all__ = [
