@@ -39,7 +39,9 @@ export interface SandboxRun {
 
 export interface Verdict {
   verdict_id: string;
-  pair: [string, string];
+  pair?: [string, string];           // legacy; keep for one release cycle
+  participants: string[];            // canonical for N-ary
+  kind?: 'pair' | 'chain';           // derived: len 2 → pair, 3-4 → chain
   composite_score: number;
   confidence: number;
   evidence_level: EvidenceLevel;

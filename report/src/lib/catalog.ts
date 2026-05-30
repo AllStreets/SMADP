@@ -51,14 +51,38 @@ function readJsonDir<T>(dir: string, label: string): T[] {
   return out;
 }
 
+function deriveParticipants(v: Verdict): Verdict {
+  if (v.participants && v.participants.length >= 2) {
+    return { ...v, kind: v.participants.length === 2 ? 'pair' : 'chain' };
+  }
+  if (v.pair && v.pair.length === 2) {
+    return { ...v, participants: [...v.pair], kind: 'pair' };
+  }
+  throw new CatalogError(
+    `Verdict ${v.verdict_id ?? '(unknown)'} has neither participants nor pair`
+  );
+}
+
 let _verdicts: Verdict[] | null = null;
 let _profiles: Profile[] | null = null;
 
 export function loadVerdicts(): Verdict[] {
   if (_verdicts === null) {
-    _verdicts = readJsonDir<Verdict>(VERDICT_DIR, 'verdict');
+    _verdicts = readJsonDir<Verdict>(VERDICT_DIR, 'verdict').map(deriveParticipants);
   }
   return _verdicts;
+}
+
+export function loadPendingVerdicts(): Verdict[] {
+  const pendingDir = join(REPO_ROOT, 'catalog', 'pending');
+  try {
+    return readJsonDir<Verdict>(pendingDir, 'pending verdict').map(deriveParticipants);
+  } catch (err) {
+    if ((err as CatalogError).message.includes('contained no .json files')) {
+      return [];
+    }
+    throw err;
+  }
 }
 
 export function loadProfiles(): Profile[] {

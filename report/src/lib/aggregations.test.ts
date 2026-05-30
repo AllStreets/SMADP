@@ -26,6 +26,8 @@ function fakeVerdict(over: Partial<Verdict> & {
   return {
     verdict_id: `v_${over.pair[0]}__${over.pair[1]}`,
     pair: over.pair,
+    participants: [...over.pair],
+    kind: 'pair',
     composite_score: over.composite,
     confidence: 0.5,
     evidence_level: over.evidence ?? 'docs-only',

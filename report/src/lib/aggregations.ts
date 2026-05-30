@@ -67,7 +67,7 @@ export function heatmapMatrix(
 ): HeatmapCell[] {
   const cells: HeatmapCell[] = [];
   for (const agent of agentSlugs) {
-    const involved = verdicts.filter((v) => v.pair.includes(agent));
+    const involved = verdicts.filter((v) => v.participants.includes(agent));
     for (const risk of RISK_KEYS) {
       const sevList = involved.map((v) => v.sub_verdicts[risk].severity);
       cells.push({
@@ -84,7 +84,7 @@ export function heatmapMatrix(
 export function appearanceCounts(verdicts: Verdict[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const v of verdicts) {
-    for (const slug of v.pair) {
+    for (const slug of v.participants) {
       counts.set(slug, (counts.get(slug) ?? 0) + 1);
     }
   }
