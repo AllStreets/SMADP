@@ -151,6 +151,27 @@ SMADP/
 
 ## New machine setup
 
+### TL;DR — the 4-step migration
+
+On the **old** machine:
+```bash
+./scripts/export-machine-state.sh
+# → writes ~/Desktop/smadp-machine-state.tar.gz (~15 KB)
+```
+
+AirDrop / iCloud / USB the `.tar.gz` to the new MacBook, then:
+
+```bash
+# On the new MacBook:
+git clone https://github.com/AllStreets/SMADP.git
+cd SMADP
+./scripts/import-machine-state.sh ~/Downloads/smadp-machine-state.tar.gz
+./scripts/bootstrap-newmachine.sh
+# Start Docker Desktop manually (GUI installer, needs admin).
+```
+
+That's it. The bootstrap script installs Homebrew deps (Python 3.12, Node, pnpm), creates the venv, runs `pip install -e ".[dev]"`, installs frontend deps + Playwright browsers, creates `~/.smadp/keys.env` template, and runs `pytest -q` as a smoke check.
+
 ### Prerequisites
 
 | Tool | Version | Install on macOS |
