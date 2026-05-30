@@ -22,8 +22,22 @@ def tmp_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     cache = tmp_path / "cache"
     catalog.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SMADP_REPO_ROOT", str(tmp_path))
     monkeypatch.setenv("SMADP_CATALOG", str(catalog))
     monkeypatch.setenv("SMADP_CACHE_DIR", str(cache))
+
+    # Copy adapter mcp.json files so the capability-based binder in
+    # queue.enqueue_sandbox_run can resolve adapter capabilities from
+    # the (isolated) repo_root.
+    real_repo = Path(__file__).resolve().parents[2]
+    (tmp_path / "adapters").mkdir(exist_ok=True)
+    for slug in ("aider", "continue-dev"):
+        src = real_repo / "adapters" / slug / "mcp.json"
+        if src.exists():
+            dst_dir = tmp_path / "adapters" / slug
+            dst_dir.mkdir(exist_ok=True)
+            (dst_dir / "mcp.json").write_text(src.read_text())
+
     cfg = Config()
     (cfg.catalog_dir / "verdicts").mkdir(parents=True, exist_ok=True)
     (cfg.catalog_dir / "_chronicle").mkdir(parents=True, exist_ok=True)
