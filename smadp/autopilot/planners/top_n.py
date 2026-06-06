@@ -25,7 +25,7 @@ class TopNPlanner:
         items: list[WorkItem] = []
         for p1, p2 in combinations(scored, 2):
             slugs = tuple(sorted([p1["slug"], p2["slug"]]))
-            priority = float(p1["composite_score"]) * float(p2["composite_score"])
+            priority = float(p1.get("composite_score", 0.0)) * float(p2.get("composite_score", 0.0))
             items.append(
                 WorkItem(
                     pair=(slugs[0], slugs[1]),

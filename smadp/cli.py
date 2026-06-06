@@ -790,6 +790,56 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
     click.echo(f"approved {key}")
 
 
+@autopilot.command("bootstrap-onexus")
+@click.option(
+    "--onexus-root",
+    default=str(Path.home() / "Downloads" / "ONEXUS-Agents" / "catalog"),
+    help="Path to the ONEXUS-Agents catalog directory.",
+)
+@click.option("--top-n", default=100, type=int, help="Number of top-scored agents to include.")
+@click.option("--pair-cap", default=4950, type=int, help="Maximum pairs to enqueue.")
+@click.pass_context
+def autopilot_bootstrap_onexus(ctx: click.Context, onexus_root: str, top_n: int, pair_cap: int) -> None:
+    """Import ONEXUS agents and queue Docs-only pair work."""
+    from smadp.autopilot.bootstrap import bootstrap_onexus
+
+    config = ctx.obj["config"]
+    summary = bootstrap_onexus(
+        repo_root=config.repo_root,
+        onexus_root=Path(onexus_root).expanduser(),
+        top_n=top_n,
+        pair_cap=pair_cap,
+    )
+    click.echo(
+        f"profiles_written={summary.profiles_written} "
+        f"profiles_skipped={summary.profiles_skipped} "
+        f"pairs_queued={summary.pairs_queued}"
+    )
+
+
+@autopilot.command("docs-only-tick")
+@click.option("--batch-size", default=10, type=int)
+@click.pass_context
+def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
+    """Drain the docs-only queue, judge with gpt-5.4-mini, publish verdicts."""
+    from smadp.autopilot.docs_only_tick import run_docs_only_tick
+    from smadp.autopilot.judges.docs_only import DocsOnlyJudge
+    from smadp.llm.client import LLMClient
+
+    config = ctx.obj["config"]
+    client = LLMClient(config=config)
+    rubric_path = config.rubric_path
+    judge = DocsOnlyJudge(client=client, model="gpt-5.4-mini", rubric_path=rubric_path)
+    summary = run_docs_only_tick(
+        repo_root=config.repo_root,
+        judge=judge,
+        batch_size=batch_size,
+    )
+    click.echo(
+        f"published={summary.published} failed={summary.failed} reason={summary.reason}"
+    )
+
+
 # --------------------------------------------------------------------- helpers
 def _print_json(obj: Any) -> None:
     text = json.dumps(obj, indent=2, default=str, sort_keys=True)
