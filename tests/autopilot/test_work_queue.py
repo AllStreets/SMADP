@@ -74,3 +74,19 @@ def test_pair_is_always_sorted(tmp_path: Path) -> None:
     append_items(queue, [_mk(("zebra", "aider"))])
     items = read_all_items(queue)
     assert items[0].pair == ("aider", "zebra")
+
+
+def test_drain_with_limit_at_or_above_size_drains_all(tmp_path: Path) -> None:
+    queue = tmp_path / "queue.jsonl"
+    append_items(
+        queue,
+        [
+            _mk(("a", "b"), priority=0.9),
+            _mk(("c", "d"), priority=0.5),
+        ],
+    )
+    drained = drain_items(queue, limit=10)
+    assert [i.pair for i in drained] == [("a", "b"), ("c", "d")]
+    # Queue is now empty but file still exists with empty contents.
+    assert read_all_items(queue) == []
+    assert queue.exists()

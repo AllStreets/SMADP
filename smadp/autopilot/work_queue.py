@@ -81,10 +81,16 @@ def _atomic_write_text(path: Path, content: str) -> None:
         raise
 
 
+def _existing_keys(path: Path) -> set[tuple[tuple[str, str], str, str]]:
+    keys: set[tuple[tuple[str, str], str, str]] = set()
+    for item in read_all_items(path):
+        keys.add((item.pair, item.requested_judge, item.judge_version))
+    return keys
+
+
 def append_items(path: Path, items: list[WorkItem]) -> None:
-    existing = read_all_items(path)
-    seen = {(i.pair, i.requested_judge, i.judge_version) for i in existing}
-    additions = []
+    seen = _existing_keys(path)
+    additions: list[WorkItem] = []
     for raw in items:
         canon = _canonical(raw)
         key = (canon.pair, canon.requested_judge, canon.judge_version)
@@ -94,8 +100,10 @@ def append_items(path: Path, items: list[WorkItem]) -> None:
         additions.append(canon)
     if not additions:
         return
-    lines = [json.dumps(i.to_jsonable()) for i in (existing + additions)]
-    _atomic_write_text(path, "\n".join(lines) + "\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for item in additions:
+            f.write(json.dumps(item.to_jsonable()) + "\n")
 
 
 def drain_items(path: Path, *, limit: int) -> list[WorkItem]:
@@ -106,9 +114,8 @@ def drain_items(path: Path, *, limit: int) -> list[WorkItem]:
     drained = items_sorted[:limit]
     remaining = items_sorted[limit:]
     if remaining:
-        lines = [json.dumps(i.to_jsonable()) for i in remaining]
-        _atomic_write_text(path, "\n".join(lines) + "\n")
+        content = "\n".join(json.dumps(i.to_jsonable()) for i in remaining) + "\n"
     else:
-        if path.exists():
-            path.unlink()
+        content = ""
+    _atomic_write_text(path, content)
     return drained
