@@ -1,8 +1,10 @@
-"""Docs-only tick: drain work queue -> judge -> publish -> update budget.
+"""Docs-only tick: drain work queue → dispatch to right judge → publish.
 
-Mirrors the existing sandbox ``tick.py`` but operates against the docs-only
-work queue and a Python judge instead of the sandbox runner. Reuses
-``BudgetState`` so daily caps are shared with the sandbox path.
+Multi-judge dispatch: the caller passes a ``judges`` mapping
+``{requested_judge_name: judge_instance}``. Each WorkItem is routed to the
+judge whose name matches ``item.requested_judge``. The publisher writes to
+``catalog/profiles/`` for enrichment judges (judge.name == "profile_enrich")
+and to ``catalog/verdicts/`` (or pending/) for pair judges.
 """
 
 from __future__ import annotations
@@ -11,12 +13,11 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Mapping
 
 import structlog
 
 from smadp.autopilot.budget import (
-    BudgetState,
     can_enqueue,
     load_budget,
     record_run_actual,
@@ -62,10 +63,16 @@ def _log_failure(state_dir: Path, *, pair: tuple, judge_name: str, error: str) -
         f.write(json.dumps(row) + "\n")
 
 
+def _publish(publisher: PolicyPublisher, judge_name: str, output: dict) -> Path:
+    if judge_name == "profile_enrich":
+        return publisher.commit_profile(output)
+    return publisher.commit(output)
+
+
 def run_docs_only_tick(
     *,
     repo_root: Path,
-    judge: Any,
+    judges: Mapping[str, object],
     batch_size: int = 10,
 ) -> DocsOnlyTickSummary:
     state_dir = repo_root / "state"
@@ -98,33 +105,39 @@ def run_docs_only_tick(
         },
     )
 
-    cost_per_call = float(getattr(judge, "cost_per_call_usd", 0.04))
+    max_cost = max(
+        (float(getattr(j, "cost_per_call_usd", 0.04)) for j in judges.values()),
+        default=0.04,
+    )
     cap_by_runs = cfg.runs_per_day - budget.runs_today
-    cap_by_dollars = int(max(0, (cfg.dollars_per_day - budget.dollars_today) // cost_per_call))
+    cap_by_dollars = int(max(0, (cfg.dollars_per_day - budget.dollars_today) // max_cost))
     effective = max(0, min(batch_size, cap_by_runs, cap_by_dollars))
 
     drained = drain_items(queue_path, limit=effective)
     published = 0
     failed = 0
     for work in drained:
+        judge = judges.get(work.requested_judge)
+        if judge is None:
+            failed += 1
+            _log_failure(
+                state_dir, pair=work.pair, judge_name=work.requested_judge,
+                error=f"no judge registered for {work.requested_judge!r}",
+            )
+            continue
+        cost_per_call = float(getattr(judge, "cost_per_call_usd", 0.04))
         if not can_enqueue(load_budget(budget_path), cfg, expected_cost=cost_per_call):
-            # Budget moved while we were running — bank what we did and stop.
             break
         try:
             result = judge.evaluate(work, profiles=profiles)
-            publisher.commit(result.verdict)
+            _publish(publisher, str(judge.name), result.verdict)
             record_run_actual(budget_path, dollars=float(result.cost_usd))
             published += 1
         except Exception as exc:
             failed += 1
-            judge_name = getattr(judge, "name", "docs_only")
-            # MagicMock(name=...) stores the name kwarg on the mock itself, not
-            # as a plain string attribute; force to str so json.dumps doesn't
-            # choke on a MagicMock object.
             _log_failure(
-                state_dir,
-                pair=work.pair,
-                judge_name=str(judge_name) if not isinstance(judge_name, str) else judge_name,
+                state_dir, pair=work.pair,
+                judge_name=str(getattr(judge, "name", work.requested_judge)),
                 error=repr(exc),
             )
             log.warning("docs_only_tick.judge_failed", pair=work.pair, error=repr(exc))

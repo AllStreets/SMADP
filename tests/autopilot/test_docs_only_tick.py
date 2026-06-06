@@ -59,7 +59,7 @@ def _fake_verdict(slug_a: str, slug_b: str) -> dict:
     }
 
 
-def _judge_factory(verdicts: list[dict]):
+def _docs_only_judge_factory(verdicts: list[dict]):
     fake = MagicMock()
     def evaluate(work, *, profiles):
         return JudgeResult(verdict=verdicts.pop(0), cost_usd=0.04)
@@ -85,11 +85,11 @@ def test_tick_drains_and_publishes(tmp_path: Path) -> None:
             )
         ],
     )
-    judge = _judge_factory([_fake_verdict("aider", "cursor")])
+    judge = _docs_only_judge_factory([_fake_verdict("aider", "cursor")])
 
     summary = run_docs_only_tick(
         repo_root=repo,
-        judge=judge,
+        judges={"docs_only": judge},
         batch_size=10,
     )
     assert isinstance(summary, DocsOnlyTickSummary)
@@ -109,17 +109,17 @@ def test_tick_respects_budget(tmp_path: Path) -> None:
             WorkItem(("aider", "claude-code"), "docs_only", "v1", 0.8, "2026-06-06T00:00:00Z"),
         ],
     )
-    judge = _judge_factory([_fake_verdict("aider", "cursor"), _fake_verdict("aider", "claude-code")])
+    judge = _docs_only_judge_factory([_fake_verdict("aider", "cursor"), _fake_verdict("aider", "claude-code")])
 
-    summary = run_docs_only_tick(repo_root=repo, judge=judge, batch_size=10)
-    assert summary.published == 1  # only one run allowed today
+    summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
+    assert summary.published == 1
 
 
 def test_tick_returns_no_work_when_queue_empty(tmp_path: Path) -> None:
     _seed_autopilot_config(tmp_path, runs_per_day=10, dollars_per_day=5.0)
     summary = run_docs_only_tick(
         repo_root=tmp_path,
-        judge=_judge_factory([]),
+        judges={"docs_only": _docs_only_judge_factory([])},
         batch_size=10,
     )
     assert summary.reason == "no_work"
@@ -131,14 +131,13 @@ def test_tick_pause_short_circuits(tmp_path: Path) -> None:
     (tmp_path / "state" / "PAUSED").touch()
     summary = run_docs_only_tick(
         repo_root=tmp_path,
-        judge=_judge_factory([]),
+        judges={"docs_only": _docs_only_judge_factory([])},
         batch_size=10,
     )
     assert summary.reason == "paused"
 
 
 def test_tick_logs_failure_and_continues(tmp_path: Path) -> None:
-    """A judge raising on one item should not poison the rest of the batch."""
     repo = tmp_path
     _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0)
     _seed_profiles(repo, ["a", "b", "c", "d"])
@@ -157,9 +156,60 @@ def test_tick_logs_failure_and_continues(tmp_path: Path) -> None:
             raise RuntimeError("boom")
         return JudgeResult(verdict=_fake_verdict(*work.pair), cost_usd=0.04)
     judge = MagicMock(name="docs_only", cost_per_call_usd=0.04)
+    judge.name = "docs_only"
     judge.evaluate = evaluate
 
-    summary = run_docs_only_tick(repo_root=repo, judge=judge, batch_size=10)
+    summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
     assert summary.published == 1
     assert summary.failed == 1
     assert (repo / "state" / "judge_errors.jsonl").exists()
+
+
+# ---- NEW TESTS for multi-judge dispatch ----
+
+def test_tick_routes_profile_enrich_to_commit_profile(tmp_path: Path) -> None:
+    """Enrichment items write to catalog/profiles/, not catalog/verdicts/."""
+    repo = tmp_path
+    _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0)
+    (repo / "catalog" / "profiles").mkdir(parents=True)
+    (repo / "catalog" / "profiles" / "aider.json").write_text(json.dumps({
+        "slug": "aider", "evidence_level": "unverified-profile",
+        "onexus": {"source_github": "p/aider"},
+    }))
+    _seed_queue(
+        repo,
+        [WorkItem(("aider", "aider"), "profile_enrich", "v1", 0.9, "2026-06-06T00:00:00Z")],
+    )
+
+    enriched = {"slug": "aider", "evidence_level": "docs-only", "capabilities": {"execute_shell": True}}
+    enrich_judge = MagicMock()
+    enrich_judge.name = "profile_enrich"
+    enrich_judge.cost_per_call_usd = 0.04
+    enrich_judge.evaluate = MagicMock(return_value=JudgeResult(verdict=enriched, cost_usd=0.04))
+
+    summary = run_docs_only_tick(
+        repo_root=repo,
+        judges={"profile_enrich": enrich_judge},
+        batch_size=10,
+    )
+    assert summary.published == 1
+    written = json.loads((repo / "catalog" / "profiles" / "aider.json").read_text())
+    assert written["evidence_level"] == "docs-only"
+    assert written["capabilities"]["execute_shell"] is True
+    assert not list((repo / "catalog" / "verdicts").glob("*.json"))
+
+
+def test_tick_skips_when_judge_not_registered(tmp_path: Path) -> None:
+    repo = tmp_path
+    _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0)
+    _seed_queue(
+        repo,
+        [WorkItem(("a", "b"), "mystery_judge", "v1", 0.9, "2026-06-06T00:00:00Z")],
+    )
+    summary = run_docs_only_tick(
+        repo_root=repo,
+        judges={},
+        batch_size=10,
+    )
+    assert summary.published == 0
+    assert summary.failed == 1
