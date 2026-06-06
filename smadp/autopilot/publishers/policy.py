@@ -32,3 +32,21 @@ class PolicyPublisher:
                 tmp.unlink()
             raise
         return target
+
+    def commit_profile(self, profile: dict) -> Path:
+        target_dir = self.catalog_root / "profiles"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{profile['slug']}.json"
+
+        fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", dir=target_dir)
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(profile, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, target)
+        except Exception:
+            if tmp.exists():
+                tmp.unlink()
+            raise
+        return target

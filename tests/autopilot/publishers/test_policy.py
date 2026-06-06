@@ -66,3 +66,32 @@ def test_commit_creates_parent_dirs(tmp_path: Path) -> None:
     path = pub.commit(_verdict("docs-only"))
     assert path.exists()
     assert path.parent.exists()
+
+
+def test_commit_profile_writes_to_profiles(tmp_path: Path) -> None:
+    pub = PolicyPublisher(
+        catalog_root=tmp_path / "catalog",
+        auto_publish={"docs-only": True, "profile-verified": True, "sandbox-run": False},
+    )
+    profile = {
+        "slug": "aider",
+        "name": "Aider",
+        "evidence_level": "docs-only",
+        "capabilities": {"execute_shell": True},
+    }
+    path = pub.commit_profile(profile)
+    assert path.parent.name == "profiles"
+    assert path.name == "aider.json"
+    written = json.loads(path.read_text())
+    assert written["capabilities"]["execute_shell"] is True
+
+
+def test_commit_profile_overwrites(tmp_path: Path) -> None:
+    pub = PolicyPublisher(
+        catalog_root=tmp_path / "catalog",
+        auto_publish={"docs-only": True, "profile-verified": True, "sandbox-run": False},
+    )
+    pub.commit_profile({"slug": "aider", "name": "v1"})
+    pub.commit_profile({"slug": "aider", "name": "v2"})
+    out = json.loads((tmp_path / "catalog" / "profiles" / "aider.json").read_text())
+    assert out["name"] == "v2"
