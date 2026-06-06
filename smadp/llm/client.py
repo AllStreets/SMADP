@@ -209,7 +209,7 @@ class LLMClient:
         async def _send() -> ChatCompletion:
             return await self._client.chat.completions.create(
                 model=self.model_id,
-                max_tokens=self._max_tokens,
+                max_completion_tokens=self._max_tokens,
                 temperature=0.0,
                 messages=cast(Any, messages),
                 tools=cast(Any, [tool]),
