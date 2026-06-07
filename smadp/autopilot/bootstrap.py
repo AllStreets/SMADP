@@ -1,9 +1,13 @@
 """bootstrap_onexus: one-shot importer + planner.
 
-Reads the ONEXUS catalog, normalizes each record into an SMADP profile, writes
-the profile JSON (skipping any file containing ``"manual": true``), then runs
-TopNPlanner against the resulting profile set and appends WorkItems into
-``state/docs_only_queue.jsonl``.
+Reads the ONEXUS catalog, normalizes each record into an SMADP profile stub,
+writes the profile JSON (skipping any file containing ``"manual": true``), then
+runs EnrichmentPlanner against the resulting profile set and appends WorkItems
+into ``state/docs_only_queue.jsonl``.
+
+Each WorkItem requests ``profile_enrich`` so the enrichment judge fetches the
+GitHub README and upgrades the stub to a full profile. Pair-judge work is only
+enqueued later (via ``pair-gate-plan``) once both sides have been enriched.
 
 Also folds in pre-existing SMADP profiles on disk so the top-N union covers
 hand-curated agents (aider, cursor, etc.) that may have lower ONEXUS scores.
@@ -20,7 +24,7 @@ from pathlib import Path
 
 import structlog
 
-from smadp.autopilot.planners.top_n import TopNPlanner
+from smadp.autopilot.planners.enrichment import EnrichmentPlanner
 from smadp.autopilot.profilers.onexus import OnexusProfiler
 from smadp.autopilot.sources.onexus import OnexusSource
 from smadp.autopilot.work_queue import append_items
@@ -106,12 +110,7 @@ def bootstrap_onexus(
     for p in new_profiles:
         union.setdefault(p["slug"], p)
 
-    planner = TopNPlanner(
-        top_n=top_n,
-        pair_cap=pair_cap,
-        judge_name="docs_only",
-        judge_version="v1",
-    )
+    planner = EnrichmentPlanner(top_n=top_n)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = planner.plan(profiles=list(union.values()), now_iso=now)
     queue_path = repo_root / "state" / "docs_only_queue.jsonl"
@@ -120,5 +119,5 @@ def bootstrap_onexus(
     return BootstrapSummary(
         profiles_written=written,
         profiles_skipped=skipped,
-        pairs_queued=len(items),
+        pairs_queued=len(items),   # name preserved; semantically "items queued"
     )

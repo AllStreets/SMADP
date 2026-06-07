@@ -32,7 +32,7 @@ def fixture_catalog(tmp_path: Path) -> Path:
     return tmp_path / "onexus-fixture"
 
 
-def test_bootstrap_writes_profiles_and_queue(fixture_catalog: Path, tmp_path: Path) -> None:
+def test_bootstrap_writes_stubs_and_queues_enrichment(fixture_catalog: Path, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     summary = bootstrap_onexus(
@@ -43,13 +43,21 @@ def test_bootstrap_writes_profiles_and_queue(fixture_catalog: Path, tmp_path: Pa
     )
     assert isinstance(summary, BootstrapSummary)
     assert summary.profiles_written == 3
-    assert summary.pairs_queued == 3
+    assert summary.pairs_queued == 3   # 3 enrichment items, not 3C2
+
     profiles_dir = repo / "catalog" / "profiles"
     assert {p.stem for p in profiles_dir.glob("*.json")} == {"alpha", "beta", "gamma"}
+    for p in profiles_dir.glob("*.json"):
+        d = json.loads(p.read_text())
+        assert d["evidence_level"] == "unverified-profile"
+
     queue_path = repo / "state" / "docs_only_queue.jsonl"
     assert queue_path.exists()
     lines = queue_path.read_text("utf-8").strip().splitlines()
     assert len(lines) == 3
+    items = [json.loads(line) for line in lines]
+    assert all(i["requested_judge"] == "profile_enrich" for i in items)
+    assert all(i["pair"][0] == i["pair"][1] for i in items)
 
 
 def test_bootstrap_skips_manual_profiles(fixture_catalog: Path, tmp_path: Path) -> None:
@@ -64,11 +72,14 @@ def test_bootstrap_skips_manual_profiles(fixture_catalog: Path, tmp_path: Path) 
         top_n=10,
         pair_cap=10,
     )
-    # alpha must not be overwritten
     preserved = json.loads((repo / "catalog" / "profiles" / "alpha.json").read_text())
     assert preserved == {"slug": "alpha", "manual": True, "name": "Hand-written"}
     assert summary.profiles_skipped == 1
     assert summary.profiles_written == 2
+    # Enrichment items queued only for the 2 written (alpha stays hand-curated; if it
+    # is already enriched the EnrichmentPlanner will skip it, since its evidence_level
+    # is not "unverified-profile").
+    assert summary.pairs_queued == 2
 
 
 def test_bootstrap_is_idempotent(fixture_catalog: Path, tmp_path: Path) -> None:
