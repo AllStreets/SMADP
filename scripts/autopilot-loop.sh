@@ -15,6 +15,21 @@ if [ -d "$REPO_ROOT/.venv" ]; then
   export PATH="$REPO_ROOT/.venv/bin:$PATH"
 fi
 
-# tick: plan; sandbox work: drain queue + promote inline
+# Load secrets from .env (OPENAI_API_KEY, GITHUB_TOKEN). The docs-only path
+# needs these; if .env isn't present, the autopilot will record errors but
+# the sandbox path keeps working.
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/.env"
+  set +a
+fi
+
+# Sandbox tick: plan + drain queue, promote completed runs.
 smadp autopilot tick
-smadp sandbox work --once --max-runs=3
+smadp sandbox work --once --max 3
+
+# Docs-only tick: drain the enrichment + pair-judge queue at a small batch
+# size so each launchd invocation is bounded (~10-30s of LLM work) and the
+# daily run cap (runs_per_day in config/autopilot.yaml) is respected.
+smadp autopilot docs-only-tick --batch-size 3
