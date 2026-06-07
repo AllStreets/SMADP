@@ -44,6 +44,20 @@ class GithubReadmeFetcher:
         cache_path.write_text(text, encoding="utf-8")
         return text
 
+    # Try the most common README path forms. raw.githubusercontent.com is
+    # case-sensitive and many real repos use non-standard casings
+    # (botpress/botpress → readme.md, ...). Order is by observed frequency.
+    _README_VARIANTS: tuple[str, ...] = (
+        "README.md",
+        "readme.md",
+        "Readme.md",
+        "README.rst",
+        "README",
+        "README.MD",
+        "README.markdown",
+        "readme",
+    )
+
     def _http_fetch(self, github_source: str) -> str:
         # First pass: authed (if token present), then anonymous on auth rejection.
         # GitHub's raw endpoint returns 404 (not 401) when sent an invalid bearer
@@ -57,15 +71,24 @@ class GithubReadmeFetcher:
         for headers in header_sets:
             authed = "Authorization" in headers
             for branch in ("HEAD", "master", "main"):
-                url = f"https://raw.githubusercontent.com/{github_source}/{branch}/README.md"
-                try:
-                    resp = httpx.get(url, headers=headers, timeout=15.0, follow_redirects=True)
-                except httpx.HTTPError as exc:
-                    log.warning("github_readme.transport_error", url=url, error=repr(exc))
-                    continue
-                if 200 <= resp.status_code < 300:
-                    return resp.text
-                log.info("github_readme.miss", url=url, status=resp.status_code, authed=authed)
+                for name in self._README_VARIANTS:
+                    url = f"https://raw.githubusercontent.com/{github_source}/{branch}/{name}"
+                    try:
+                        resp = httpx.get(
+                            url, headers=headers, timeout=15.0, follow_redirects=True
+                        )
+                    except httpx.HTTPError as exc:
+                        log.warning("github_readme.transport_error", url=url, error=repr(exc))
+                        continue
+                    if 200 <= resp.status_code < 300:
+                        return resp.text
+                    # 404 on a variant is common — only log at info to avoid spam.
+                    log.debug(
+                        "github_readme.miss",
+                        url=url,
+                        status=resp.status_code,
+                        authed=authed,
+                    )
             if authed:
                 log.warning(
                     "github_readme.authed_attempts_failed_falling_back_anonymous",

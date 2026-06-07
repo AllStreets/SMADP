@@ -48,32 +48,35 @@ def test_fetch_tries_master_when_head_404s(fetcher: GithubReadmeFetcher) -> None
         assert get.call_count == 2
 
 
-def test_fetch_raises_when_both_branches_404(fetcher: GithubReadmeFetcher) -> None:
-    # Fetcher now also tries `main` branch — 3 404s anonymously.
-    responses = [_fake_response(404, b"")] * 3
+_VARIANTS_PER_BRANCH = len(GithubReadmeFetcher._README_VARIANTS)
+_BRANCHES = 3  # HEAD, master, main
+_ATTEMPTS_PER_PASS = _VARIANTS_PER_BRANCH * _BRANCHES
+
+
+def test_fetch_raises_when_every_variant_404s(fetcher: GithubReadmeFetcher) -> None:
+    # Fetcher tries every (branch, README-name) combination before giving up.
+    responses = [_fake_response(404, b"")] * _ATTEMPTS_PER_PASS
     with patch("smadp.autopilot.enrichers.github_readme.httpx.get", side_effect=responses):
         with pytest.raises(ReadmeFetchError):
             fetcher.fetch("owner/repo")
 
 
 def test_fetch_falls_back_to_anonymous_when_authed_attempts_fail(tmp_path: Path) -> None:
-    """Token rejected → all authed attempts 404 → retry without token."""
+    """Token rejected → every authed variant 404s → retry anonymously."""
     fetcher = GithubReadmeFetcher(cache_dir=tmp_path / "cache", token="ghp_BADTOKEN")
-    # 3 authed 404s (HEAD/master/main) then anonymous 200 on HEAD.
-    responses = [
-        _fake_response(404, b""),
-        _fake_response(404, b""),
-        _fake_response(404, b""),
-        _fake_response(200, b"# Anonymous worked"),
-    ]
+    # All authed attempts (branches × variants) 404; then first anonymous wins.
+    responses = (
+        [_fake_response(404, b"")] * _ATTEMPTS_PER_PASS
+        + [_fake_response(200, b"# Anonymous worked")]
+    )
     with patch("smadp.autopilot.enrichers.github_readme.httpx.get", side_effect=responses) as get:
         text = fetcher.fetch("owner/repo")
         assert text == "# Anonymous worked"
-        assert get.call_count == 4
-        # First 3 calls carry the bearer; 4th doesn't.
-        for call in get.call_args_list[:3]:
+        # All authed attempts plus exactly one anonymous attempt.
+        assert get.call_count == _ATTEMPTS_PER_PASS + 1
+        for call in get.call_args_list[:_ATTEMPTS_PER_PASS]:
             assert "Authorization" in call.kwargs.get("headers", {})
-        assert "Authorization" not in get.call_args_list[3].kwargs.get("headers", {})
+        assert "Authorization" not in get.call_args_list[-1].kwargs.get("headers", {})
 
 
 def test_fetch_uses_token_when_provided(tmp_path: Path) -> None:
