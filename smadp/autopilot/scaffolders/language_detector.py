@@ -47,9 +47,19 @@ class GithubMetadataLanguageDetector:
         if not github_source or "/" not in github_source:
             raise ValueError(f"invalid github source: {github_source!r}")
 
+        # Try authed first (if token), fall back to anonymous on rejection.
+        # GitHub returns 401 on bad bearer; the api.github.com endpoint surfaces
+        # this directly (unlike raw.githubusercontent which lies with 404).
+        for use_token in (True, False) if self.token else (False,):
+            language = self._probe(github_source, use_token=use_token)
+            if language != Language.UNSUPPORTED:
+                return language
+        return Language.UNSUPPORTED
+
+    def _probe(self, github_source: str, *, use_token: bool) -> Language:
         owner, _, repo = github_source.partition("/")
         headers = {"Accept": "application/vnd.github+json"}
-        if self.token:
+        if use_token and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
         try:

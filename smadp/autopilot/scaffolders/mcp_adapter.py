@@ -30,8 +30,13 @@ _LANGUAGE_TO_DOCKERFILE: dict[Language, str] = {
     Language.RUST: "rust.Dockerfile",
 }
 
+# Heuristic agent CLI invocation per language. Python module names disallow
+# hyphens, so the slug is normalized. These are starting points only — many
+# agents need per-repo tuning (e.g. python -m gpt_researcher.main, or the
+# pip-installed entry-point binary `gpt-researcher`). The scaffolder marks
+# the resulting adapter as scaffolded=True so operators know to verify it.
 _LANGUAGE_TO_INVOCATION: dict[Language, str] = {
-    Language.PYTHON: "python -m {slug}",
+    Language.PYTHON: "python -m {module_name}",
     Language.NODE: "npm start",
     Language.GO: "/usr/local/bin/agent",
     Language.RUST: "/usr/local/bin/agent",
@@ -112,7 +117,10 @@ class MCPAdapterScaffolder:
             "trust_floor": _TRUST_FLOOR_BY_EVIDENCE.get(
                 profile.get("evidence_level", "docs-only"), 0.3
             ),
-            "agent_invocation": _LANGUAGE_TO_INVOCATION[language].format(slug=slug),
+            "agent_invocation": _LANGUAGE_TO_INVOCATION[language].format(
+                slug=slug,
+                module_name=slug.replace("-", "_"),
+            ),
         }
 
         target_dir.mkdir(parents=True, exist_ok=True)
