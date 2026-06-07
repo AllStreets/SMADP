@@ -48,6 +48,41 @@ function safeReadDir(p: string): string[] {
 }
 
 // ---------- Profiles ----------
+/**
+ * Normalize a profile loaded from disk so every page can safely read fields
+ * like ``vendor.handle``, ``verification.status``, ``io_surfaces.files`` etc.
+ * Stubs from ONEXUS bootstrap and half-formed LLM extractions both pass
+ * through this guard, getting the missing keys filled with safe defaults.
+ */
+function normalizeProfile(raw: any): Profile {
+  const p = raw ?? {};
+  return {
+    ...p,
+    slug: p.slug ?? 'unknown',
+    name: p.name ?? p.slug ?? 'Unknown',
+    tagline: p.tagline ?? '',
+    category: p.category ?? 'uncategorized',
+    source_type: p.source_type ?? 'unknown',
+    homepage: p.homepage ?? '',
+    repo_url: p.repo_url ?? (p.onexus?.source_github ? `https://github.com/${p.onexus.source_github}` : ''),
+    docs_urls: Array.isArray(p.docs_urls) ? p.docs_urls : [],
+    evidence_refs: Array.isArray(p.evidence_refs) ? p.evidence_refs : [],
+    vendor: p.vendor ?? { handle: p.onexus?.author_handle ?? '—', type: 'unknown' },
+    verification: p.verification ?? {
+      status: p.evidence_level === 'unverified-profile' ? 'unverified' : 'draft',
+      method: '—',
+      verified_by: null,
+    },
+    capabilities: p.capabilities ?? {},
+    io_surfaces: p.io_surfaces ?? { stdin_stdout: false, clipboard: false, screen_capture: false, audio: false, files: [], calls_apis: [] },
+    permissions_requested: p.permissions_requested ?? { oauth_scopes: [], secrets_handled: [], elevated_privileges: [] },
+    data_classes_touched: Array.isArray(p.data_classes_touched) ? p.data_classes_touched : [],
+    sandboxing: p.sandboxing ?? { self_isolation: '—', subagent_model: '—', tool_use_pattern: '—' },
+    concurrency_model: p.concurrency_model ?? { session_scope: '—', shared_state_with_other_instances: '—', supports_multiple_instances: undefined },
+    pairings: Array.isArray(p.pairings) ? p.pairings : [],
+  } as Profile;
+}
+
 let _profiles: Profile[] | null = null;
 export function getProfiles(): Profile[] {
   if (_profiles) return _profiles;
@@ -57,14 +92,14 @@ export function getProfiles(): Profile[] {
   for (const f of safeReadDir(dir).filter(
     (f) => f.endsWith('.json') && !f.startsWith('_'),
   )) {
-    const p = safeReadJSON<Profile>(path.join(dir, f));
-    if (p) out.push(p);
+    const p = safeReadJSON<any>(path.join(dir, f));
+    if (p) out.push(normalizeProfile(p));
   }
   // Unverified seeds live at catalog/profiles/_unverified/<slug>.json.
   const unverifiedDir = path.join(dir, '_unverified');
   for (const f of safeReadDir(unverifiedDir).filter((f) => f.endsWith('.json'))) {
-    const p = safeReadJSON<Profile>(path.join(unverifiedDir, f));
-    if (p) out.push(p);
+    const p = safeReadJSON<any>(path.join(unverifiedDir, f));
+    if (p) out.push(normalizeProfile(p));
   }
   out.sort((a, b) => a.name.localeCompare(b.name));
   _profiles = out;
@@ -76,6 +111,49 @@ export function getProfile(slug: string): Profile | undefined {
 }
 
 // ---------- Verdicts ----------
+
+function normalizeSubVerdict(raw: any): any {
+  const sv = raw ?? {};
+  return {
+    severity: sv.severity ?? 'unknown',
+    rationale: sv.rationale ?? '',
+    citations: Array.isArray(sv.citations) ? sv.citations : [],
+    conditions: Array.isArray(sv.conditions) ? sv.conditions : [],
+    mitigations: Array.isArray(sv.mitigations) ? sv.mitigations : [],
+  };
+}
+
+function normalizeVerdict(raw: any): Verdict {
+  const v = raw ?? {};
+  const sub = v.sub_verdicts ?? {};
+  return {
+    ...v,
+    pair: Array.isArray(v.pair) ? v.pair : ['unknown', 'unknown'],
+    headline: v.headline ?? '',
+    composite_score: typeof v.composite_score === 'number' ? v.composite_score : 0,
+    confidence: typeof v.confidence === 'number' ? v.confidence : 0,
+    evidence_level: v.evidence_level ?? 'docs-only',
+    sub_verdicts: {
+      A_prompt_injection: normalizeSubVerdict(sub.A_prompt_injection),
+      B_data_leakage: normalizeSubVerdict(sub.B_data_leakage),
+      C_capability_conflict: normalizeSubVerdict(sub.C_capability_conflict),
+      D_cascading_error: normalizeSubVerdict(sub.D_cascading_error),
+      E_compliance: normalizeSubVerdict(sub.E_compliance),
+    },
+    framework_mappings: v.framework_mappings ?? {},
+    sandbox_runs: Array.isArray(v.sandbox_runs) ? v.sandbox_runs : [],
+    generated_at: v.generated_at ?? new Date(0).toISOString(),
+    model: v.model ?? { name: 'unknown', id: 'unknown', rubric_version: '1.0' },
+    reproducibility: v.reproducibility ?? {
+      rubric_url: '',
+      profile_a_sha: '',
+      profile_b_sha: '',
+      evidence_bundle_sha: '',
+    },
+    participants: Array.isArray(v.participants) ? v.participants : v.pair ?? [],
+  } as Verdict;
+}
+
 let _verdicts: Verdict[] | null = null;
 export function getVerdicts(): Verdict[] {
   if (_verdicts) return _verdicts;
@@ -83,8 +161,8 @@ export function getVerdicts(): Verdict[] {
   const files = safeReadDir(dir).filter((f) => f.endsWith('.json'));
   const out: Verdict[] = [];
   for (const f of files) {
-    const v = safeReadJSON<Verdict>(path.join(dir, f));
-    if (v) out.push(v);
+    const v = safeReadJSON<any>(path.join(dir, f));
+    if (v) out.push(normalizeVerdict(v));
   }
   out.sort(
     (a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime(),
@@ -292,25 +370,28 @@ export function getVerdictsForControl(controlId: string): Verdict[] {
  * all 100 agents to the page without bloat.
  */
 export function getProfileSummariesForClient() {
-  return getProfiles().map((p) => ({
+  return getProfiles().map((p) => {
+    const caps = ((p as any).capabilities ?? {}) as any;
+    return {
     slug: p.slug,
     name: p.name,
-    vendor: p.vendor.handle,
-    source_type: p.source_type,
+    vendor: (p as any).vendor?.handle ?? '—',
+    source_type: p.source_type ?? 'unknown',
     category: p.category,
     caps: {
-      execute_shell: !!p.capabilities.execute_shell,
-      write_filesystem: !!p.capabilities.write_filesystem,
-      modify_git_state: !!p.capabilities.modify_git_state,
-      install_packages: !!p.capabilities.install_packages,
-      spawn_subprocesses: !!p.capabilities.spawn_subprocesses,
-      use_mcp: !!p.capabilities.use_mcp,
-      run_browsers: !!p.capabilities.run_browsers,
-      network_egress: p.capabilities.network_egress ?? 'none',
+      execute_shell: !!caps.execute_shell,
+      write_filesystem: !!caps.write_filesystem,
+      modify_git_state: !!caps.modify_git_state,
+      install_packages: !!caps.install_packages,
+      spawn_subprocesses: !!caps.spawn_subprocesses,
+      use_mcp: !!caps.use_mcp,
+      run_browsers: !!caps.run_browsers,
+      network_egress: caps.network_egress ?? 'none',
     },
     io: {
-      files: !!(p.io_surfaces.files && p.io_surfaces.files.length > 0),
-      calls_apis: !!(p.io_surfaces.calls_apis && p.io_surfaces.calls_apis.length > 0),
+      files: !!((p as any).io_surfaces?.files?.length > 0),
+      calls_apis: !!((p as any).io_surfaces?.calls_apis?.length > 0),
     },
-  }));
+  };
+  });
 }

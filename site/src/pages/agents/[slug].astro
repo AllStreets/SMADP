@@ -21,21 +21,29 @@ if (!profile) {
 }
 const verdicts = getVerdictsForAgent(profile.slug);
 
+// Unverified stubs have no detailed schema — show a slim placeholder.
+const isUnverified = (profile as any).evidence_level === 'unverified-profile'
+  || !profile.capabilities;
+
 // Helper to render a key-value pair line.
 function row(label: string, value: unknown) {
   return { label, value };
 }
 
+// Stub profiles (evidence_level: "unverified-profile") have no capabilities
+// data yet. Fall back to an empty object so the page renders the row table
+// as "—" placeholders instead of crashing the build.
+const caps = (profile.capabilities ?? {}) as Record<string, unknown>;
 const capRows = [
-  row('Execute shell', profile.capabilities.execute_shell),
-  row('Read filesystem', profile.capabilities.read_filesystem),
-  row('Write filesystem', profile.capabilities.write_filesystem),
-  row('Network egress', profile.capabilities.network_egress),
-  row('Spawn subprocesses', profile.capabilities.spawn_subprocesses),
-  row('Use MCP', profile.capabilities.use_mcp),
-  row('Modify git state', profile.capabilities.modify_git_state),
-  row('Install packages', profile.capabilities.install_packages),
-  row('Run browsers', profile.capabilities.run_browsers),
+  row('Execute shell', caps.execute_shell),
+  row('Read filesystem', caps.read_filesystem),
+  row('Write filesystem', caps.write_filesystem),
+  row('Network egress', caps.network_egress),
+  row('Spawn subprocesses', caps.spawn_subprocesses),
+  row('Use MCP', caps.use_mcp),
+  row('Modify git state', caps.modify_git_state),
+  row('Install packages', caps.install_packages),
+  row('Run browsers', caps.run_browsers),
 ];
 
 const verifiedColor: Record<string, string> = {
@@ -45,10 +53,58 @@ const verifiedColor: Record<string, string> = {
   stale: '#EF4444',
   invalid: '#EF4444',
 };
-const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
+const verification = (profile.verification ?? { status: 'unverified', method: '—', verified_by: null }) as any;
+const vColor = verifiedColor[verification.status] ?? '#71717A';
+
+// Common slim metadata shared by both paths.
+const repoUrl = (profile as any).repo_url || ((profile as any).onexus?.source_github
+  ? `https://github.com/${(profile as any).onexus.source_github}`
+  : null);
 ---
 
-<Layout title={`${profile.name} — Safety Profile — SMADP`} description={profile.tagline}>
+{isUnverified ? (
+  <Layout title={`${profile.name} — SMADP`} description={`${profile.name}: catalog stub, awaiting enrichment.`}>
+    <section class="container-page mt-8">
+      <a href="/agents" class="font-mono text-xs text-ink-400 hover:text-brand-300">← all agents</a>
+      <div class="mt-6">
+        <h1 class="h1 text-white">{profile.name}</h1>
+        <p class="lead mt-3 max-w-2xl">
+          This agent is in the catalog but its safety profile has not yet been
+          enriched. Capabilities, IO surfaces, data classes touched, and risk
+          mappings will populate once the autopilot picks it up.
+        </p>
+        <div class="mt-5 flex flex-wrap items-center gap-2 text-xs">
+          <span class="pill">{categoryName(profile.category) ?? (profile as any).category ?? '—'}</span>
+          <span class="pill">evidence: unverified-profile</span>
+          {(profile as any).composite_score != null && (
+            <span class="pill">composite score: <span class="text-brand-300 ml-1">{Number((profile as any).composite_score).toFixed(2)}</span></span>
+          )}
+        </div>
+        {repoUrl && (
+          <div class="mt-6">
+            <a class="btn-ghost" href={repoUrl}>Source on GitHub</a>
+          </div>
+        )}
+      </div>
+    </section>
+  </Layout>
+) : (() => {
+// Defensive defaults for the rich-detail branch.
+const vendor = (profile as any).vendor ?? { handle: '—', type: '—' };
+const ioSurfaces = ((profile as any).io_surfaces ?? {}) as any;
+const ioFiles = Array.isArray(ioSurfaces.files) ? ioSurfaces.files : [];
+const ioApis = Array.isArray(ioSurfaces.calls_apis) ? ioSurfaces.calls_apis : [];
+const permissions = ((profile as any).permissions_requested ?? {}) as any;
+const oauthScopes = Array.isArray(permissions.oauth_scopes) ? permissions.oauth_scopes : [];
+const secretsHandled = Array.isArray(permissions.secrets_handled) ? permissions.secrets_handled : [];
+const elevatedPrivs = Array.isArray(permissions.elevated_privileges) ? permissions.elevated_privileges : [];
+const pairings = Array.isArray((profile as any).pairings) ? (profile as any).pairings : [];
+const docsUrls = Array.isArray(profile.docs_urls) ? profile.docs_urls : [];
+const dataClassesTouched = Array.isArray((profile as any).data_classes_touched) ? (profile as any).data_classes_touched : [];
+const sandboxing = ((profile as any).sandboxing ?? {}) as any;
+const concurrencyModel = ((profile as any).concurrency_model ?? {}) as any;
+return (
+<Layout title={`${profile.name} — Safety Profile — SMADP`} description={profile.tagline ?? ''}>
   <!-- Header -->
   <section class="container-page mt-8">
     <a href="/agents" class="font-mono text-xs text-ink-400 hover:text-brand-300">← all agents</a>
@@ -66,8 +122,8 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
         <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
           <span class="pill">{categoryName(profile.category)}</span>
           <span class="pill">{profile.source_type}</span>
-          <span class="pill">vendor: <span class="text-brand-300 ml-1">{profile.vendor.handle}</span></span>
-          <span class="pill">verification: {profile.verification.status}</span>
+          <span class="pill">vendor: <span class="text-brand-300 ml-1">{vendor.handle}</span></span>
+          <span class="pill">verification: {verification.status}</span>
         </div>
       </div>
 
@@ -78,11 +134,11 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
     </div>
   </section>
 
-  {profile.pairings && profile.pairings.length > 0 && (
+  {pairings && pairings.length > 0 && (
     <section class="container-page mt-8">
       <h2 class="h3 text-white">Commonly paired with</h2>
       <div class="mt-3 flex flex-wrap gap-2">
-        {profile.pairings.map((p) => (
+        {pairings.map((p) => (
           <a
             href={`/agents/${p}`}
             class="inline-flex items-center gap-1 rounded-md bg-brand-600/10 px-2 py-1 text-xs text-brand-200 ring-1 ring-inset ring-brand-500/30 hover:bg-brand-600/20 hover:text-white"
@@ -132,38 +188,38 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
         <div class="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
           <div>
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Stdin/stdout</div>
-            <div class="mt-1">{profile.io_surfaces.stdin_stdout ? 'yes' : 'no'}</div>
+            <div class="mt-1">{ioSurfaces.stdin_stdout ? 'yes' : 'no'}</div>
           </div>
           <div>
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Clipboard</div>
-            <div class="mt-1">{profile.io_surfaces.clipboard ? 'yes' : 'no'}</div>
+            <div class="mt-1">{ioSurfaces.clipboard ? 'yes' : 'no'}</div>
           </div>
           <div>
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Screen capture</div>
-            <div class="mt-1">{profile.io_surfaces.screen_capture ? 'yes' : 'no'}</div>
+            <div class="mt-1">{ioSurfaces.screen_capture ? 'yes' : 'no'}</div>
           </div>
           <div>
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Audio</div>
-            <div class="mt-1">{profile.io_surfaces.audio ? 'yes' : 'no'}</div>
+            <div class="mt-1">{ioSurfaces.audio ? 'yes' : 'no'}</div>
           </div>
         </div>
 
-        {profile.io_surfaces.files && profile.io_surfaces.files.length > 0 && (
+        {ioFiles && ioFiles.length > 0 && (
           <div class="mt-5">
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">File surfaces</div>
             <ul class="mt-2 flex flex-wrap gap-2">
-              {profile.io_surfaces.files.map((f) => (
+              {ioFiles.map((f) => (
                 <li class="pill font-mono normal-case tracking-normal text-ink-200">{f}</li>
               ))}
             </ul>
           </div>
         )}
 
-        {profile.io_surfaces.calls_apis && profile.io_surfaces.calls_apis.length > 0 && (
+        {ioApis && ioApis.length > 0 && (
           <div class="mt-5">
             <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">External APIs called</div>
             <ul class="mt-2 flex flex-wrap gap-2">
-              {profile.io_surfaces.calls_apis.map((a) => (
+              {ioApis.map((a) => (
                 <li class="pill font-mono normal-case tracking-normal text-cyber-400">{a}</li>
               ))}
             </ul>
@@ -176,9 +232,9 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
         <h2 class="h3 text-white">Permissions requested</h2>
         <div class="mt-4 grid gap-4 sm:grid-cols-3 text-sm">
           {[
-            { label: 'OAuth scopes', items: profile.permissions_requested.oauth_scopes },
-            { label: 'Secrets handled', items: profile.permissions_requested.secrets_handled },
-            { label: 'Elevated privileges', items: profile.permissions_requested.elevated_privileges },
+            { label: 'OAuth scopes', items: oauthScopes },
+            { label: 'Secrets handled', items: secretsHandled },
+            { label: 'Elevated privileges', items: elevatedPrivs },
           ].map((g) => (
             <div>
               <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">{g.label}</div>
@@ -197,11 +253,11 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
       </div>
 
       <!-- Data classes touched -->
-      {profile.data_classes_touched.length > 0 && (
+      {dataClassesTouched.length > 0 && (
         <div class="card">
           <h2 class="h3 text-white">Data classes touched</h2>
           <ul class="mt-4 flex flex-wrap gap-2">
-            {profile.data_classes_touched.map((c) => (
+            {dataClassesTouched.map((c) => (
               <li class="pill normal-case tracking-normal" style="color:#F59E0B; border-color:#F59E0B55;">{c}</li>
             ))}
           </ul>
@@ -215,15 +271,15 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
           <dl class="mt-4 space-y-2 text-sm">
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Self isolation</dt>
-              <dd class="mt-1 text-ink-100">{profile.sandboxing.self_isolation ?? '—'}</dd>
+              <dd class="mt-1 text-ink-100">{sandboxing.self_isolation ?? '—'}</dd>
             </div>
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Subagent model</dt>
-              <dd class="mt-1 text-ink-100">{profile.sandboxing.subagent_model ?? '—'}</dd>
+              <dd class="mt-1 text-ink-100">{sandboxing.subagent_model ?? '—'}</dd>
             </div>
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Tool-use pattern</dt>
-              <dd class="mt-1 text-ink-100">{profile.sandboxing.tool_use_pattern ?? '—'}</dd>
+              <dd class="mt-1 text-ink-100">{sandboxing.tool_use_pattern ?? '—'}</dd>
             </div>
           </dl>
         </div>
@@ -233,18 +289,18 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
           <dl class="mt-4 space-y-2 text-sm">
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Session scope</dt>
-              <dd class="mt-1 text-ink-100">{profile.concurrency_model.session_scope ?? '—'}</dd>
+              <dd class="mt-1 text-ink-100">{concurrencyModel.session_scope ?? '—'}</dd>
             </div>
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Shared state w/ instances</dt>
-              <dd class="mt-1 text-ink-100">{profile.concurrency_model.shared_state_with_other_instances ?? '—'}</dd>
+              <dd class="mt-1 text-ink-100">{concurrencyModel.shared_state_with_other_instances ?? '—'}</dd>
             </div>
             <div>
               <dt class="font-mono text-[11px] uppercase tracking-wider text-ink-400">Multiple instances</dt>
               <dd class="mt-1 text-ink-100">
-                {profile.concurrency_model.supports_multiple_instances === undefined
+                {concurrencyModel.supports_multiple_instances === undefined
                   ? '—'
-                  : profile.concurrency_model.supports_multiple_instances
+                  : concurrencyModel.supports_multiple_instances
                     ? 'supported'
                     : 'unsupported'}
               </dd>
@@ -283,11 +339,11 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
           </div>
           <div class="flex justify-between gap-3">
             <dt class="text-ink-400">Verified by</dt>
-            <dd class="font-mono text-ink-200">{profile.verification.verified_by ?? '—'}</dd>
+            <dd class="font-mono text-ink-200">{verification.verified_by ?? '—'}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="text-ink-400">Method</dt>
-            <dd class="font-mono text-ink-200">{profile.verification.method}</dd>
+            <dd class="font-mono text-ink-200">{verification.method}</dd>
           </div>
         </dl>
       </div>
@@ -346,3 +402,5 @@ const vColor = verifiedColor[profile.verification.status] ?? '#71717A';
     </aside>
   </section>
 </Layout>
+);
+})()}
