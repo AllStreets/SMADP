@@ -49,10 +49,31 @@ def test_fetch_tries_master_when_head_404s(fetcher: GithubReadmeFetcher) -> None
 
 
 def test_fetch_raises_when_both_branches_404(fetcher: GithubReadmeFetcher) -> None:
-    responses = [_fake_response(404, b""), _fake_response(404, b"")]
+    # Fetcher now also tries `main` branch — 3 404s anonymously.
+    responses = [_fake_response(404, b"")] * 3
     with patch("smadp.autopilot.enrichers.github_readme.httpx.get", side_effect=responses):
         with pytest.raises(ReadmeFetchError):
             fetcher.fetch("owner/repo")
+
+
+def test_fetch_falls_back_to_anonymous_when_authed_attempts_fail(tmp_path: Path) -> None:
+    """Token rejected → all authed attempts 404 → retry without token."""
+    fetcher = GithubReadmeFetcher(cache_dir=tmp_path / "cache", token="ghp_BADTOKEN")
+    # 3 authed 404s (HEAD/master/main) then anonymous 200 on HEAD.
+    responses = [
+        _fake_response(404, b""),
+        _fake_response(404, b""),
+        _fake_response(404, b""),
+        _fake_response(200, b"# Anonymous worked"),
+    ]
+    with patch("smadp.autopilot.enrichers.github_readme.httpx.get", side_effect=responses) as get:
+        text = fetcher.fetch("owner/repo")
+        assert text == "# Anonymous worked"
+        assert get.call_count == 4
+        # First 3 calls carry the bearer; 4th doesn't.
+        for call in get.call_args_list[:3]:
+            assert "Authorization" in call.kwargs.get("headers", {})
+        assert "Authorization" not in get.call_args_list[3].kwargs.get("headers", {})
 
 
 def test_fetch_uses_token_when_provided(tmp_path: Path) -> None:
