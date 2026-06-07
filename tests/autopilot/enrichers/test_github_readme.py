@@ -64,7 +64,7 @@ def test_fetch_raises_when_every_variant_404s(fetcher: GithubReadmeFetcher) -> N
 def test_fetch_falls_back_to_anonymous_when_authed_attempts_fail(tmp_path: Path) -> None:
     """Token rejected → every authed variant 404s → retry anonymously."""
     fetcher = GithubReadmeFetcher(cache_dir=tmp_path / "cache", token="ghp_BADTOKEN")
-    # All authed attempts (branches × variants) 404; then first anonymous wins.
+    # All authed attempts (branches x variants) 404; then first anonymous wins.
     responses = (
         [_fake_response(404, b"")] * _ATTEMPTS_PER_PASS
         + [_fake_response(200, b"# Anonymous worked")]
