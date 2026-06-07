@@ -161,9 +161,12 @@ def _dispatch_verdict_updated(
     trigger: RefreshTrigger,
     config: Config,
 ) -> None:
+    pair_for_payload = (
+        list(verdict.pair) if verdict.pair is not None else list(verdict.participants)
+    )
     payload = {
         "verdict_id": verdict.verdict_id,
-        "pair": [verdict.pair[0], verdict.pair[1]],
+        "pair": pair_for_payload,
         "composite_score": verdict.composite_score,
         "trigger": trigger.value,
     }

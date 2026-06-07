@@ -133,7 +133,14 @@ class CatalogIndex:
                     count += 1
 
                 for verdict in self._repo.list_verdicts():
-                    a, b = verdict.pair
+                    # N-ary verdicts (no pair, has participants) use first+last
+                    # as the index ref — matches sandbox.promote's id scheme.
+                    if verdict.pair is not None:
+                        a, b = verdict.pair
+                    elif verdict.participants:
+                        a, b = verdict.participants[0], verdict.participants[-1]
+                    else:
+                        continue
                     ref = f"{a}__{b}"
                     title = verdict.headline
                     body_parts = [verdict.headline]

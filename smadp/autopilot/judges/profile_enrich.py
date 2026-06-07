@@ -37,12 +37,12 @@ class ProfileEnrichmentJudge:
     evidence_level = "docs-only"
     cost_per_call_usd = 0.04
 
-    def __init__(self, *, client, readme_fetcher, model: str) -> None:
+    def __init__(self, *, client: Any, readme_fetcher: Any, model: str) -> None:
         self.client = client
         self.readme_fetcher = readme_fetcher
         self.model = model
 
-    def evaluate(self, work: WorkItem, *, profiles: dict[str, dict]) -> JudgeResult:
+    def evaluate(self, work: WorkItem, *, profiles: dict[str, dict[str, Any]]) -> JudgeResult:
         slug = work.pair[0]
         stub = profiles[slug]
         github = (stub.get("onexus") or {}).get("source_github")

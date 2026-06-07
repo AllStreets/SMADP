@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from smadp.autopilot.work_queue import WorkItem
 
@@ -13,8 +14,8 @@ class EnrichmentPlanner:
     judge_name: str = "profile_enrich"
     judge_version: str = "v1"
 
-    def plan(self, *, profiles: list[dict], now_iso: str) -> list[WorkItem]:
-        eligible: list[dict] = []
+    def plan(self, *, profiles: list[dict[str, Any]], now_iso: str) -> list[WorkItem]:
+        eligible: list[dict[str, Any]] = []
         for p in profiles:
             if p.get("evidence_level") != "unverified-profile":
                 continue

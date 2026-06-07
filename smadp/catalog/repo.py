@@ -191,7 +191,7 @@ class CatalogRepo:
                 seen.add(slug)
                 yield slug
 
-    def iter_profile_entries(self) -> Iterator[tuple[str, "Profile | None", dict[str, Any]]]:
+    def iter_profile_entries(self) -> Iterator[tuple[str, Profile | None, dict[str, Any]]]:
         """Yield every profile on disk as ``(slug, full_or_None, raw_dict)``.
 
         The catalog now has three tiers (hand-curated, LLM-enriched, ONEXUS

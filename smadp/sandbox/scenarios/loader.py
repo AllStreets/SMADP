@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from smadp.sandbox.policy import (
     PolicyError,

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -23,6 +24,7 @@ from smadp.autopilot.budget import (
     record_run_actual,
 )
 from smadp.autopilot.config import load_autopilot_config
+from smadp.autopilot.judges import Judge
 from smadp.autopilot.pause import is_paused
 from smadp.autopilot.publishers.policy import PolicyPublisher
 from smadp.autopilot.work_queue import drain_items, read_all_items
@@ -37,8 +39,8 @@ class DocsOnlyTickSummary:
     reason: str  # "ok" | "paused" | "budget_exhausted" | "no_work"
 
 
-def _load_profiles(profiles_dir: Path) -> dict[str, dict]:
-    profiles: dict[str, dict] = {}
+def _load_profiles(profiles_dir: Path) -> dict[str, dict[str, Any]]:
+    profiles: dict[str, dict[str, Any]] = {}
     if not profiles_dir.exists():
         return profiles
     for path in profiles_dir.glob("*.json"):
@@ -51,7 +53,7 @@ def _load_profiles(profiles_dir: Path) -> dict[str, dict]:
     return profiles
 
 
-def _log_failure(state_dir: Path, *, pair: tuple, judge_name: str, error: str) -> None:
+def _log_failure(state_dir: Path, *, pair: tuple[str, str], judge_name: str, error: str) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     row = {
         "pair": list(pair),
@@ -63,7 +65,7 @@ def _log_failure(state_dir: Path, *, pair: tuple, judge_name: str, error: str) -
         f.write(json.dumps(row) + "\n")
 
 
-def _publish(publisher: PolicyPublisher, judge_name: str, output: dict) -> Path:
+def _publish(publisher: PolicyPublisher, judge_name: str, output: dict[str, Any]) -> Path:
     if judge_name == "profile_enrich":
         return publisher.commit_profile(output)
     return publisher.commit(output)
@@ -72,7 +74,7 @@ def _publish(publisher: PolicyPublisher, judge_name: str, output: dict) -> Path:
 def run_docs_only_tick(
     *,
     repo_root: Path,
-    judges: Mapping[str, object],
+    judges: Mapping[str, Judge],
     batch_size: int = 10,
 ) -> DocsOnlyTickSummary:
     state_dir = repo_root / "state"

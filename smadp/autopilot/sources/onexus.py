@@ -11,6 +11,7 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -59,7 +60,7 @@ class OnexusSource:
                     continue
 
     @staticmethod
-    def _normalize(raw: dict) -> RawOnexusAgent:
+    def _normalize(raw: dict[str, Any]) -> RawOnexusAgent:
         source = raw.get("source") or {}
         author = raw.get("author") or {}
         return RawOnexusAgent(

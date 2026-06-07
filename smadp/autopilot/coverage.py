@@ -17,7 +17,8 @@ def _key(scenario: str, participants: list[str]) -> tuple[str, tuple[str, ...]]:
 def load_coverage(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"entries": []}
-    return json.loads(path.read_text("utf-8"))
+    data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+    return data
 
 
 def save_coverage(path: Path, payload: dict[str, Any]) -> None:

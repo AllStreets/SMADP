@@ -46,7 +46,7 @@ def _summarize_verdict(verdict: Verdict) -> VerdictSummary:
     rank = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
     max_sev = max(sevs, key=lambda s: rank.get(s, 0))
     return VerdictSummary(
-        pair=list(verdict.pair),
+        pair=list(verdict.pair) if verdict.pair is not None else list(verdict.participants),
         verdict_id=verdict.verdict_id,
         headline=verdict.headline,
         evidence_level=verdict.evidence_level,

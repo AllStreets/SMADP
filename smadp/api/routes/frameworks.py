@@ -31,7 +31,12 @@ async def list_frameworks(request: Request) -> FrameworksResponse:
     # Map control id -> list of "a__b" pair refs
     control_to_pairs: dict[str, list[str]] = defaultdict(list)
     for verdict in repo.list_verdicts():
-        ref = f"{verdict.pair[0]}__{verdict.pair[1]}"
+        if verdict.pair is not None:
+            ref = f"{verdict.pair[0]}__{verdict.pair[1]}"
+        elif verdict.participants:
+            ref = f"{verdict.participants[0]}__{verdict.participants[-1]}"
+        else:
+            continue
         for _framework_id, control_ids in verdict.framework_mappings.items():
             for cid in control_ids:
                 control_to_pairs[cid].append(ref)

@@ -13,6 +13,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class WorkItem:
     priority: float
     enqueued_at: str
 
-    def to_jsonable(self) -> dict:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "pair": list(self.pair),
             "requested_judge": self.requested_judge,
@@ -33,7 +34,7 @@ class WorkItem:
         }
 
     @classmethod
-    def from_jsonable(cls, raw: dict) -> WorkItem:
+    def from_jsonable(cls, raw: dict[str, Any]) -> WorkItem:
         pair = tuple(sorted(raw["pair"]))
         return cls(
             pair=(pair[0], pair[1]),

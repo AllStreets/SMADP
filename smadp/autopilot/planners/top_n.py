@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
+from typing import Any
 
 from smadp.autopilot.work_queue import WorkItem
 
@@ -15,7 +16,7 @@ class TopNPlanner:
     judge_name: str
     judge_version: str
 
-    def plan(self, *, profiles: list[dict], now_iso: str) -> list[WorkItem]:
+    def plan(self, *, profiles: list[dict[str, Any]], now_iso: str) -> list[WorkItem]:
         scored = sorted(
             profiles,
             key=lambda p: float(p.get("composite_score", 0.0)),

@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 class PolicyPublisher:
@@ -13,7 +14,7 @@ class PolicyPublisher:
         self.catalog_root = catalog_root
         self.auto_publish = auto_publish
 
-    def commit(self, verdict: dict) -> Path:
+    def commit(self, verdict: dict[str, Any]) -> Path:
         tier = verdict.get("evidence_level", "docs-only")
         publish = self.auto_publish.get(tier, False)
         target_dir = self.catalog_root / ("verdicts" if publish else "pending")
@@ -33,7 +34,7 @@ class PolicyPublisher:
             raise
         return target
 
-    def commit_profile(self, profile: dict) -> Path:
+    def commit_profile(self, profile: dict[str, Any]) -> Path:
         target_dir = self.catalog_root / "profiles"
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / f"{profile['slug']}.json"

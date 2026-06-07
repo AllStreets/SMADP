@@ -213,6 +213,10 @@ def lint_catalog(config: Config | None = None) -> LintReport:
             except ValidationError as exc:
                 report.add("error", "verdict.pydantic", target, str(exc))
                 continue
+            if verdict.pair is None:
+                # N-ary verdicts (3+ participants) skip the pair-order check;
+                # that check is intentionally 2-agent only.
+                continue
             a, b = verdict.pair
             # Pair must be alphabetized
             if (a, b) != sort_pair(a, b):

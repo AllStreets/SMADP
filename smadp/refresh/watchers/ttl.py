@@ -32,9 +32,16 @@ class TtlWatcher:
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=UTC)
             if ts < cutoff:
+                pair = verdict.pair or (
+                    (verdict.participants[0], verdict.participants[-1])
+                    if verdict.participants
+                    else None
+                )
+                if pair is None:
+                    continue
                 out.append(
                     (
-                        f"{verdict.pair[0]}__{verdict.pair[1]}",
+                        f"{pair[0]}__{pair[1]}",
                         {"reason": "ttl_expired", "ttl_days": int(self._ttl.days)},
                     )
                 )
