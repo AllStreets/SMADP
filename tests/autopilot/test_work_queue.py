@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from smadp.autopilot.work_queue import (
     WorkItem,
     append_items,

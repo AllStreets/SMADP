@@ -198,7 +198,7 @@ def test_bind_scenario_length_three_satisfies_all_roles() -> None:
     )
     agents = {
         "alice": {"read_filesystem": True, "write_filesystem": False},
-        "bob":   {"read_filesystem": True, "write_filesystem": True},
+        "bob": {"read_filesystem": True, "write_filesystem": True},
         "carol": {"read_filesystem": True, "write_filesystem": False},
     }
 
@@ -237,8 +237,8 @@ def test_bind_scenario_raises_when_no_permutation_fits() -> None:
     )
     agents = {
         "alice": {"read_filesystem": True},
-        "bob":   {"read_filesystem": True, "write_filesystem": True},
-        "carol": {"read_filesystem": True},   # no modify_git_state anywhere
+        "bob": {"read_filesystem": True, "write_filesystem": True},
+        "carol": {"read_filesystem": True},  # no modify_git_state anywhere
     }
 
     with pytest.raises(ScenarioBindingError, match="No valid binding"):

@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -50,9 +50,11 @@ class ProfileEnrichmentJudge:
             raise ValueError(f"profile {slug!r}: no GitHub source — cannot enrich")
 
         readme = self.readme_fetcher.fetch(github)
-        evidence = self._chunk_readme(readme, source_url=f"https://github.com/{github}/blob/HEAD/README.md")
+        evidence = self._chunk_readme(
+            readme, source_url=f"https://github.com/{github}/blob/HEAD/README.md"
+        )
 
-        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        now_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         payload = profile_extraction.ProfileExtractionInput(
             slug=slug,
             name=stub.get("name", slug),

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from smadp.autopilot.priority import load_priority
 
 
@@ -9,9 +10,7 @@ def test_empty_when_missing(tmp_path: Path) -> None:
 def test_parses_entries(tmp_path: Path) -> None:
     p = tmp_path / "priority.yaml"
     p.write_text(
-        "priority:\n"
-        "  - { scenario: s1, agents: [a, b] }\n"
-        "  - { scenario: s2, agents: [c, d, e] }\n"
+        "priority:\n  - { scenario: s1, agents: [a, b] }\n  - { scenario: s2, agents: [c, d, e] }\n"
     )
     entries = load_priority(p)
     assert entries == [

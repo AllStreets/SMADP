@@ -17,14 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib
 import json
-import sys
-import types
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import structlog
 
@@ -37,7 +34,7 @@ log = structlog.get_logger(__name__)
 # smadp.analyzer/__init__ eager-import chain which pulls in profile.py under
 # Python 3.8).
 # ---------------------------------------------------------------------------
-_SEVERITY_SCORES: Dict[str, float] = {
+_SEVERITY_SCORES: dict[str, float] = {
     "none": 0.0,
     "low": 0.2,
     "medium": 0.5,
@@ -45,7 +42,7 @@ _SEVERITY_SCORES: Dict[str, float] = {
     "critical": 1.0,
 }
 
-_WEIGHTS: Dict[str, float] = {
+_WEIGHTS: dict[str, float] = {
     "A_prompt_injection": 0.10,
     "B_data_leakage": 0.30,
     "C_capability_conflict": 0.25,
@@ -56,7 +53,7 @@ _WEIGHTS: Dict[str, float] = {
 _SUB_VERDICT_KEYS = list(_WEIGHTS.keys())
 
 
-def _compute_composite(sub_verdicts: Dict[str, Any]) -> float:
+def _compute_composite(sub_verdicts: dict[str, Any]) -> float:
     """Weighted-sum composite score from sub_verdict severity strings."""
     total = 0.0
     for key, weight in _WEIGHTS.items():
@@ -70,9 +67,10 @@ def _compute_composite(sub_verdicts: Dict[str, Any]) -> float:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class JudgeResult:
-    verdict: Dict[str, Any]
+    verdict: dict[str, Any]
     cost_usd: float
 
 
@@ -86,18 +84,16 @@ class DocsOnlyJudge:
     def __init__(self, *, client: Any, model: str, rubric_path: Path) -> None:
         self.client = client
         self.model = model
-        self._rubric_json = (
-            rubric_path.read_text("utf-8") if rubric_path.exists() else "{}"
-        )
+        self._rubric_json = rubric_path.read_text("utf-8") if rubric_path.exists() else "{}"
 
-    def evaluate(self, work: WorkItem, *, profiles: Dict[str, Any]) -> JudgeResult:
+    def evaluate(self, work: WorkItem, *, profiles: dict[str, Any]) -> JudgeResult:
         slug_a, slug_b = work.pair
         profile_a = profiles[slug_a]
         profile_b = profiles[slug_b]
 
         # Deferred import so that smadp.llm.__init__ (which loads client.py
         # requiring tenacity) does not trigger at module-import time.
-        from smadp.llm.prompts.pairwise_judge import JudgeInput  # noqa: PLC0415
+        from smadp.llm.prompts.pairwise_judge import JudgeInput
 
         payload = JudgeInput(
             rubric_json=self._rubric_json,
@@ -111,7 +107,7 @@ class DocsOnlyJudge:
         verdict = self._wrap(raw, slug_a=slug_a, slug_b=slug_b)
         return JudgeResult(verdict=verdict, cost_usd=self.cost_per_call_usd)
 
-    def _wrap(self, raw: Dict[str, Any], *, slug_a: str, slug_b: str) -> Dict[str, Any]:
+    def _wrap(self, raw: dict[str, Any], *, slug_a: str, slug_b: str) -> dict[str, Any]:
         sub_verdicts_payload = raw.get("sub_verdicts") or {}
         score = _compute_composite(sub_verdicts_payload)
 
@@ -121,7 +117,7 @@ class DocsOnlyJudge:
             "schema_version": "1.0",
             "pair": [a, b],
             "verdict_id": verdict_id,
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "model": {
                 "name": self.model,
                 "id": self.model,
@@ -138,6 +134,8 @@ class DocsOnlyJudge:
     def _verdict_id(self, slug_a: str, slug_b: str) -> str:
         a, b = sorted([slug_a, slug_b])
         canon = f"{a}:{b}:{self.name}:{self.version}"
-        digest = hashlib.sha1(canon.encode("utf-8")).hexdigest()[:6]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # sha256 over canon — used only as a short, deterministic verdict-id
+        # suffix; collision risk at 6 hex chars is fine for catalog naming.
+        digest = hashlib.sha256(canon.encode("utf-8")).hexdigest()[:6]
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         return f"v_{today}_{a}__{b}_{digest}"

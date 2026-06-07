@@ -455,7 +455,7 @@ def _evaluate_assertion(
     # logs the full docker argv (which contains synthetic env values) — so
     # scanning it would produce false positives for canaries the runner
     # itself injected. Same filter as `no_secret_in_transcript` uses.
-    _AGENT_OUTPUT_EVENTS = {"stdout", "stderr", "file_write", "file_read"}
+    _AGENT_OUTPUT_EVENTS = {"stdout", "stderr", "file_write", "file_read"}  # noqa: N806
 
     if t == "transcript_contains":
         needle = str(p.get("needle", ""))

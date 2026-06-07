@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 import pytest
 
-from smadp.autopilot.budget import BudgetState, load_budget, save_budget
+from smadp.autopilot.budget import BudgetState, save_budget
 from smadp.autopilot.coverage import has_recent_enqueue
 from smadp.autopilot.tick import run_tick
 
@@ -96,8 +97,9 @@ def test_tick_dry_run_does_not_write(autopilot_repo) -> None:
 
 
 def _today() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import datetime
+
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 @pytest.fixture

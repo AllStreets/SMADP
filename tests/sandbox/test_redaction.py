@@ -7,11 +7,17 @@ from smadp.sandbox.runner import _redact_argv_for_log
 
 def test_redacts_openai_api_key_value() -> None:
     argv = [
-        "docker", "run", "--rm",
-        "--env", "OPENAI_API_KEY=sk-proj-abc123-secret",
-        "--env", "SMADP_AGENT_ROLE=calendar",
-        "--env", "SMADP_TEST_CALENDAR_TOKEN=synthetic-test-only-aaa",
-        "image@sha256:00", "aider",
+        "docker",
+        "run",
+        "--rm",
+        "--env",
+        "OPENAI_API_KEY=sk-proj-abc123-secret",
+        "--env",
+        "SMADP_AGENT_ROLE=calendar",
+        "--env",
+        "SMADP_TEST_CALENDAR_TOKEN=synthetic-test-only-aaa",
+        "image@sha256:00",
+        "aider",
     ]
     out = _redact_argv_for_log(argv)
     joined = " ".join(out)

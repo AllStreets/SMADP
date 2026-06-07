@@ -19,8 +19,9 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -39,7 +40,7 @@ class BootstrapSummary:
     pairs_queued: int
 
 
-def _atomic_write(path: Path, payload: dict) -> None:
+def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
     tmp = Path(tmp_name)
@@ -80,10 +81,10 @@ def _existing_profile_is_enriched(path: Path) -> bool:
         return False
 
 
-def _load_existing_profiles(profiles_dir: Path) -> list[dict]:
+def _load_existing_profiles(profiles_dir: Path) -> list[dict[str, Any]]:
     if not profiles_dir.exists():
         return []
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for path in profiles_dir.glob("*.json"):
         try:
             out.append(json.loads(path.read_text("utf-8")))
@@ -105,7 +106,7 @@ def bootstrap_onexus(
 
     written = 0
     skipped = 0
-    new_profiles: list[dict] = []
+    new_profiles: list[dict[str, Any]] = []
     for raw in source.fetch():
         path = profiles_dir / f"{raw.slug}.json"
         if _existing_profile_has_manual_flag(path):
@@ -122,7 +123,7 @@ def bootstrap_onexus(
         written += 1
 
     # Union with existing profiles for TopN — preserves hand-curated agents.
-    union: dict[str, dict] = {}
+    union: dict[str, dict[str, Any]] = {}
     for p in _load_existing_profiles(profiles_dir):
         if not p.get("slug"):
             continue
@@ -132,7 +133,7 @@ def bootstrap_onexus(
         union.setdefault(p["slug"], p)
 
     planner = EnrichmentPlanner(top_n=top_n)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = planner.plan(profiles=list(union.values()), now_iso=now)
     queue_path = repo_root / "state" / "docs_only_queue.jsonl"
     append_items(queue_path, items)
@@ -140,5 +141,5 @@ def bootstrap_onexus(
     return BootstrapSummary(
         profiles_written=written,
         profiles_skipped=skipped,
-        pairs_queued=len(items),   # name preserved; semantically "items queued"
+        pairs_queued=len(items),  # name preserved; semantically "items queued"
     )

@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from smadp.autopilot.docs_only_tick import DocsOnlyTickSummary, run_docs_only_tick
 from smadp.autopilot.judges.docs_only import JudgeResult
 from smadp.autopilot.work_queue import WorkItem, append_items
@@ -61,8 +59,10 @@ def _fake_verdict(slug_a: str, slug_b: str) -> dict:
 
 def _docs_only_judge_factory(verdicts: list[dict]):
     fake = MagicMock()
+
     def evaluate(work, *, profiles):
         return JudgeResult(verdict=verdicts.pop(0), cost_usd=0.04)
+
     fake.evaluate = evaluate
     fake.cost_per_call_usd = 0.04
     fake.name = "docs_only"
@@ -109,7 +109,9 @@ def test_tick_respects_budget(tmp_path: Path) -> None:
             WorkItem(("aider", "claude-code"), "docs_only", "v1", 0.8, "2026-06-06T00:00:00Z"),
         ],
     )
-    judge = _docs_only_judge_factory([_fake_verdict("aider", "cursor"), _fake_verdict("aider", "claude-code")])
+    judge = _docs_only_judge_factory(
+        [_fake_verdict("aider", "cursor"), _fake_verdict("aider", "claude-code")]
+    )
 
     summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
     assert summary.published == 1
@@ -150,11 +152,13 @@ def test_tick_logs_failure_and_continues(tmp_path: Path) -> None:
     )
 
     calls = [0]
+
     def evaluate(work, *, profiles):
         calls[0] += 1
         if calls[0] == 1:
             raise RuntimeError("boom")
         return JudgeResult(verdict=_fake_verdict(*work.pair), cost_usd=0.04)
+
     judge = MagicMock(name="docs_only", cost_per_call_usd=0.04)
     judge.name = "docs_only"
     judge.evaluate = evaluate
@@ -167,21 +171,31 @@ def test_tick_logs_failure_and_continues(tmp_path: Path) -> None:
 
 # ---- NEW TESTS for multi-judge dispatch ----
 
+
 def test_tick_routes_profile_enrich_to_commit_profile(tmp_path: Path) -> None:
     """Enrichment items write to catalog/profiles/, not catalog/verdicts/."""
     repo = tmp_path
     _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0)
     (repo / "catalog" / "profiles").mkdir(parents=True)
-    (repo / "catalog" / "profiles" / "aider.json").write_text(json.dumps({
-        "slug": "aider", "evidence_level": "unverified-profile",
-        "onexus": {"source_github": "p/aider"},
-    }))
+    (repo / "catalog" / "profiles" / "aider.json").write_text(
+        json.dumps(
+            {
+                "slug": "aider",
+                "evidence_level": "unverified-profile",
+                "onexus": {"source_github": "p/aider"},
+            }
+        )
+    )
     _seed_queue(
         repo,
         [WorkItem(("aider", "aider"), "profile_enrich", "v1", 0.9, "2026-06-06T00:00:00Z")],
     )
 
-    enriched = {"slug": "aider", "evidence_level": "docs-only", "capabilities": {"execute_shell": True}}
+    enriched = {
+        "slug": "aider",
+        "evidence_level": "docs-only",
+        "capabilities": {"execute_shell": True},
+    }
     enrich_judge = MagicMock()
     enrich_judge.name = "profile_enrich"
     enrich_judge.cost_per_call_usd = 0.04

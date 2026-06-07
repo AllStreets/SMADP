@@ -166,22 +166,16 @@ class Verdict(BaseModel):
         # 2) Length check.
         n = len(self.participants)
         if not (2 <= n <= 4):
-            raise ValueError(
-                f"Verdict requires participants (list of 2-4 slugs); got {n}"
-            )
+            raise ValueError(f"Verdict requires participants (list of 2-4 slugs); got {n}")
 
         # 3) Per-slug validation.
         for slug in self.participants:
             if not SLUG_RE.match(slug):
                 raise ValueError(f"Invalid slug in participants: {slug!r}")
         if len(set(self.participants)) != n:
-            raise ValueError(
-                f"participants must be unique slugs; got {self.participants}"
-            )
+            raise ValueError(f"participants must be unique slugs; got {self.participants}")
         if list(self.participants) != sorted(self.participants):
-            raise ValueError(
-                f"participants must be alphabetized; got {self.participants}"
-            )
+            raise ValueError(f"participants must be alphabetized; got {self.participants}")
 
         # 4) Sync pair for length-2 verdicts (legacy compat).
         if n == 2:
@@ -190,8 +184,7 @@ class Verdict(BaseModel):
                 self.pair = derived
             elif tuple(self.pair) != derived:
                 raise ValueError(
-                    f"pair {self.pair!r} disagrees with participants "
-                    f"{self.participants!r}"
+                    f"pair {self.pair!r} disagrees with participants {self.participants!r}"
                 )
         else:
             # N >= 3: pair is not meaningful; reject if a caller tried to set it.

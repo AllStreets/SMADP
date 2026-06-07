@@ -1,11 +1,12 @@
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
+
 from smadp.autopilot.budget import (
     BudgetState,
-    load_budget,
-    save_budget,
     can_enqueue,
+    load_budget,
     record_run_actual,
+    save_budget,
 )
 from smadp.autopilot.config import AutopilotConfig
 
@@ -62,4 +63,4 @@ def test_record_run_actual_increments(tmp_path: Path) -> None:
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")

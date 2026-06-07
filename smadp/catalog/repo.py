@@ -192,9 +192,7 @@ class CatalogRepo:
                 yield slug
 
     # ---------------------------------------------------------------- verdicts
-    def load_verdict(
-        self, *participants: str, include_pending: bool = False
-    ) -> Verdict:
+    def load_verdict(self, *participants: str, include_pending: bool = False) -> Verdict:
         """Load the verdict for 2-4 participating agents.
 
         Backwards compatible: ``load_verdict(slug_a, slug_b)`` continues to
@@ -223,9 +221,7 @@ class CatalogRepo:
         """Shared payload builder for save_verdict / save_pending_verdict."""
         participants = list(verdict.participants)
         if list(participants) != sorted(participants):
-            raise CatalogError(
-                f"verdict participants must be alphabetized; got {participants}"
-            )
+            raise CatalogError(f"verdict participants must be alphabetized; got {participants}")
         payload = verdict.model_dump(mode="json", exclude_none=False)
         # Pydantic emits `pair` as a list — make sure that survives for N=2.
         if len(participants) == 2:

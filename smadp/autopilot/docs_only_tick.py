@@ -10,10 +10,10 @@ and to ``catalog/verdicts/`` (or pending/) for pair judges.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
 
 import structlog
 
@@ -34,7 +34,7 @@ log = structlog.get_logger(__name__)
 class DocsOnlyTickSummary:
     published: int
     failed: int
-    reason: str   # "ok" | "paused" | "budget_exhausted" | "no_work"
+    reason: str  # "ok" | "paused" | "budget_exhausted" | "no_work"
 
 
 def _load_profiles(profiles_dir: Path) -> dict[str, dict]:
@@ -57,7 +57,7 @@ def _log_failure(state_dir: Path, *, pair: tuple, judge_name: str, error: str) -
         "pair": list(pair),
         "judge": judge_name,
         "error": error,
-        "attempted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "attempted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     with (state_dir / "judge_errors.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
@@ -121,7 +121,9 @@ def run_docs_only_tick(
         if judge is None:
             failed += 1
             _log_failure(
-                state_dir, pair=work.pair, judge_name=work.requested_judge,
+                state_dir,
+                pair=work.pair,
+                judge_name=work.requested_judge,
                 error=f"no judge registered for {work.requested_judge!r}",
             )
             continue
@@ -136,7 +138,8 @@ def run_docs_only_tick(
         except Exception as exc:
             failed += 1
             _log_failure(
-                state_dir, pair=work.pair,
+                state_dir,
+                pair=work.pair,
                 judge_name=str(getattr(judge, "name", work.requested_judge)),
                 error=repr(exc),
             )

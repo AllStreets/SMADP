@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
-from smadp.autopilot.approve import approve, ApproveError
+
+import pytest
+
+from smadp.autopilot.approve import ApproveError, approve
 
 
 def test_approve_moves_pending_to_verdicts(tmp_path: Path) -> None:

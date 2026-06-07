@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -59,7 +58,11 @@ def stub_profile() -> dict:
         "docs_urls": ["https://aider.chat/"],
         "evidence_refs": [],
         "capabilities": None,
-        "onexus": {"source_github": "paul-gauthier/aider", "author_handle": "paul-gauthier", "tags": []},
+        "onexus": {
+            "source_github": "paul-gauthier/aider",
+            "author_handle": "paul-gauthier",
+            "tags": [],
+        },
     }
 
 
@@ -74,7 +77,9 @@ def _fake_client():
     return fake
 
 
-def _fake_fetcher(readme: str = "# Aider\n\nAider lets you pair program with LLMs to edit code in your local git repo."):
+def _fake_fetcher(
+    readme: str = "# Aider\n\nAider lets you pair program with LLMs to edit code in your local git repo.",
+):
     fake = MagicMock()
     fake.fetch = MagicMock(return_value=readme)
     return fake
@@ -96,7 +101,9 @@ def test_enrich_returns_docs_only_profile(stub_profile: dict) -> None:
 
 def test_enrich_short_circuits_when_no_github_source() -> None:
     stub = {
-        "slug": "noremote", "name": "No Remote", "category": "x",
+        "slug": "noremote",
+        "name": "No Remote",
+        "category": "x",
         "evidence_level": "unverified-profile",
         "onexus": {"source_github": None, "tags": []},
     }

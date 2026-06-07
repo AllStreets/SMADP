@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -786,7 +786,7 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
     try:
         approve(key=key, repo_root=cfg.repo_root)
     except ApproveError as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
     click.echo(f"approved {key}")
 
 
@@ -799,7 +799,12 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
 @click.option("--top-n", default=100, type=int, help="Number of top-scored agents to include.")
 @click.option("--pair-cap", default=4950, type=int, help="Maximum pairs to enqueue.")
 @click.pass_context
-def autopilot_bootstrap_onexus(ctx: click.Context, onexus_root: str, top_n: int, pair_cap: int) -> None:
+def autopilot_bootstrap_onexus(
+    ctx: click.Context,
+    onexus_root: str,
+    top_n: int,
+    pair_cap: int,
+) -> None:
     """Import ONEXUS agents and queue Docs-only pair work."""
     from smadp.autopilot.bootstrap import bootstrap_onexus
 
@@ -823,6 +828,7 @@ def autopilot_bootstrap_onexus(ctx: click.Context, onexus_root: str, top_n: int,
 def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
     """Drain the docs-only queue, dispatch to the right judge, publish."""
     import os
+
     from smadp.autopilot.docs_only_tick import run_docs_only_tick
     from smadp.autopilot.enrichers.github_readme import GithubReadmeFetcher
     from smadp.autopilot.judges.docs_only import DocsOnlyJudge
@@ -839,10 +845,14 @@ def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
     )
     judges = {
         "profile_enrich": ProfileEnrichmentJudge(
-            client=client, readme_fetcher=fetcher, model="gpt-5.4-mini",
+            client=client,
+            readme_fetcher=fetcher,
+            model="gpt-5.4-mini",
         ),
         "docs_only": DocsOnlyJudge(
-            client=client, model="gpt-5.4-mini", rubric_path=rubric_path,
+            client=client,
+            model="gpt-5.4-mini",
+            rubric_path=rubric_path,
         ),
     }
     summary = run_docs_only_tick(
@@ -850,9 +860,7 @@ def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
         judges=judges,
         batch_size=batch_size,
     )
-    click.echo(
-        f"published={summary.published} failed={summary.failed} reason={summary.reason}"
-    )
+    click.echo(f"published={summary.published} failed={summary.failed} reason={summary.reason}")
 
 
 @autopilot.command("pair-gate-plan")
@@ -862,20 +870,21 @@ def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
 def autopilot_pair_gate_plan(ctx: click.Context, top_n: int, pair_cap: int) -> None:
     """Re-scan profiles, enqueue pair-judge work where both sides are enriched."""
     import json as _json
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from smadp.autopilot.planners.pair_gate import PairGatePlanner
     from smadp.autopilot.work_queue import append_items
 
     config = ctx.obj["config"]
     profiles_dir = config.repo_root / "catalog" / "profiles"
-    profiles: list[dict] = []
+    profiles: list[dict[str, Any]] = []
     for p in profiles_dir.glob("*.json"):
         try:
             profiles.append(_json.loads(p.read_text("utf-8")))
         except (OSError, _json.JSONDecodeError):
             continue
     planner = PairGatePlanner(top_n=top_n, pair_cap=pair_cap)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = planner.plan(profiles=profiles, now_iso=now)
     queue_path = config.repo_root / "state" / "docs_only_queue.jsonl"
     append_items(queue_path, items)

@@ -34,10 +34,10 @@ log = structlog.get_logger(__name__)
 class TickSummary:
     enqueued: int
     would_enqueue: int
-    reason: str   # "ok" | "paused" | "budget_exhausted" | "no_work"
+    reason: str  # "ok" | "paused" | "budget_exhausted" | "no_work"
 
 
-_DEFAULT_EXPECTED_COST = 0.10   # conservative -- refine per-adapter in v2
+_DEFAULT_EXPECTED_COST = 0.10  # conservative -- refine per-adapter in v2
 
 
 def run_tick(*, repo_root: Path, dry_run: bool) -> TickSummary:
@@ -77,7 +77,9 @@ def run_tick(*, repo_root: Path, dry_run: bool) -> TickSummary:
 
         try:
             scenario = load_scenario(scenario_name)
-            agents = {slug: load_adapter_capabilities(slug, config=sandbox_config) for slug in agent_slugs}
+            agents = {
+                slug: load_adapter_capabilities(slug, config=sandbox_config) for slug in agent_slugs
+            }
             binding = bind_scenario(scenario, agents=agents)
         # Narrow catch -- these are "this entry isn't bindable right now",
         # distinct from genuine bugs (KeyError on a malformed priority entry,
@@ -105,8 +107,7 @@ def run_tick(*, repo_root: Path, dry_run: bool) -> TickSummary:
             config=sandbox_config,
             scenario=scenario_name,
             participants=[
-                {"role": role, "slug": slug}
-                for role, slug in binding.role_to_slug.items()
+                {"role": role, "slug": slug} for role, slug in binding.role_to_slug.items()
             ],
         )
         record_enqueued(coverage_path, scenario=scenario_name, participants=agent_slugs)

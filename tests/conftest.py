@@ -61,7 +61,28 @@ def schema_dir(catalog_dir: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def all_profile_paths(profiles_dir: Path) -> list[Path]:
-    return sorted(p for p in profiles_dir.glob("*.json") if p.is_file())
+    """All profiles that claim to satisfy the strict Profile schema.
+
+    The catalog now contains three tiers:
+    - hand-curated profiles (`"manual": true`), which match the strict schema
+    - LLM-enriched docs-only profiles (extra fields, schema-divergent)
+    - unverified-profile stubs (very thin, schema-divergent)
+
+    Only the manual tier is validated against `smadp.schemas.profile.Profile`.
+    The other tiers have their own loaders in the site/ layer and are tested
+    separately (or not at all, by design).
+    """
+    out: list[Path] = []
+    for p in profiles_dir.glob("*.json"):
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("manual") is True:
+            out.append(p)
+    return sorted(out)
 
 
 @pytest.fixture(scope="session")

@@ -18,10 +18,7 @@ class PairGatePlanner:
     judge_version: str = "v1"
 
     def plan(self, *, profiles: list[dict], now_iso: str) -> list[WorkItem]:
-        enriched = [
-            p for p in profiles
-            if p.get("evidence_level") in _ENRICHED_TIERS
-        ]
+        enriched = [p for p in profiles if p.get("evidence_level") in _ENRICHED_TIERS]
         enriched.sort(key=lambda p: float(p.get("composite_score", 0.0)), reverse=True)
         enriched = enriched[: self.top_n]
 

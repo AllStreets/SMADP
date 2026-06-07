@@ -35,7 +35,12 @@ def test_skips_already_enriched_profiles() -> None:
 
 def test_skips_profiles_without_github_source() -> None:
     profiles = [
-        {"slug": "no-source", "composite_score": 0.9, "evidence_level": "unverified-profile", "onexus": {"source_github": None}},
+        {
+            "slug": "no-source",
+            "composite_score": 0.9,
+            "evidence_level": "unverified-profile",
+            "onexus": {"source_github": None},
+        },
         _profile("b", 0.7),
     ]
     planner = EnrichmentPlanner(top_n=10)

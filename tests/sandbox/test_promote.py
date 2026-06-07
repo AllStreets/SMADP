@@ -412,9 +412,7 @@ def test_promote_first_time_writes_pending(tmp_config: Config) -> None:
 
 def test_promote_re_run_mutates_existing_verdict(tmp_config: Config) -> None:
     """When verdicts/<key>.json already exists, subsequent runs mutate it."""
-    _seed_existing_verdict_nary(
-        tmp_config, participants=["alice", "bob", "carol"]
-    )
+    _seed_existing_verdict_nary(tmp_config, participants=["alice", "bob", "carol"])
     _seed_completed_nary_run(
         tmp_config,
         run_id="run-second",

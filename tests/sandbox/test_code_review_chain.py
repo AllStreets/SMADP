@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from smadp.sandbox.binding import bind_scenario, load_adapter_capabilities
@@ -25,8 +24,7 @@ def test_code_review_chain_binds_against_real_adapters(tmp_path: Path) -> None:
     """
     scenario = load_scenario("code_review_chain")
     agents = {
-        slug: load_adapter_capabilities(slug)
-        for slug in ("aider", "autogen", "continue-dev")
+        slug: load_adapter_capabilities(slug) for slug in ("aider", "autogen", "continue-dev")
     }
     result = bind_scenario(scenario, agents=agents)
     # Pins the deterministic-tiebreak contract in bind_scenario's docstring:

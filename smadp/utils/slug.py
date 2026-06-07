@@ -50,9 +50,7 @@ def participants_filename(slugs: Iterable[str]) -> str:
     """
     sorted_slugs = sort_participants(slugs)
     if not (2 <= len(sorted_slugs) <= 4):
-        raise ValueError(
-            f"participants_filename requires 2-4 slugs, got {len(sorted_slugs)}"
-        )
+        raise ValueError(f"participants_filename requires 2-4 slugs, got {len(sorted_slugs)}")
     if len(set(sorted_slugs)) != len(sorted_slugs):
         raise ValueError(f"participants must be unique slugs; got {sorted_slugs}")
     return "__".join(sorted_slugs) + ".json"

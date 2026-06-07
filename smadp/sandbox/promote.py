@@ -333,10 +333,14 @@ def _seed_initial_verdict(
     # different N-ary combinations that share the same first+last anchors.
     # Lifting this restriction is a schema migration out of scope for Task 4.
     id_slug_left = sorted_participants[0]
-    id_slug_right = sorted_participants[-1] if len(sorted_participants) > 1 else sorted_participants[0]
+    id_slug_right = (
+        sorted_participants[-1] if len(sorted_participants) > 1 else sorted_participants[0]
+    )
     verdict_id = f"v_{today}_{id_slug_left}__{id_slug_right}_{suffix}"
 
-    roles_quote = ", ".join(f"{r}={s}" for r, s in zip(roles, participants, strict=False)) or scenario
+    roles_quote = (
+        ", ".join(f"{r}={s}" for r, s in zip(roles, participants, strict=False)) or scenario
+    )
 
     def _fresh_placeholder() -> SubVerdict:
         # Build a brand-new SubVerdict (and its Citation) per axis so axis
@@ -372,9 +376,7 @@ def _seed_initial_verdict(
         evidence_level="unverified-profile",
         confidence=0.3,
         composite_score=0.0,
-        headline=(
-            f"Seeded from sandbox run ({scenario}); awaiting reviewer."
-        ),
+        headline=(f"Seeded from sandbox run ({scenario}); awaiting reviewer."),
         sub_verdicts=SubVerdicts(
             A_prompt_injection=_fresh_placeholder(),
             B_data_leakage=_fresh_placeholder(),

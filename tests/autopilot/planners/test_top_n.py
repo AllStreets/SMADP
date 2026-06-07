@@ -32,9 +32,7 @@ def test_pairs_sorted_canonically() -> None:
 
 
 def test_top_n_filters_lowest_scores() -> None:
-    profiles = [_profile(s, score) for s, score in [
-        ("a", 0.9), ("b", 0.8), ("c", 0.7), ("d", 0.1)
-    ]]
+    profiles = [_profile(s, score) for s, score in [("a", 0.9), ("b", 0.8), ("c", 0.7), ("d", 0.1)]]
     planner = TopNPlanner(top_n=3, pair_cap=10, judge_name="docs_only", judge_version="v1")
     items = planner.plan(profiles=profiles, now_iso="2026-06-06T00:00:00Z")
     slugs_in_pairs = {s for i in items for s in i.pair}
@@ -42,7 +40,9 @@ def test_top_n_filters_lowest_scores() -> None:
 
 
 def test_pair_cap_honored_by_priority() -> None:
-    profiles = [_profile(s, s_score) for s, s_score in zip("abcdef", [0.9, 0.8, 0.7, 0.6, 0.5, 0.4])]
+    profiles = [
+        _profile(s, s_score) for s, s_score in zip("abcdef", [0.9, 0.8, 0.7, 0.6, 0.5, 0.4])
+    ]
     # 6C2 = 15 possible pairs
     planner = TopNPlanner(top_n=6, pair_cap=5, judge_name="docs_only", judge_version="v1")
     items = planner.plan(profiles=profiles, now_iso="2026-06-06T00:00:00Z")

@@ -67,6 +67,8 @@ class GithubReadmeFetcher:
                     return resp.text
                 log.info("github_readme.miss", url=url, status=resp.status_code, authed=authed)
             if authed:
-                log.warning("github_readme.authed_attempts_failed_falling_back_anonymous",
-                            github_source=github_source)
+                log.warning(
+                    "github_readme.authed_attempts_failed_falling_back_anonymous",
+                    github_source=github_source,
+                )
         raise ReadmeFetchError(f"could not fetch README for {github_source}")

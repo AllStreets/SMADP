@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
@@ -109,6 +109,20 @@ class Profile(BaseModel):
     first_seen_at: datetime
     last_refreshed_at: datetime
     pairings: list[str] = Field(default_factory=list, max_length=20)
+
+    # ---------------------------------------------------------------------
+    # Autopilot-pipeline metadata. These fields ride along on the same JSON
+    # but are managed by the autopilot (bootstrap, enrichment, pair gate)
+    # rather than the original hand-authoring contract. They are Optional
+    # so older hand-curated profiles without them still validate cleanly.
+    # ---------------------------------------------------------------------
+    manual: bool | None = None
+    composite_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence_level: (
+        Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"] | None
+    ) = None
+    license: str | None = None
+    onexus: dict[str, Any] | None = None
 
     @field_validator("slug")
     @classmethod

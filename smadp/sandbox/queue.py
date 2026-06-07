@@ -285,9 +285,7 @@ def enqueue_nary(
         UnsafeSecretError: any input contained a real-looking secret.
     """
     if not (2 <= len(participants) <= 4):
-        raise ValueError(
-            f"enqueue_nary requires 2-4 participants, got {len(participants)}"
-        )
+        raise ValueError(f"enqueue_nary requires 2-4 participants, got {len(participants)}")
 
     # Normalize + validate slugs.
     norm = [{"role": p["role"], "slug": normalize_slug(p["slug"])} for p in participants]
@@ -301,9 +299,7 @@ def enqueue_nary(
                     "Refusing to enqueue: input contains a real-secret pattern."
                 )
     if looks_like_real_secret(scenario):
-        raise UnsafeSecretError(
-            "Refusing to enqueue: scenario contains a real-secret pattern."
-        )
+        raise UnsafeSecretError("Refusing to enqueue: scenario contains a real-secret pattern.")
 
     # Validate scenario exists.
     load_scenario(scenario)

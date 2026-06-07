@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from smadp.autopilot.sources.onexus import OnexusSource, RawOnexusAgent
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures" / "onexus"

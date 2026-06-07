@@ -27,9 +27,7 @@ class BindingResult:
     def __post_init__(self) -> None:
         if not isinstance(self.role_to_slug, MappingProxyType):
             # Freeze the underlying dict via a read-only proxy.
-            object.__setattr__(
-                self, "role_to_slug", MappingProxyType(dict(self.role_to_slug))
-            )
+            object.__setattr__(self, "role_to_slug", MappingProxyType(dict(self.role_to_slug)))
 
 
 def _adapter_satisfies_role(role: AgentRole, caps: Mapping[str, Any]) -> tuple[bool, str | None]:

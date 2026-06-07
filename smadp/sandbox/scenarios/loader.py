@@ -177,9 +177,7 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
 
     agents_raw = _require(raw, "agents", "scenario root")
     if not isinstance(agents_raw, Mapping) or not (2 <= len(agents_raw) <= 4):
-        raise ScenarioLoadError(
-            "scenario.agents must be a mapping of 2 to 4 entries"
-        )
+        raise ScenarioLoadError("scenario.agents must be a mapping of 2 to 4 entries")
     agents = tuple(_validate_agent(k, v) for k, v in agents_raw.items())
 
     workspace_raw = _require(raw, "shared_workspace", "scenario root")

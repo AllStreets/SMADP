@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -33,7 +33,7 @@ class WorkItem:
         }
 
     @classmethod
-    def from_jsonable(cls, raw: dict) -> "WorkItem":
+    def from_jsonable(cls, raw: dict) -> WorkItem:
         pair = tuple(sorted(raw["pair"]))
         return cls(
             pair=(pair[0], pair[1]),
