@@ -63,6 +63,23 @@ def _existing_profile_has_manual_flag(path: Path) -> bool:
         return False
 
 
+_ENRICHED_TIERS = {"docs-only", "profile-verified", "sandbox-validated"}
+
+
+def _existing_profile_is_enriched(path: Path) -> bool:
+    """True if the file is already at docs-only tier or higher.
+
+    Without this guard, bootstrap would clobber LLM-enriched profiles back
+    to bare stubs every time it runs. Enrichment is expensive; preserve it.
+    """
+    if not path.exists():
+        return False
+    try:
+        return json.loads(path.read_text("utf-8")).get("evidence_level") in _ENRICHED_TIERS
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
 def _load_existing_profiles(profiles_dir: Path) -> list[dict]:
     if not profiles_dir.exists():
         return []
@@ -94,6 +111,10 @@ def bootstrap_onexus(
         if _existing_profile_has_manual_flag(path):
             skipped += 1
             log.info("bootstrap.skip_manual", slug=raw.slug)
+            continue
+        if _existing_profile_is_enriched(path):
+            skipped += 1
+            log.info("bootstrap.skip_enriched", slug=raw.slug)
             continue
         profile = profiler.normalize(raw)
         _atomic_write(path, profile)

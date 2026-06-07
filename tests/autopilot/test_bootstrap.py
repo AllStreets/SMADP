@@ -93,3 +93,26 @@ def test_bootstrap_is_idempotent(fixture_catalog: Path, tmp_path: Path) -> None:
     )
     queue_lines = (repo / "state" / "docs_only_queue.jsonl").read_text("utf-8").strip().splitlines()
     assert len(queue_lines) == first.pairs_queued == second.pairs_queued
+
+
+def test_bootstrap_skips_already_enriched_profiles(fixture_catalog: Path, tmp_path: Path) -> None:
+    """A docs-only profile on disk must NOT be overwritten with a stub."""
+    repo = tmp_path / "repo"
+    (repo / "catalog" / "profiles").mkdir(parents=True)
+    enriched = {
+        "slug": "alpha",
+        "evidence_level": "docs-only",
+        "capabilities": {"execute_shell": True},
+        "name": "Hand-enriched Alpha",
+    }
+    (repo / "catalog" / "profiles" / "alpha.json").write_text(json.dumps(enriched))
+    summary = bootstrap_onexus(
+        repo_root=repo, onexus_root=fixture_catalog, top_n=10, pair_cap=10,
+    )
+    preserved = json.loads((repo / "catalog" / "profiles" / "alpha.json").read_text())
+    assert preserved == enriched   # untouched
+    assert summary.profiles_skipped == 1
+    # alpha also must not appear in the enrichment queue.
+    queue_lines = (repo / "state" / "docs_only_queue.jsonl").read_text("utf-8").strip().splitlines()
+    items = [json.loads(line) for line in queue_lines]
+    assert "alpha" not in {i["pair"][0] for i in items}
