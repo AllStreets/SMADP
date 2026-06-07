@@ -927,6 +927,72 @@ cli.add_command(vendor_group)
 cli.add_command(refresh_group)
 
 
+# --------------------------------------------------------------------- adapters
+@cli.group()
+def adapters() -> None:
+    """MCP adapter scaffolding (Docker image + mcp.json generator)."""
+
+
+@adapters.command("scaffold")
+@click.option("--from-profile", "slug", required=True, help="Slug of an enriched profile.")
+@click.option(
+    "--commit-pin",
+    default=None,
+    help="Pin to a specific commit SHA. Defaults to HEAD of the repo's default branch.",
+)
+@click.option("--no-verify", is_flag=True, help="Skip docker build verification.")
+@click.pass_context
+def adapters_scaffold(
+    ctx: click.Context, slug: str, commit_pin: str | None, no_verify: bool
+) -> None:
+    """Generate a Dockerfile + mcp.json adapter for an enriched profile."""
+    import json as _json
+    import os as _os
+
+    from smadp.autopilot.scaffolders.docker_verify import verify_adapter_build
+    from smadp.autopilot.scaffolders.language_detector import GithubMetadataLanguageDetector
+    from smadp.autopilot.scaffolders.mcp_adapter import MCPAdapterScaffolder
+
+    config = ctx.obj["config"]
+    profile_path = config.repo_root / "catalog" / "profiles" / f"{slug}.json"
+    if not profile_path.exists():
+        raise click.ClickException(f"profile not found: {profile_path}")
+    profile = _json.loads(profile_path.read_text("utf-8"))
+
+    token = _os.environ.get("GITHUB_TOKEN")
+    detector = GithubMetadataLanguageDetector(token=token)
+
+    def resolve_pin(github_source: str) -> str:
+        if commit_pin:
+            return commit_pin
+        return "HEAD"
+
+    scaffolder = MCPAdapterScaffolder(detector=detector, commit_pin_resolver=resolve_pin)
+    target_dir = config.repo_root / "adapters" / slug
+    result = scaffolder.scaffold(profile, target_dir=target_dir)
+
+    click.echo(f"scaffold: success={result.success} reason={result.reason} dir={result.target_dir}")
+    if not result.success:
+        raise click.ClickException(f"scaffold failed: {result.reason}")
+
+    if no_verify:
+        click.echo("skip-verify: per --no-verify flag")
+        return
+
+    verify = verify_adapter_build(result.target_dir, image_tag=f"smadp/agent/{slug}:scaffold")
+    click.echo(f"verify: success={verify.success} skipped={verify.skipped} reason={verify.reason}")
+    if not verify.success and not verify.skipped:
+        prov_path = result.target_dir / ".scaffolded.json"
+        prov = _json.loads(prov_path.read_text("utf-8"))
+        prov["verify"] = {
+            "success": False,
+            "reason": verify.reason,
+            "build_log_tail": verify.build_log_tail,
+        }
+        prov_path.write_text(_json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+        raise click.ClickException(f"docker build failed: see {prov_path}")
+
+
 # ----------------------------------------------------------------------- entry
 def main() -> None:
     """Entry point declared in pyproject.toml."""

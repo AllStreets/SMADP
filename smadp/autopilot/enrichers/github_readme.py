@@ -74,9 +74,7 @@ class GithubReadmeFetcher:
                 for name in self._README_VARIANTS:
                     url = f"https://raw.githubusercontent.com/{github_source}/{branch}/{name}"
                     try:
-                        resp = httpx.get(
-                            url, headers=headers, timeout=15.0, follow_redirects=True
-                        )
+                        resp = httpx.get(url, headers=headers, timeout=15.0, follow_redirects=True)
                     except httpx.HTTPError as exc:
                         log.warning("github_readme.transport_error", url=url, error=repr(exc))
                         continue

@@ -65,10 +65,9 @@ def test_fetch_falls_back_to_anonymous_when_authed_attempts_fail(tmp_path: Path)
     """Token rejected → every authed variant 404s → retry anonymously."""
     fetcher = GithubReadmeFetcher(cache_dir=tmp_path / "cache", token="ghp_BADTOKEN")
     # All authed attempts (branches x variants) 404; then first anonymous wins.
-    responses = (
-        [_fake_response(404, b"")] * _ATTEMPTS_PER_PASS
-        + [_fake_response(200, b"# Anonymous worked")]
-    )
+    responses = [_fake_response(404, b"")] * _ATTEMPTS_PER_PASS + [
+        _fake_response(200, b"# Anonymous worked")
+    ]
     with patch("smadp.autopilot.enrichers.github_readme.httpx.get", side_effect=responses) as get:
         text = fetcher.fetch("owner/repo")
         assert text == "# Anonymous worked"
