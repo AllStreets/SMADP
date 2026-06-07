@@ -89,25 +89,46 @@ class CatalogIndex:
 
             count = 0
             with conn:
-                for profile in self._repo.list_profiles():
-                    title = profile.name
-                    body_parts = [
-                        profile.name,
-                        profile.tagline or "",
-                        profile.vendor.handle,
-                        profile.category,
-                        " ".join(profile.io_surfaces.calls_apis or []),
-                        " ".join(profile.data_classes_touched or []),
-                    ]
-                    cap = profile.capabilities
-                    cap_terms = [
-                        name for name, on in cap.model_dump().items() if isinstance(on, bool) and on
-                    ]
-                    body_parts.append(" ".join(cap_terms))
+                # Iterate ALL profile JSONs — including ONEXUS stubs that don't
+                # satisfy the strict Profile schema. Stubs get a slim body
+                # derived from whatever fields they do carry; fully-validated
+                # profiles get the rich body. Either way, one row per file.
+                for slug, profile, raw in self._repo.iter_profile_entries():
+                    # The FTS5 sanitizer strips hyphens from query terms ("claude-code"
+                    # → "claudecode") because `-` is an FTS5 operator. Mirror that
+                    # in the body so a slug-based query still matches. Also include
+                    # the hyphen-split form so multi-word queries like "claude code"
+                    # match.
+                    slug_variants = " ".join({slug, slug.replace("-", ""), slug.replace("-", " ")})
+                    if profile is not None:
+                        title = profile.name
+                        body_parts = [
+                            slug_variants,
+                            profile.name,
+                            profile.tagline or "",
+                            profile.vendor.handle,
+                            profile.category,
+                            " ".join(profile.io_surfaces.calls_apis or []),
+                            " ".join(profile.data_classes_touched or []),
+                        ]
+                        cap_terms = [
+                            name
+                            for name, on in profile.capabilities.model_dump().items()
+                            if isinstance(on, bool) and on
+                        ]
+                        body_parts.append(" ".join(cap_terms))
+                    else:
+                        title = str(raw.get("name", slug))
+                        body_parts = [
+                            slug_variants,
+                            title,
+                            str(raw.get("category", "")),
+                            str(raw.get("tagline", "")),
+                        ]
                     body = " ".join(p for p in body_parts if p).strip()
                     conn.execute(
                         "INSERT INTO docs (kind, ref, title, body) VALUES (?, ?, ?, ?)",
-                        ("profile", profile.slug, title, body),
+                        ("profile", slug, title, body),
                     )
                     count += 1
 
@@ -148,17 +169,24 @@ class CatalogIndex:
             with closing(conn.cursor()) as cur:
                 if fts5:
                     try:
+                        # Exact-ref boost: rows whose `ref` matches the bare
+                        # query string (the slug, e.g. "claude-code") rank
+                        # FIRST regardless of bm25. Substring/partial bm25
+                        # matches follow. Without this, a query for a known
+                        # slug gets out-ranked by dozens of look-alike slugs
+                        # in the long-tail ONEXUS catalog.
                         cur.execute(
                             """
                             SELECT kind, ref, title,
                                    snippet(docs, 3, '<mark>', '</mark>', '...', 16) AS snip,
-                                   bm25(docs) AS rank
+                                   bm25(docs) AS rank,
+                                   CASE WHEN ref = ? THEN 0 ELSE 1 END AS exact_rank
                             FROM docs
                             WHERE docs MATCH ?
-                            ORDER BY rank
+                            ORDER BY exact_rank, rank
                             LIMIT ?;
                             """,
-                            (_sanitize_fts5(query), limit),
+                            (query.strip(), _sanitize_fts5(query), limit),
                         )
                     except sqlite3.OperationalError:
                         # malformed FTS5 query — fall back to LIKE

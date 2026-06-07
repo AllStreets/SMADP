@@ -191,6 +191,38 @@ class CatalogRepo:
                 seen.add(slug)
                 yield slug
 
+    def iter_profile_entries(self) -> Iterator[tuple[str, "Profile | None", dict[str, Any]]]:
+        """Yield every profile on disk as ``(slug, full_or_None, raw_dict)``.
+
+        The catalog now has three tiers (hand-curated, LLM-enriched, ONEXUS
+        stubs) and only the first two reliably satisfy the strict ``Profile``
+        schema. Callers that need to iterate ALL profiles (e.g. the search
+        indexer) use this method: a full ``Profile`` object is returned when
+        validation succeeds; ``None`` plus the raw dict otherwise.
+        """
+        from pydantic import ValidationError
+
+        seen: set[str] = set()
+        for root in (self.config.profiles_dir, self.config.unverified_profiles_dir):
+            if not root.exists():
+                continue
+            for path in sorted(root.glob("*.json")):
+                slug = path.stem
+                if slug in seen:
+                    continue
+                seen.add(slug)
+                try:
+                    raw = self._read_json(path)
+                except CatalogError:
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                try:
+                    full: Profile | None = Profile.model_validate(raw)
+                except (ValidationError, ValueError):
+                    full = None
+                yield slug, full, raw
+
     # ---------------------------------------------------------------- verdicts
     def load_verdict(self, *participants: str, include_pending: bool = False) -> Verdict:
         """Load the verdict for 2-4 participating agents.

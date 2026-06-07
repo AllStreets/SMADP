@@ -63,6 +63,11 @@ def _compute_composite(sub_verdicts: dict[str, Any]) -> float:
     return round(max(0.0, min(1.0, total)), 4)
 
 
+def _sha256_of(text: str) -> str:
+    """Schema-prefixed sha256 hex digest used in Verdict.reproducibility."""
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -95,20 +100,59 @@ class DocsOnlyJudge:
         # requiring tenacity) does not trigger at module-import time.
         from smadp.llm.prompts.pairwise_judge import JudgeInput
 
+        profile_a_json = json.dumps({"agent_a": profile_a}, sort_keys=True, indent=2)
+        profile_b_json = json.dumps({"agent_b": profile_b}, sort_keys=True, indent=2)
+        evidence_bundle_json = "{}"
+
         payload = JudgeInput(
             rubric_json=self._rubric_json,
-            profile_a_json=json.dumps({"agent_a": profile_a}, sort_keys=True, indent=2),
-            profile_b_json=json.dumps({"agent_b": profile_b}, sort_keys=True, indent=2),
-            evidence_bundle_json="{}",
+            profile_a_json=profile_a_json,
+            profile_b_json=profile_b_json,
+            evidence_bundle_json=evidence_bundle_json,
         )
         result = asyncio.run(self.client.judge_pair(payload))
         raw = dict(result.tool_input)
 
-        verdict = self._wrap(raw, slug_a=slug_a, slug_b=slug_b)
+        reproducibility = self._reproducibility(
+            profile_a_json=profile_a_json,
+            profile_b_json=profile_b_json,
+            evidence_bundle_json=evidence_bundle_json,
+        )
+        verdict = self._wrap(raw, slug_a=slug_a, slug_b=slug_b, reproducibility=reproducibility)
         return JudgeResult(verdict=verdict, cost_usd=self.cost_per_call_usd)
 
-    def _wrap(self, raw: dict[str, Any], *, slug_a: str, slug_b: str) -> dict[str, Any]:
-        sub_verdicts_payload = raw.get("sub_verdicts") or {}
+    def _reproducibility(
+        self, *, profile_a_json: str, profile_b_json: str, evidence_bundle_json: str
+    ) -> dict[str, str]:
+        """Build the reproducibility block the Verdict schema requires.
+
+        Hashes are sha256 over the exact bytes the judge fed to the LLM, so a
+        verdict can be re-derived (or audited) from the same inputs later.
+        """
+        return {
+            "rubric_url": "/_meta/rubric/1.0.json",
+            "profile_a_hash": _sha256_of(profile_a_json),
+            "profile_b_hash": _sha256_of(profile_b_json),
+            "evidence_bundle_hash": _sha256_of(evidence_bundle_json),
+        }
+
+    def _wrap(
+        self,
+        raw: dict[str, Any],
+        *,
+        slug_a: str,
+        slug_b: str,
+        reproducibility: dict[str, str],
+    ) -> dict[str, Any]:
+        sub_verdicts_payload = dict(raw.get("sub_verdicts") or {})
+        # Defensive: gpt-5.4-mini occasionally nests framework_mappings inside
+        # sub_verdicts. Hoist it to the top-level dict where the schema expects
+        # it, merging with whatever the model already put there.
+        nested_fm = sub_verdicts_payload.pop("framework_mappings", None)
+        top_fm = dict(raw.get("framework_mappings") or {})
+        if isinstance(nested_fm, dict):
+            for k, v in nested_fm.items():
+                top_fm.setdefault(k, v)
         score = _compute_composite(sub_verdicts_payload)
 
         verdict_id = self._verdict_id(slug_a, slug_b)
@@ -128,7 +172,8 @@ class DocsOnlyJudge:
             "composite_score": score,
             "headline": str(raw.get("headline", "")),
             "sub_verdicts": sub_verdicts_payload,
-            "framework_mappings": raw.get("framework_mappings") or {},
+            "framework_mappings": top_fm,
+            "reproducibility": reproducibility,
         }
 
     def _verdict_id(self, slug_a: str, slug_b: str) -> str:
