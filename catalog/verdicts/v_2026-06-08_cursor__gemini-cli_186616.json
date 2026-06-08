@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "gemini-cli"
+  ],
+  "verdict_id": "v_2026-06-08_cursor__gemini-cli_186616",
+  "generated_at": "2026-06-08T01:29:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad write/network defaults make Cursor\u2194Gemini CLI prone to prompt injection, data leakage, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor reads/writes workspace files and clipboard, and Gemini CLI shares state via filesystem and git. That creates a default bridge where one agent can ingest the other\u2019s outputs as trusted content. No provenance or isolation is documented, so injection is plausible without unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Cursor writes instructions or summaries into shared workspace files that Gemini CLI later reads",
+        "IF Gemini CLI treats repository text as actionable instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Use separate worktrees or directories for each agent",
+        "Disable clipboard-based handoff between agents",
+        "Require a human review step before Gemini CLI consumes Cursor-generated files",
+        "Prefix agent-generated artifacts with non-executable markers",
+        "requires-engineering: add provenance tagging or content filtering between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch source code and files in the working directory, and both have broad network egress to external model APIs. Shared filesystem access means sensitive local files can flow into either agent\u2019s context and then out to third-party inference backends by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared workspace",
+        "IF either agent uploads file contents or context to its model backend during normal operation"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace",
+        "Run each agent in a separate OS user account",
+        "Use a redacted copy of the repo for one agent",
+        "Turn off or restrict network access for tasks involving sensitive files",
+        "requires-engineering: enforce per-agent data-loss-prevention filters"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, modify git state, execute shell commands, and spawn subprocesses. Cursor explicitly shares state via the local filesystem, while Gemini CLI shares via filesystem and git only. Concurrent edits to the same repo can overwrite each other or corrupt git state in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository at the same time",
+        "IF either agent commits, rebases, or rewrites files without external locking"
+      ],
+      "mitigations": [
+        "Assign non-overlapping file ownership per agent",
+        "Pause one agent before the other edits the same branch",
+        "Use separate branches and merge manually",
+        "Run git status before every write step",
+        "requires-engineering: add locking around shared repo mutations"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Cursor\u2019s agent loop can generate multi-step outputs and Gemini CLI can act on tool outputs in the terminal. Because both can read/write the same files, one agent\u2019s output can become the other\u2019s input without a verification gate, enabling mistaken facts or bad code to cascade into actions or commits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI consumes Cursor-produced files or summaries as authoritative",
+        "IF either agent uses the other\u2019s output to trigger shell or git actions"
+      ],
+      "mitigations": [
+        "Require explicit human approval before acting on peer-generated output",
+        "Insert a verification checklist before commits or shell execution",
+        "Keep generated plans in separate review-only files",
+        "Compare outputs against source files before execution",
+        "requires-engineering: add structured handoff validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Cursor handles clipboard contents and workspace files, while Gemini CLI handles repo files and user-provided directories. If regulated data is placed in the shared workspace, the pair can create retention and residency mismatches through different cloud backends and logging paths. The profiles do not document matching compliance controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI, EU PII, or secrets is stored in the shared workspace",
+        "IF either agent\u2019s backend logs or retains that data longer than the other"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared repos",
+        "Use synthetic or masked datasets for agent work",
+        "Review vendor retention settings before use",
+        "Separate compliance-sensitive tasks from general coding tasks",
+        "requires-engineering: document and enforce data-handling policy per agent"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:08f5c3e646cc24f5d5f3556a847bff970229f143c1a38475c832f7f6d18e0d6e",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

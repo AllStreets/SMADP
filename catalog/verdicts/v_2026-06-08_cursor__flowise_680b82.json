@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "flowise"
+  ],
+  "verdict_id": "v_2026-06-08_cursor__flowise_680b82",
+  "generated_at": "2026-06-08T01:13:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors: Cursor\u2019s local-file/clipboard agent can feed Flowise\u2019s server-side flows by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor reads and writes workspace files and clipboard contents, while Flowise reads uploaded/server files and can run browser or HTTP tools in flows. That creates a plausible content-bridging path where attacker-controlled text from Cursor can be consumed by Flowise as trusted input. The interaction is documented only at profile level, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Cursor writes attacker-controlled content into a shared workspace file that Flowise later ingests, injection is possible.",
+        "IF Flowise treats uploaded or server files as instructions rather than data, prompt injection can propagate."
+      ],
+      "mitigations": [
+        "Disable shared workspace handoff between the two agents.",
+        "Require a human review step before Flowise ingests any Cursor-authored file.",
+        "Prefix all transferred files with a strict data/instruction separator.",
+        "Use separate directories or containers for each agent.",
+        "requires-engineering: add provenance tagging and instruction stripping at the Flowise input boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Cursor touches source code, open files, and clipboard contents, and has broad network egress; Flowise reads server filesystem and uploaded files and also has broad egress. If they share a workspace or uploaded artifacts, sensitive code or secrets can flow from Cursor into Flowise and then out through model providers or HTTP tools. The blast radius includes source code and secrets, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Cursor and Flowise share a filesystem or uploaded-file path, data touched by Cursor can be exposed to Flowise.",
+        "IF Flowise flows send file contents to model providers or HTTP tools, leaked data can leave the environment."
+      ],
+      "mitigations": [
+        "Keep Cursor and Flowise on separate workspaces or hosts.",
+        "Remove secrets from any file that may be handed from Cursor to Flowise.",
+        "Turn off Flowise flows that forward file contents to external APIs.",
+        "Use least-privilege API keys for both agents.",
+        "requires-engineering: enforce per-agent storage isolation and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor can modify git state and write the local filesystem; Flowise can write the server filesystem and runs with deployment-dependent isolation. If both are pointed at the same mutable directory or repo, concurrent writes and git changes can collide without locking. Because the profiles show overlapping write surfaces and no coordination primitive, the conflict risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory, concurrent writes can overwrite each other.",
+        "IF Flowise nodes mutate files while Cursor edits the same tree, git state can become inconsistent."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Pause one agent before the other writes to shared files.",
+        "Avoid letting Flowise mutate git-tracked paths.",
+        "Use file locks around any shared mutable resource.",
+        "requires-engineering: add orchestrator-level locking for shared repos."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cursor can generate code or file edits, and Flowise can route those outputs into downstream tools or model calls. If Flowise treats Cursor output as authoritative without verification, mistakes can cascade into automated actions. The profiles do not prove direct automation of irreversible actions, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Flowise uses Cursor-produced text as a tool argument or prompt without validation, errors can propagate.",
+        "IF a Flowise flow triggers external actions based on Cursor output, downstream mistakes can multiply."
+      ],
+      "mitigations": [
+        "Insert a validation step before Flowise consumes Cursor output.",
+        "Require schema checks on any Cursor-generated payload.",
+        "Limit Flowise flows to read-only actions during testing.",
+        "Log and diff all Cursor-to-Flowise handoffs.",
+        "requires-engineering: add automated verification gates before any side-effecting node."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Cursor handles open files and clipboard contents, while Flowise handles chatflow inputs/outputs and uploaded files. If regulated data such as EU PII or secrets enters Cursor and is then routed through Flowise\u2019s server-side datastore or external model providers, retention and residency obligations may diverge. The profiles do not specify certifications, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Cursor and then persisted in Flowise chatflow state, retention policy mismatch can occur.",
+        "IF Flowise sends that data to external model providers without a DPA or residency controls, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Do not route regulated data through both agents.",
+        "Redact PII and secrets before transfer.",
+        "Set short retention on Flowise chatflow logs.",
+        "Review vendor DPAs and residency settings before use.",
+        "requires-engineering: implement data-class-based routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:cd02c65d50c344abf624256bb0b9be5054b3650cd67aad173b18f54013ef31cc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

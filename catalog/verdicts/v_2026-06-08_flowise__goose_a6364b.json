@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "goose"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__goose_a6364b",
+  "generated_at": "2026-06-08T03:42:30Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad egress make Flowise\u2192Goose interactions risky for leakage, conflicts, and unverified downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write uploaded files and server filesystem, while Goose reads/writes the user filesystem and can use MCP/extensions. If Flowise outputs attacker-controlled content into files that Goose later ingests, Goose may treat it as trusted instructions. The shared-file bridge is plausible, but not proven by docs alone, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes untrusted content into a file Goose later reads",
+        "IF Goose parses that file as instructions or tool input without provenance checks"
+      ],
+      "mitigations": [
+        "Store Flowise outputs in a separate directory Goose does not watch",
+        "Add a manual review step before Goose consumes Flowise-generated files",
+        "Disable automatic file ingestion in Goose for shared folders",
+        "Tag Flowise outputs with provenance metadata",
+        "requires-engineering: add content-sanitization or allowlist parsing between the agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and uploaded files, and Goose touches source code and files in cwd. Both have broad network egress, so sensitive file contents can flow from a shared workspace into model providers or APIs. The profiles do not prove a shared workspace by default, but the filesystem overlap makes leakage plausible enough for medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or uploaded-file set",
+        "IF either agent forwards file contents to configured model providers or APIs"
+      ],
+      "mitigations": [
+        "Use separate workspaces for Flowise and Goose",
+        "Remove secrets from any shared directory before either agent runs",
+        "Restrict Goose to a scratch repo with no sensitive files",
+        "Restrict Flowise uploads to non-sensitive test data",
+        "requires-engineering: enforce per-agent egress allowlists and DLP scanning"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Flowise can write the server filesystem and shares state via server datastore; Goose can write the user filesystem, modify git state, and shares state via filesystem. If both are aimed at the same mutable directory or repo, concurrent writes and git changes can collide without locking. Because the profiles expose overlapping write surfaces and no coordination primitive, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Flowise and Goose write to the same directory or repository",
+        "IF Goose performs git operations while Flowise writes files in that tree"
+      ],
+      "mitigations": [
+        "Assign each agent a separate writable directory",
+        "Pause one agent before the other edits the same repo",
+        "Avoid git operations while Flowise is active on shared files",
+        "Use filesystem locks around shared paths",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based agent flow builder that can emit tool outputs, and Goose is a coding/ops agent with shell, subprocess, and MCP capabilities. If Goose consumes Flowise output as authoritative, a bad or malicious Flowise result can trigger real actions such as code edits or commands. The downstream authority and lack of built-in verification make high appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Goose uses Flowise output as a direct instruction source",
+        "IF Goose executes shell, subprocess, or MCP actions based on that output without verification"
+      ],
+      "mitigations": [
+        "Require Goose to verify Flowise outputs against a schema",
+        "Insert a human approval step before any Goose action",
+        "Limit Goose to read-only mode for Flowise-derived tasks",
+        "Log and diff Flowise outputs before execution",
+        "requires-engineering: add provenance-aware validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise handles chatflow inputs/outputs and uploaded files, while Goose handles source code and cwd files. The profiles do not state residency or certifications, so a compliance breach is not proven; however, if regulated data is placed in shared files, differing logging/retention or backend handling could create a mismatch. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in files or chatflows processed by both agents",
+        "IF their backend logging or retention policies differ for that data class"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces",
+        "Review each agent's retention settings before use",
+        "Use synthetic data for cross-agent workflows",
+        "Document which data classes each agent may touch",
+        "requires-engineering: align residency, retention, and deletion controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:8b84721855c69108259ebe1bcba43c9908fd2ae93d8cdf83d8b2f559b44400db",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

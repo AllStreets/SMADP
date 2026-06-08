@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_aider__n8n_c02fb2",
+  "generated_at": "2026-06-08T02:31:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.725,
+  "headline": "High: shared git/workspace and broad shell/network access make prompt injection, data leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files and shares state via a git repo, while n8n can process workflow inputs and server files. That creates a plausible content-to-instruction bridge if Aider consumes repo content that n8n or connected systems place there. No MCP or clipboard bridge is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF n8n writes attacker-controlled text into a repo file that Aider later reads as context, injection is possible.",
+        "IF the pair is connected through a shared git workspace, prompt-like content can cross from B to A."
+      ],
+      "mitigations": [
+        "Restrict Aider to a dedicated branch and review-only repo copy.",
+        "Add a manual approval step before Aider ingests files created by n8n.",
+        "Use separate workspaces for Aider and n8n.",
+        "requires-engineering: add provenance tags to workflow-generated files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Aider can read git-tracked files and uses broad network egress to model providers; n8n can read server files and send data through many integration nodes. If sensitive workflow data lands in the shared repo or server filesystem, either agent can expose it outward. The pair\u2019s default surfaces make leakage plausible without special setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive data is stored in the shared repo or n8n server filesystem, Aider can read it and transmit it to a model provider.",
+        "IF an n8n workflow sends file contents to an external integration, data can leave the environment without Aider noticing."
+      ],
+      "mitigations": [
+        "Keep secrets and regulated data out of the shared repo.",
+        "Disable external integrations for workflows handling sensitive files.",
+        "Use separate credentials and storage for each agent.",
+        "Review n8n node outputs before they are written to disk.",
+        "requires-engineering: enforce data-loss-prevention rules on workflow outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have write_filesystem and execute_shell, and Aider also modifies git state while n8n writes to the server filesystem. Shared mutable state plus no stated locking means concurrent edits can overwrite each other or corrupt repo/server artifacts. This is a default-dangerous overlap, especially around git state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or repo, concurrent writes can conflict.",
+        "IF n8n Execute Command and Aider edit the same files, last-writer-wins corruption is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Serialize writes with a simple lock file.",
+        "Avoid running n8n Execute Command on the same repo Aider edits.",
+        "Commit Aider changes before n8n starts file mutations.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is an orchestrator that can call tools as workflow nodes, while Aider produces code changes and git commits. If n8n treats Aider output as authoritative, a mistaken patch can cascade into automated downstream actions. The pair therefore has a strong default pathway from generated text to executed workflow actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n feeds Aider-generated code or text into an AI Agent node without verification, errors can propagate.",
+        "IF a workflow acts on Aider-produced artifacts, downstream actions may execute incorrect assumptions."
+      ],
+      "mitigations": [
+        "Require human review before n8n acts on Aider output.",
+        "Add validation steps between Aider and any n8n action node.",
+        "Limit n8n workflows to read-only checks when consuming Aider output.",
+        "Log and diff Aider changes before execution.",
+        "requires-engineering: implement schema validation for Aider outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history, while n8n processes whatever the workflow handles and stores credentials on its server. If regulated data is routed through n8n workflows and then into Aider\u2019s repo context, retention and residency can diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed by an n8n workflow and then written into the repo Aider reads, retention policies may diverge.",
+        "IF the workflow stores credentials or logs alongside code, compliance scope expands beyond the code repo."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both tools\u2019 shared paths.",
+        "Separate credential storage from code repositories.",
+        "Set short retention on n8n execution logs.",
+        "Review workflows for residency-sensitive integrations.",
+        "requires-engineering: document and enforce data-class-specific retention rules."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

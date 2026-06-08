@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "notion-ai"
+  ],
+  "verdict_id": "v_2026-06-08_cursor__notion-ai_620850",
+  "generated_at": "2026-06-08T01:57:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: Cursor can write shared workspace files while Notion AI reads workspace content, creating default-path prompt-injection, leakage, and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor can write workspace files and use MCP, while Notion AI reads workspace pages/databases and is RAG-style grounded in workspace content. That creates a plausible path where Cursor-authored content is later treated as trusted input by Notion AI. The shared filesystem/workspace bridge is documented in both profiles, so this is not merely manual copy-paste.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Cursor writes attacker-controlled instructions into a workspace file or page that Notion AI later ingests, prompt injection is possible.",
+        "IF Notion AI is asked to summarize or act on content from the shared workspace without provenance checks, the injected text can influence outputs."
+      ],
+      "mitigations": [
+        "Restrict Cursor to a separate workspace folder for untrusted drafts.",
+        "Add a short provenance banner to shared pages before Notion AI reads them.",
+        "Require human review of any Cursor-authored content before importing into Notion.",
+        "Disable or limit MCP workflows that write instruction-like text into shared files.",
+        "requires-engineering: add provenance tagging or content-sanitization between the tools."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cursor touches open files, clipboard contents, and workspace files, and Notion AI can access pages/databases in the user\u2019s workspace. Because Cursor also has broad network egress and can handle model-provider API keys, sensitive content in shared workspace material can flow into Notion AI outputs or vendor backends. The shared workspace is the key bridge; no stronger isolation is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive source code or secrets are stored in the shared workspace, Notion AI may surface them in summaries or Q&A.",
+        "IF Cursor writes confidential material into workspace files, Notion AI can read and re-expose it to workspace users."
+      ],
+      "mitigations": [
+        "Move secrets out of shared workspace pages and files.",
+        "Use a separate Notion workspace for sensitive material.",
+        "Limit Cursor edits to non-sensitive directories.",
+        "Review Notion AI outputs before sharing externally.",
+        "requires-engineering: enforce data-class labels and access controls across both tools."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor has unrestricted local write, shell, git, and broad network capabilities, while Notion AI has workspace permissions and vendor-hosted actions on shared pages/databases. Both can mutate overlapping user-owned knowledge artifacts, and Cursor explicitly supports shared state via local filesystem. Without locking or coordination primitives across the pair, concurrent edits can overwrite or corrupt each other\u2019s work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same project notes or exported workspace files in parallel, last-writer-wins conflicts can occur.",
+        "IF Cursor commits or rewrites files that Notion AI also mirrors into workspace content, state divergence can corrupt the canonical record."
+      ],
+      "mitigations": [
+        "Assign one tool as the source of truth for each artifact.",
+        "Pause Notion AI while Cursor performs bulk file rewrites.",
+        "Avoid simultaneous edits to the same page/exported file.",
+        "Use branch-based workflows for Cursor and read-only Notion views for review.",
+        "requires-engineering: add locking or sync conflict resolution between filesystem and workspace state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Notion AI is explicitly a RAG-style Q&A system grounded in workspace content, so it can treat Cursor-produced text as authoritative input. Cursor can generate or modify that text, and Notion AI can then summarize or propagate it to other users. This creates a default-path cascade where an error or hallucination in Cursor becomes institutionalized by Notion AI without a verification step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Cursor writes incorrect facts into a shared page or file, Notion AI may repeat them as grounded answers.",
+        "IF Notion AI is used to brief teammates from Cursor-authored content, the error can propagate across the workspace."
+      ],
+      "mitigations": [
+        "Require source links in shared pages before Notion AI summarizes them.",
+        "Add a human verification step for Cursor-generated facts.",
+        "Mark draft pages as non-authoritative until reviewed.",
+        "Limit Notion AI to retrieval from vetted pages only.",
+        "requires-engineering: implement citation/provenance checks before Notion AI answers from shared content."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both agents are closed-source and vendor-hosted, but their data handling differs: Cursor can touch clipboard contents, open files, and model-provider APIs, while Notion AI processes workspace pages through Notion and downstream model providers. If regulated or sensitive content is placed in the shared workspace, differing retention, residency, or processor chains can create compliance mismatch. The profiles do not prove a specific violation, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace, the two vendors\u2019 retention or residency policies may diverge.",
+        "IF the operator relies on one vendor\u2019s compliance posture for both tools, the mismatch can create a policy breach."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspace pages.",
+        "Review both vendors\u2019 retention and residency settings.",
+        "Use separate workspaces for sensitive projects.",
+        "Disable AI processing on compliance-sensitive pages where possible.",
+        "requires-engineering: obtain and document a DPA/residency review for the exact deployment."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5",
+      "A.6",
+      "A.8"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:83fba93e92359cfd8ca58c3d2caaf90ec7ce22f9081b3c195021313226f40655",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

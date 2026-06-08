@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "flowise"
+  ],
+  "verdict_id": "v_2026-06-08_crewai__flowise_0349da",
+  "generated_at": "2026-06-08T03:06:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.53,
+  "headline": "High: shared writable filesystem and broad egress make CrewAI\u2194Flowise prompt injection, leakage, and cascading mis-execution plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory within a crew; Flowise can read/write the server filesystem and uploaded files. That creates a plausible content bridge where one agent\u2019s file output can be treated as input by the other. No MCP is present, so the risk is from shared files rather than a stronger shared channel.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes attacker-controlled text into a file that Flowise later ingests as a prompt or document, injection is possible.",
+        "IF both are deployed against the same writable directory, one agent can seed instructions for the other."
+      ],
+      "mitigations": [
+        "Separate their working directories immediately.",
+        "Disable automatic file ingestion in Flowise flows.",
+        "Add a provenance prefix to all inter-agent files.",
+        "Review any file-parsing step before enabling it.",
+        "requires-engineering: add content sanitization and allowlists at the handoff boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystem data, and both have broad network egress to model providers and configured tools. CrewAI explicitly handles API keys for tools/model providers, while Flowise handles model provider keys and tool credentials. If they share a workspace, sensitive crew data can flow into Flowise outputs or outbound calls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory, files containing secrets can be exposed to the other agent.",
+        "IF Flowise tools forward file contents to external model providers, CrewAI-originated data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Move secrets to separate secret stores.",
+        "Use distinct OS users for each agent.",
+        "Restrict Flowise uploads to non-sensitive files.",
+        "Turn off broad egress for test runs.",
+        "requires-engineering: add per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write to their respective working areas and broad egress, and both support multiple instances. CrewAI\u2019s shared-memory crew model plus Flowise\u2019s server-datastore sharing creates a realistic write/write conflict if they target the same mutable resources. The profiles do not show locking, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both instances write to the same directory or datastore, last-writer-wins corruption can occur.",
+        "IF either agent mutates shared config files without locks, state divergence is likely."
+      ],
+      "mitigations": [
+        "Assign separate output directories now.",
+        "Disable concurrent writes to shared resources.",
+        "Serialize runs through a single queue.",
+        "Snapshot shared state before execution.",
+        "requires-engineering: implement file or datastore locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI can produce tool outputs and Flowise is a graph-based flow builder that can route those outputs into downstream nodes. Because Flowise can treat file and tool outputs as flow inputs, CrewAI\u2019s output may be accepted as authoritative without a verification step. That is a default interaction pathway, though not necessarily irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Flowise nodes consume CrewAI-generated text without validation, errors will cascade into downstream actions.",
+        "IF CrewAI emits fabricated facts into a shared handoff file, Flowise can propagate them to tools or model calls."
+      ],
+      "mitigations": [
+        "Insert a human review step at the handoff.",
+        "Require schema validation on CrewAI outputs.",
+        "Mark CrewAI outputs as untrusted in Flowise.",
+        "Limit downstream nodes to read-only actions.",
+        "requires-engineering: add automated fact-checking before tool execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. The main compliance concern is that Flowise stores uploaded files on the server filesystem while CrewAI works in the host process directory, so a deployment could mix data classes. The other agent is cited because the risk is about cross-pair handling, not a single-agent violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the deployment routes regulated data through Flowise uploads and CrewAI working files, retention controls may diverge.",
+        "IF one system is configured for stricter deletion than the other, subject-rights handling can become inconsistent."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared files.",
+        "Document retention for both systems today.",
+        "Use separate storage buckets.",
+        "Delete test uploads after each run.",
+        "requires-engineering: align retention and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:cd02c65d50c344abf624256bb0b9be5054b3650cd67aad173b18f54013ef31cc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

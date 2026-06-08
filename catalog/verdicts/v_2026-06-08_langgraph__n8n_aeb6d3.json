@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_langgraph__n8n_aeb6d3",
+  "generated_at": "2026-06-08T02:26:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High: shared writable state and broad egress make LangGraph\u2192n8n pair prone to data leakage, prompt injection, and cascading automation errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can write application-defined files and shares state via a checkpointer store; n8n can read/write server filesystem and run workflows with many integrations. That creates a plausible content-to-instructions bridge if one agent\u2019s output is later parsed by the other. No MCP/shared clipboard is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph writes attacker-controlled text into shared state or files that n8n later parses as instructions",
+        "IF n8n workflow nodes consume file contents from the shared server filesystem without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Disable file-based handoff between the agents",
+        "Add provenance tags to all shared artifacts",
+        "Require human review before n8n executes content produced by LangGraph"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem access, and LangGraph explicitly handles model provider API keys while n8n handles per-credential secrets and workflow data. Shared state plus server filesystem access makes accidental exposure of sensitive workflow or graph state plausible in default deployments, though not proven critical without a specific sensitive data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent stores secrets or sensitive workflow payloads in the shared checkpointer/datastore",
+        "IF n8n integrations transmit those payloads to external services"
+      ],
+      "mitigations": [
+        "Store secrets only in dedicated secret managers",
+        "Restrict shared state to non-sensitive metadata",
+        "Turn off unnecessary integration nodes",
+        "Rotate any credentials used in shared workflows",
+        "Audit filesystem permissions on the n8n server"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, write files, and use broad network egress. LangGraph shares state via a checkpointer store, while n8n shares state via datastore and connected systems. Concurrent writes to the same mutable resources can corrupt workflows or overwrite artifacts; the profiles do not show locking, so the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, datastore, or credential store",
+        "IF concurrent executions modify shared files or workflow state without external locking"
+      ],
+      "mitigations": [
+        "Assign separate writable directories",
+        "Add an external lock around shared resources",
+        "Serialize writes to the datastore",
+        "Disable shell/file writes in one agent for shared jobs",
+        "Use per-run namespaces for artifacts"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is a low-level orchestration framework that can emit agent outputs, and n8n is a workflow automation system that can act on those outputs through integrations and command nodes. If n8n treats LangGraph output as authoritative, a bad or injected result can cascade into external actions such as API calls or command execution. The profiles show no built-in verification boundary.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflow steps consume LangGraph output without validation",
+        "IF downstream n8n nodes trigger emails, API writes, or Execute Command actions based on that output"
+      ],
+      "mitigations": [
+        "Insert a validation step before any n8n action node",
+        "Require schema checks on LangGraph outputs",
+        "Block direct execution of free-form text",
+        "Add human approval for destructive workflow steps",
+        "Log and diff intermediate outputs before acting"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LangGraph touches graph state defined by the application, while n8n processes whatever workflow data and connected systems provide. Their retention and residency policies are not documented here, so a mismatch is plausible if regulated data flows through both. Because no specific jurisdiction or regulated class is stated, medium is the cautious choice rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.verification.status"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both agents",
+        "IF one system retains workflow or graph state longer than the other"
+      ],
+      "mitigations": [
+        "Classify data before routing it",
+        "Set matching retention windows",
+        "Avoid sending regulated data to either agent",
+        "Document residency for each datastore",
+        "Review vendor compliance docs before deployment"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

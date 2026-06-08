@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__windsurf_e5cbf8",
+  "generated_at": "2026-06-08T03:17:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and default tool-use paths create prompt-injection, data-leakage, and cascading-error risk between Flowise and Windsurf.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and ingest uploaded files, while Windsurf can read/write workspace files and uses clipboard/MCP paths. That creates a plausible content-bridging channel where one agent\u2019s outputs can be treated as instructions by the other. The interaction is not fully documented, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes attacker-controlled content into a shared file that Windsurf later opens",
+        "IF Windsurf copies Flowise-generated text from clipboard or MCP into an instruction-following context"
+      ],
+      "mitigations": [
+        "Disable shared clipboard/file handoff between the two agents",
+        "Use separate directories for Flowise server files and Windsurf workspaces",
+        "Require manual review of any file produced by Flowise before Windsurf reads it",
+        "Turn off Windsurf auto-execute for flows that ingest external text",
+        "requires-engineering: add provenance tagging on inter-agent file transfers"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and secrets for model providers/tool credentials, and Windsurf touches source code/open files with broad network egress. If they share a filesystem or workspace, sensitive content can move from Flowise into Windsurf\u2019s context and then out through model or tool calls. The profiles show a real shared-file path, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Flowise stores chatflow inputs, outputs, or secrets in files readable by Windsurf",
+        "IF Windsurf sends opened files or workspace content to its backend or tools"
+      ],
+      "mitigations": [
+        "Store Flowise secrets in a separate vault, not on shared disk",
+        "Keep Windsurf out of directories containing Flowise chatflow artifacts",
+        "Redact secrets before exporting Flowise outputs to files",
+        "Review network destinations for Windsurf sessions handling shared files",
+        "requires-engineering: enforce per-agent filesystem ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Flowise has write_filesystem and broad network egress, and Windsurf has write_filesystem, modify_git_state, execute_shell, and spawn_subprocesses. Both can mutate the same local resources, and Windsurf explicitly shares state via local filesystem. Without locking or orchestration guarantees, concurrent writes and git changes can corrupt work or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or workspace directory",
+        "IF Windsurf auto-executes commands while Flowise writes files concurrently"
+      ],
+      "mitigations": [
+        "Run each agent in a separate workspace directory",
+        "Pause one agent before the other writes to shared paths",
+        "Disable Windsurf auto-execute for shared-repo sessions",
+        "Use git branches per agent and merge manually",
+        "requires-engineering: add file and git locking around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based agent flow builder whose outputs can become downstream inputs, while Windsurf\u2019s Cascade loop can act on open files and tool outputs. If Windsurf treats Flowise-produced text, prompts, or artifacts as authoritative, an error or malicious instruction can cascade into code edits or tool actions. The pair lacks a documented verification boundary, so high is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes Flowise-generated prompts, plans, or files without verification",
+        "IF Flowise output is used as an instruction source for Windsurf tool actions"
+      ],
+      "mitigations": [
+        "Insert a human review step before Windsurf acts on Flowise output",
+        "Require schema validation for any Flowise-produced artifact",
+        "Limit Windsurf to read-only mode when ingesting Flowise outputs",
+        "Log and diff all generated instructions before execution",
+        "requires-engineering: add a verifier agent between Flowise and Windsurf"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise handles chatflow inputs/outputs and secrets, while Windsurf handles source code and open files with broad egress. If regulated data is placed into Flowise and then opened in Windsurf, the pair can create retention or residency mismatches even though no specific certification mismatch is documented. The evidence is insufficient for high, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in Flowise chatflows and then opened in Windsurf",
+        "IF organizational policy requires different retention or residency controls for code versus chatflow data"
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents unless approved",
+        "Separate retention policies for Flowise artifacts and Windsurf workspaces",
+        "Disable logging of sensitive chatflow inputs in Flowise",
+        "Review Windsurf network destinations for regulated projects",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

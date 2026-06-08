@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_goose__n8n_59a32f",
+  "generated_at": "2026-06-08T02:48:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.725,
+  "headline": "High: Goose and n8n both have broad shell/filesystem/network access, creating dangerous default pathways for prompt injection, data leakage, and cascading automation errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can use MCP and reads/writes the user filesystem, while n8n can run Execute Command/Code nodes and process workflow inputs. A shared filesystem or workflow handoff can let attacker-controlled content from one agent be treated as instructions by the other. The pair has an interaction pathway, though not necessarily by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes untrusted content into a file that n8n later ingests as workflow input, injection is plausible.",
+        "IF n8n passes raw external content into Goose via files or MCP, Goose may follow embedded instructions."
+      ],
+      "mitigations": [
+        "Separate handoff files from instruction files.",
+        "Add a strict schema/allowlist parser before either agent consumes the other's output.",
+        "Disable MCP endpoints that accept arbitrary content.",
+        "Use a quarantine directory for untrusted artifacts.",
+        "requires-engineering: add provenance tags and content-signing between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Goose touches source code and files in the cwd and has broad network egress; n8n processes whatever the workflow handles and can send data through many integration nodes. If sensitive files enter Goose and are then handed to n8n, n8n can exfiltrate them through connected systems. The shared filesystem and broad egress make leakage a default-danger pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in Goose's working directory and copied into an n8n workflow, leakage can occur.",
+        "IF n8n workflow nodes transmit workflow payloads to external services, any secrets in Goose outputs can leave the environment."
+      ],
+      "mitigations": [
+        "Restrict both agents to a redacted workspace.",
+        "Block network egress except to approved destinations.",
+        "Remove secrets from shared directories before handoff.",
+        "Use separate credentials per agent.",
+        "requires-engineering: enforce DLP scanning on all inter-agent transfers."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose and n8n both have write_filesystem and execute_shell, and Goose can modify git state while n8n can run server-side command/code nodes. Their concurrency models also indicate shared state via filesystem or datastore, so concurrent writes can collide and corrupt files or repository state. This is a default-danger overlap with irreversible outcomes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or directory, write conflicts can corrupt files.",
+        "IF n8n executes commands while Goose modifies git state, repository history or working tree can diverge."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize write access with a lock file.",
+        "Disable git writes in one agent during shared runs.",
+        "Run n8n jobs on a separate server account.",
+        "requires-engineering: add transactional coordination around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is an orchestrator that can act on workflow outputs, while Goose can generate code, shell commands, and MCP-driven outputs. If n8n treats Goose's output as authoritative, a mistaken or malicious Goose response can cascade into automated actions such as command execution or integration calls. The pair therefore has a strong default pathway for amplified errors.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF n8n feeds Goose output directly into an Execute Command or integration node, errors can become actions.",
+        "IF Goose produces unverified code or facts and n8n routes them into downstream automation, the cascade can propagate."
+      ],
+      "mitigations": [
+        "Insert a human approval step before action nodes.",
+        "Require structured output with validation rules.",
+        "Limit n8n to read-only preview mode for Goose outputs.",
+        "Log and diff all generated commands before execution.",
+        "requires-engineering: add verification gates between generation and execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Goose stores model-provider keys and extension tokens on the user machine, while n8n stores per-credential secrets on its server and processes whatever the workflow handles. If regulated data is routed from Goose into n8n, differing retention and credential-handling practices can create compliance gaps. The profiles do not specify residency or certifications, so uncertainty keeps this at medium rather than higher.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed by both agents under different retention or logging settings, compliance mismatch occurs.",
+        "IF Goose secrets or n8n credentials are copied into shared files, subject-rights and retention controls may fail."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows.",
+        "Review retention settings in both systems.",
+        "Store credentials only in each agent's native secret store.",
+        "Document data residency for every integration.",
+        "requires-engineering: align logging and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

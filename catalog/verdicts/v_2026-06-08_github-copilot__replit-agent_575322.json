@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "github-copilot",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-08_github-copilot__replit-agent_575322",
+  "generated_at": "2026-06-08T04:18:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High: shared writable code/workspace plus Replit shell and broad egress create dangerous default conflict, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Copilot reads repo context and open buffers, while Replit Agent can read/write Repl workspace files. That shared file bridge lets attacker-controlled content in one agent\u2019s outputs be consumed by the other as trusted text. No MCP or clipboard is needed, but the shared workspace makes injection plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF either agent writes instructions into a shared file that the other later reads as context, injection is possible.",
+        "IF the operator copies one agent\u2019s generated text into the other\u2019s prompt, manual injection becomes possible."
+      ],
+      "mitigations": [
+        "Keep the agents on separate repos/workspaces.",
+        "Disable automatic ingestion of generated files into prompts where possible.",
+        "Review any agent-authored markdown, prompts, or config before reuse.",
+        "Use a human-only handoff step for cross-agent text.",
+        "requires-engineering: add provenance tags and prompt filters for agent-authored files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Copilot touches source code and open buffers with vendor-only egress, while Replit Agent touches source code, secrets, and deployment configuration with broad network egress. If they share a workspace or repo, sensitive material visible to Replit can be transmitted outward, and Copilot can surface repo content into its vendor backend. The pair therefore creates a realistic exfiltration path in default coding workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same repository or workspace contains secrets or deployment config, Replit Agent can access them.",
+        "IF either agent is allowed to summarize or transmit workspace contents, sensitive code can leave the local environment."
+      ],
+      "mitigations": [
+        "Remove secrets from shared workspaces before running either agent.",
+        "Split sensitive code into a separate repo with restricted access.",
+        "Turn off or limit any auto-sync/export features in the Replit workspace.",
+        "Use redacted fixtures instead of real credentials during agent runs.",
+        "requires-engineering: enforce secret scanning and egress allowlists per workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write files and modify git state; Replit Agent also has shell and subprocess execution, while Copilot Workspace can propose edits for human review. In a shared repo, concurrent writes and git mutations can overwrite each other or create inconsistent branches without locking. The overlap is dangerous by default because both operate on the same mutable artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout, conflicting edits can occur.",
+        "IF Replit Agent runs shell commands while Copilot Workspace proposes edits, the repo state can diverge between steps."
+      ],
+      "mitigations": [
+        "Run the agents on separate branches.",
+        "Serialize edits so only one agent writes at a time.",
+        "Commit or stash changes before switching agents.",
+        "Use a lockfile or manual turn-taking for shared repos.",
+        "requires-engineering: add orchestrator-level write locks and merge conflict checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Copilot Workspace can apply edits that a human reviews, and Replit Agent can act inside the Repl with user checkpoints. If Replit consumes Copilot-generated code or plans without independent verification, mistakes can cascade into executed shell actions, package installs, or deployment changes. The pair\u2019s default workflow makes downstream action-taking plausible and potentially harmful.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        }
+      ],
+      "conditions": [
+        "IF Replit Agent uses Copilot-generated code or instructions as authoritative, errors can propagate into execution.",
+        "IF the operator approves Copilot edits and then lets Replit deploy or run them, a bad suggestion can become an action."
+      ],
+      "mitigations": [
+        "Require a human diff review before any Replit execution step.",
+        "Test Copilot-generated changes in a throwaway branch first.",
+        "Add a checklist for shell/package/deploy actions.",
+        "Keep generated plans separate from executable scripts.",
+        "requires-engineering: add verification gates before deployment or shell execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Copilot is vendor-hosted with GitHub/Microsoft egress, while Replit Agent runs in Replit-managed cloud Repls and handles secrets plus deployment configuration. If regulated data or region-bound code is placed in the shared workspace, the pair can create retention and residency mismatches. The profiles do not prove a specific legal breach, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.vendor.url"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the workspace contains regulated data subject to residency or retention rules, the two vendors\u2019 handling policies may diverge.",
+        "IF secrets or deployment configuration are stored in the Repl, compliance obligations increase."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared agent workspaces.",
+        "Document retention and deletion expectations for both vendors.",
+        "Use synthetic data for development tasks.",
+        "Review vendor terms for residency and logging before use.",
+        "requires-engineering: route regulated workloads to a compliant environment only."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3f7d1198f7f784fbf30b0b956cf698e1a50acbc1e95c868a45c1b1a573435144",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

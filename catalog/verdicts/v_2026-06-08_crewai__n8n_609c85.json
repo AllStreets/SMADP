@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_crewai__n8n_609c85",
+  "generated_at": "2026-06-08T02:14:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad egress make CrewAI\u2192n8n prompt/data leakage and cascading mis-execution plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory by default; n8n can read/write the server filesystem and execute workflow nodes. That creates a plausible file-based bridge where CrewAI output can be consumed as trusted content by n8n, enabling instruction injection. The pairwise pathway is documented only by profiles, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes attacker-controlled text into a file that n8n later reads as workflow input",
+        "IF n8n workflow logic parses CrewAI output as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Use separate directories for each agent's files",
+        "Add a provenance prefix to every handoff file",
+        "Require a human review step before n8n executes any CrewAI-produced text",
+        "Disable file-based handoffs and use a typed API payload instead",
+        "requires-engineering: add content-signing or schema validation at the bridge"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, while n8n processes whatever the workflow touches and stores credentials on its server. Both have filesystem access and broad network egress, so sensitive inputs can flow from CrewAI into n8n outputs or integrations in default setups. This is a realistic leakage path, though not enough evidence for high because no specific secret class is guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the same sensitive document or secret is placed in both agents' working data",
+        "IF n8n workflow nodes transmit CrewAI-produced content to external services"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared working directories",
+        "Restrict n8n credentials to least-privilege scopes",
+        "Mask or redact sensitive fields before handoff",
+        "Turn off broad egress for the workflow where possible",
+        "requires-engineering: isolate each agent in separate containers with separate volumes"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write to their respective host-visible workspaces and broad subprocess/network capability. CrewAI uses per-process session scope with developer-defined shared state, while n8n shares state via datastore and connected systems. If they target the same mutable directory or integration, concurrent writes can corrupt files or overwrite workflow state; the default overlap is dangerous enough for high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write to the same directory or datastore",
+        "IF n8n workflow nodes and CrewAI tasks mutate the same external resource without locking"
+      ],
+      "mitigations": [
+        "Assign disjoint output directories",
+        "Serialize writes through a single queue",
+        "Disable concurrent runs for shared resources",
+        "Add file locks or optimistic concurrency checks",
+        "requires-engineering: move shared state behind a transactional store"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI can generate tool outputs and n8n can execute workflow nodes based on those outputs. Because n8n's AI Agent node orchestrates tools and Execute Command runs on the server, a bad CrewAI result can become an authoritative trigger for downstream actions without a built-in verification step. That makes cascading mis-execution plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF n8n consumes CrewAI output as a decision input",
+        "IF the workflow lacks an explicit validation or approval node before action-taking"
+      ],
+      "mitigations": [
+        "Insert a validation step before any action node",
+        "Require structured JSON with schema checks",
+        "Add a human approval gate for destructive actions",
+        "Log and diff CrewAI outputs before execution",
+        "requires-engineering: separate generation from execution into different workflows"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI is described as handling developer-passed crew data and API keys, while n8n processes whatever the workflow touches and stores per-credential secrets on its server. If regulated data is routed through both, retention and residency obligations can diverge across the pair. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data or secrets are routed through both agents",
+        "IF the workflow's retention or logging settings differ between CrewAI and n8n"
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through the pair",
+        "Align retention settings before deployment",
+        "Disable verbose logging for sensitive workflows",
+        "Document data residency for each integration",
+        "requires-engineering: add policy enforcement at the workflow boundary"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

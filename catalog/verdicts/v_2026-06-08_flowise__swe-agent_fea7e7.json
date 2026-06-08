@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__swe-agent_fea7e7",
+  "generated_at": "2026-06-08T03:00:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-workspace prompt injection and data leakage: Flowise can write/read server files while SWE-agent has shell, git, and broad egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and ingest uploaded files; SWE-agent can read/write files inside its sandbox and emit outputs that may be copied into Flowise flows. A shared filesystem or manual handoff creates a plausible injection path in default deployments, though no direct clipboard/MCP bridge is shown. The interaction is not provably blocked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Flowise ingests files or chat outputs produced by SWE-agent as trusted instructions",
+        "IF both agents are pointed at the same workspace or uploaded artifact directory"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Treat all SWE-agent outputs as untrusted text",
+        "Disable automatic file ingestion in Flowise flows",
+        "Add a manual review step before any Flowise tool execution",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and secrets, and can access server filesystem plus broad network egress. SWE-agent touches repository code and has broad egress with shell access. If they share a workspace or credentials, sensitive content can flow from Flowise into SWE-agent outputs or from SWE-agent into external services. The profiles do not show isolation strong enough to rule this out.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Flowise stores secrets or chatflow inputs in a directory SWE-agent can read",
+        "IF SWE-agent is given repository contents that include secrets or tokens"
+      ],
+      "mitigations": [
+        "Use separate containers and volumes",
+        "Remove secrets from shared directories",
+        "Rotate any exposed API keys",
+        "Restrict Flowise tool credentials to least privilege",
+        "requires-engineering: enforce per-agent secret scoping"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Flowise has server filesystem write and shared state via server datastore; SWE-agent has unrestricted shell, subprocess, git-state modification, and filesystem write inside its container. If they are co-deployed against the same mutable repo or mounted directory, concurrent writes and git mutations can race or overwrite each other. The profiles do not show locking or coordination, so uncertainty should be treated as higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents mount the same writable repository or output directory",
+        "IF Flowise workflows trigger writes while SWE-agent is editing or committing"
+      ],
+      "mitigations": [
+        "Assign disjoint directories",
+        "Pause one agent during the other's write phase",
+        "Use git locks or serialized commits",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise is a graph-based agent flow builder, so its outputs can become inputs to downstream tools; SWE-agent is an autonomous coding agent that can act on repository state. If Flowise-generated instructions or facts are passed to SWE-agent without verification, errors can cascade into code changes or operational actions. No built-in verification or provenance control is shown, so the pathway exists in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise outputs are forwarded to SWE-agent as task instructions",
+        "IF SWE-agent executes changes without an independent validation step"
+      ],
+      "mitigations": [
+        "Require human review of Flowise outputs",
+        "Add schema validation before handoff",
+        "Limit SWE-agent to read-only dry runs first",
+        "Compare outputs against repository tests",
+        "requires-engineering: add provenance and confidence checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch chatflow inputs/outputs or repository code, so no specific residency or regulated-data mismatch is evidenced. However, Flowise handles model provider keys and tool credentials while SWE-agent handles model provider keys and GitHub tokens, so compliance gaps could arise if the same sensitive data class is logged or retained differently. The other agent is cited because the risk is about paired handling, not a single-agent violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Flowise chatflows or SWE-agent tasks",
+        "IF logging/retention settings differ between the two deployments"
+      ],
+      "mitigations": [
+        "Avoid regulated data in both agents",
+        "Review retention settings in each deployment",
+        "Disable verbose logging for secrets",
+        "Separate environments by data class",
+        "requires-engineering: implement compliance policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

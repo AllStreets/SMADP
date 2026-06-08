@@ -1,0 +1,211 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_langflow__n8n_a24883",
+  "generated_at": "2026-06-08T02:43:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.725,
+  "headline": "High: shared server-side filesystem and broad egress make Langflow\u2194n8n dangerous for prompt injection, data leakage, and cascading actions by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can read/write server files and chain tools in graph flows, while n8n also reads/writes server files and orchestrates tools via workflow nodes. A shared filesystem or copied outputs create a plausible injection bridge, though not an automatic one. The pair is riskier than either alone because both can ingest untrusted content as workflow inputs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow writes attacker-controlled text into a shared file that n8n later parses as workflow input",
+        "IF n8n passes raw upstream content into a Langflow flow without sanitization"
+      ],
+      "mitigations": [
+        "Separate the two agents onto different host filesystems",
+        "Disable file-based handoff between flows and workflows",
+        "Add content-type validation before any parser step",
+        "Use explicit allowlists for fields passed between systems"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Both agents have broad network egress and server filesystem access, and both touch flow/workflow inputs plus intermediate outputs. In default deployments, either can move sensitive data from shared files or connected systems into external model providers or integrations. The pair therefore creates a realistic exfiltration path with potentially irreversible disclosure.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either deployment processes secrets, customer data, or regulated records",
+        "IF either workflow sends file contents or intermediate outputs to external APIs or model providers"
+      ],
+      "mitigations": [
+        "Restrict both agents to a private network egress allowlist",
+        "Store sensitive inputs outside shared server files",
+        "Redact secrets before any model or integration call",
+        "Turn off automatic file ingestion where possible",
+        "requires-engineering: add per-field data-loss prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, and write the same server filesystem. Langflow also runs unsandboxed Python by default, while n8n Execute Command is explicitly unsandboxed. Concurrent writes or side effects can collide on shared state, making destructive overwrite or inconsistent workflow state plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both are deployed against the same writable directory",
+        "IF either workflow uses shell or code nodes to mutate shared files"
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent",
+        "Disable concurrent writes to shared paths",
+        "Use file locks around any shared artifact",
+        "Run destructive steps in a disposable container",
+        "requires-engineering: add transactional coordination for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow can chain multiple agents and n8n can orchestrate AI Agent nodes and integrations, so one system\u2019s output can become the other\u2019s authoritative input. Without a verification gate, a mistaken or malicious Langflow result can trigger n8n actions, or vice versa, causing downstream emails, API calls, or file mutations. That is a classic default cascade risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF n8n consumes Langflow output as a decision input",
+        "IF either agent is allowed to trigger external integrations based on the other's text output"
+      ],
+      "mitigations": [
+        "Insert a human approval step before external actions",
+        "Require schema validation on all inter-agent messages",
+        "Log and diff intermediate outputs before execution",
+        "Limit action nodes to read-only mode during testing",
+        "requires-engineering: add provenance and verification metadata"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles are open-source and docs-only, but they differ in retention and storage surfaces: Langflow stores per-flow credentials and server-side state, while n8n uses a per-credential store plus connected systems. If the same regulated data class flows through both, mismatched logging or retention policies can create compliance gaps. The other agent is cited because the mismatch arises from the pair\u2019s combined handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the pair processes regulated data with different retention settings",
+        "IF one system logs payloads that the other treats as secret"
+      ],
+      "mitigations": [
+        "Align retention settings across both systems",
+        "Disable verbose payload logging",
+        "Separate regulated workflows from general workflows",
+        "Review credential storage locations",
+        "requires-engineering: implement unified data-governance policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

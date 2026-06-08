@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_gemini-cli__n8n_b03f83",
+  "generated_at": "2026-06-08T02:20:18Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High risk of shared-filesystem prompt injection and cascading errors; n8n\u2019s workflow execution can amplify Gemini CLI outputs into unsafe actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Gemini CLI can read/write repo files and use MCP, while n8n can read/write the server filesystem and orchestrate workflows. That creates a plausible shared-file bridge where attacker-controlled content from one side can be consumed by the other as instructions. The pair is not isolated by default, so injection risk exists without unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI writes attacker-controlled text into a file that n8n later parses as workflow input, injection is possible.",
+        "IF n8n reads files from a shared directory without provenance checks, Gemini CLI content can steer execution."
+      ],
+      "mitigations": [
+        "Restrict both agents to separate directories.",
+        "Disable file-based handoff between the agents.",
+        "Add a provenance tag to any file exchanged between them.",
+        "Review any workflow step that parses free-form text.",
+        "requires-engineering: add content-signing or schema validation for inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Gemini CLI touches source code, cwd files, and shell environment; n8n processes whatever the workflow handles and can send data through many integrations. If they share a workspace or workflow input, sensitive files from Gemini CLI can flow into n8n outputs or third-party nodes. The profiles do not show a built-in isolation boundary that would block this by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF a shared directory contains secrets or source code and n8n ingests it, leakage can occur.",
+        "IF an n8n workflow forwards Gemini CLI output to an external integration node, data leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep secrets out of any shared workspace.",
+        "Use a dedicated n8n credential store, not files, for secrets.",
+        "Limit workflow inputs to allowlisted paths.",
+        "Turn off unnecessary integration nodes.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Gemini CLI explicitly shares state via filesystem and git while n8n shares state via its datastore and connected systems. If they operate on the same repo or directory, concurrent writes can corrupt files or git state. The profiles show no locking or coordination primitive, so conflict is a default hazard.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or directory, file clobbering can occur.",
+        "IF n8n workflow steps and Gemini CLI edits overlap in time, git state can become inconsistent."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes with a simple lock file.",
+        "Avoid concurrent git operations.",
+        "Run one agent at a time for shared repos.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is an orchestrator that can turn upstream text into actions across integrations, while Gemini CLI can generate code, commands, and file edits. If n8n treats Gemini CLI output as authoritative, a mistaken or malicious suggestion can cascade into emails, API calls, or server-side commands. The pair lacks a documented verification barrier in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflow steps consume Gemini CLI output without validation, downstream actions can be wrong or unsafe.",
+        "IF Gemini CLI emits shell commands that n8n executes via Execute Command, errors can propagate into server-side effects."
+      ],
+      "mitigations": [
+        "Insert a human approval step before actions.",
+        "Validate outputs against a schema.",
+        "Require explicit allowlists for commands and destinations.",
+        "Log and diff proposed actions before execution.",
+        "requires-engineering: add verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Gemini CLI handles source code and shell environment locally, while n8n processes arbitrary workflow data and can route it through many integrations. If regulated data is placed into n8n workflows, retention and residency can diverge from the local CLI handling model. The profiles do not document matching compliance controls, so mismatch is plausible and should be treated as medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data enters an n8n workflow with different retention settings than the local Gemini CLI session, compliance mismatch occurs.",
+        "IF a workflow sends EU or sensitive data to an integration with incompatible residency or logging, policy breach is possible."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows.",
+        "Review retention settings on n8n credentials and executions.",
+        "Use region-appropriate integrations only.",
+        "Purge execution logs after testing.",
+        "requires-engineering: document and enforce data-class routing rules."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MAP-2.2",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.6.1",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "flowise"
+  ],
+  "verdict_id": "v_2026-06-08_autogen__flowise_a5afec",
+  "generated_at": "2026-06-08T03:48:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.56,
+  "headline": "High: AutoGen\u2019s code-exec defaults plus Flowise\u2019s shared server workspace create dangerous write/confusion pathways; compliance and leakage risks are also present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can ingest tool outputs and execute code in a configurable local/Docker executor, while Flowise exposes files, uploaded files, and model/tool calls in chatflows. A shared filesystem or copied outputs can let attacker-controlled content from one side influence the other, but no direct default bridge is documented, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory or uploaded-file store, prompt injection becomes reachable through file content.",
+        "IF Flowise nodes pass AutoGen-generated text into downstream prompt templates without sanitization, instructions can be hijacked."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Disable file-based handoff between agents.",
+        "Add a strict allowlist for fields copied from one agent to the other.",
+        "Insert a human review step before any prompt is forwarded.",
+        "requires-engineering: add provenance tags to every inter-agent message."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen touches application data and model-provider API keys, and Flowise touches chatflow inputs/outputs plus uploaded files. Because both can read/write files and call external model providers, a shared workspace can leak sensitive content across the pair even without an explicit shared OAuth principal. The profiles do not prove default sharing, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the same filesystem path is mounted into both agents, files written by one can be read by the other.",
+        "IF either agent forwards file contents to a model provider, sensitive data in the shared workspace can leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate storage roots per agent.",
+        "Turn off automatic file upload/import in Flowise flows.",
+        "Restrict AutoGen to a Docker executor with a private volume.",
+        "Redact secrets before writing shared artifacts.",
+        "requires-engineering: enforce per-agent encryption keys for stored files."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGen has shell, subprocess, package-install, and filesystem write capabilities; Flowise has filesystem write and broad network egress. Both can mutate the same directory if deployed together, creating write races and inconsistent artifacts. There is no locking guarantee in either profile, so overlapping mutable access is a real default-pathway concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write into the same project or server directory, concurrent edits can clobber each other.",
+        "IF Flowise flows trigger AutoGen jobs that also write files, race conditions can corrupt outputs."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Disable concurrent writes to shared artifacts.",
+        "Serialize jobs with a simple queue.",
+        "Use read-only mounts for one agent.",
+        "requires-engineering: add file locks or transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen is a code-executing multi-agent framework, and Flowise is a graph-based flow builder that can route tool outputs into downstream nodes. If Flowise treats AutoGen output as authoritative, errors or fabricated facts can cascade into actions or further prompts without verification. That interaction is plausible in default deployments and can trigger irreversible downstream effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise nodes consume AutoGen output without a validation step, incorrect content propagates downstream.",
+        "IF downstream Flowise tools perform external actions based on AutoGen text, the cascade can become irreversible."
+      ],
+      "mitigations": [
+        "Add a verification node between agents.",
+        "Require structured schemas for all handoffs.",
+        "Block direct action tools until a human approves.",
+        "Log and diff every inter-agent payload.",
+        "requires-engineering: implement confidence scoring and rejection thresholds."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "AutoGen can handle model-provider API keys and application data, while Flowise handles chatflow inputs/outputs, uploaded files, and tool credentials. If EU PII or regulated data enters Flowise and is then processed by AutoGen through external model providers, retention and residency obligations may diverge. The profiles do not specify certifications or residency, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Flowise chatflows and then forwarded to AutoGen model providers, compliance obligations may be violated.",
+        "IF the two deployments have different retention settings, deletion/export requests can fail across the pair."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Align retention settings before use.",
+        "Disable logging of prompts and file contents.",
+        "Review vendor/data-processing terms.",
+        "requires-engineering: add policy-based routing by data class."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:cd02c65d50c344abf624256bb0b9be5054b3650cd67aad173b18f54013ef31cc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "gemini-cli"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__gemini-cli_c07c2b",
+  "generated_at": "2026-06-08T03:12:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad write/network defaults create prompt-injection, leakage, and cascading-error risks between Flowise and Gemini CLI.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and uploaded files, while Gemini CLI reads/writes repo files and user-provided directories and can use MCP. If Flowise outputs are placed in a shared workspace, Gemini CLI may treat attacker-controlled content as instructions. The pair lacks a documented provenance barrier in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes agent outputs into a directory Gemini CLI reads",
+        "IF Gemini CLI parses those files as instructions or tool directives"
+      ],
+      "mitigations": [
+        "Use separate directories for Flowise and Gemini CLI outputs",
+        "Disable automatic ingestion of Flowise-generated files into Gemini CLI prompts",
+        "Add a manual review step before Gemini CLI consumes any Flowise artifact",
+        "requires-engineering: add provenance tags to shared files",
+        "requires-engineering: isolate the agents with separate containers or workspaces"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem access, and both touch files in shared workspaces by default. Flowise handles chatflow inputs/outputs and tool credentials; Gemini CLI handles source code, cwd files, and shell environment. That creates a plausible path for sensitive data to flow from one agent\u2019s workspace into the other\u2019s outputs or API calls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Flowise chatflow outputs contain secrets or sensitive inputs",
+        "IF Gemini CLI is pointed at the same filesystem tree or copied artifacts"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories",
+        "Rotate or redact credentials before passing files between agents",
+        "Run each agent in a separate workspace",
+        "Restrict outbound network access for one agent during handoff",
+        "requires-engineering: enforce per-agent data-loss-prevention filters"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Flowise has write_filesystem and shared state via server datastore; Gemini CLI has write_filesystem, modify_git_state, and shared state via filesystem and git only. In a shared repo or workspace, both can mutate the same files and git state without any locking mechanism shown in the profiles, so concurrent writes can corrupt work or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or git repository",
+        "IF writes occur concurrently or without external locking"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Pause one agent while the other writes git state",
+        "Use a lock file around shared edits",
+        "Review and merge changes manually before commit",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based agent flow builder whose outputs can become downstream inputs, while Gemini CLI can act on files and shell commands. If Gemini CLI consumes Flowise-produced artifacts without verification, mistaken or malicious content can cascade into code changes, file edits, or other actions. The profiles do not show a default verification barrier.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI uses Flowise-generated text, plans, or files as authoritative input",
+        "IF Gemini CLI then executes shell or file actions based on that input"
+      ],
+      "mitigations": [
+        "Require human review of Flowise outputs before Gemini CLI acts",
+        "Add a validation step that checks Flowise artifacts against source data",
+        "Limit Gemini CLI to read-only mode for the handoff",
+        "Use explicit schemas for exchanged messages",
+        "requires-engineering: implement signed or hashed handoff artifacts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and tool credentials, while Gemini CLI touches source code, cwd files, and shell environment. If regulated data or secrets are placed into shared workspaces, the pair can create retention or residency mismatches through logs, files, or API calls. The profiles do not document aligned compliance controls, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed in either agent",
+        "IF logs or retained files are shared across the two workspaces"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared files",
+        "Delete temporary artifacts after each run",
+        "Review logging settings for both agents",
+        "Separate environments by data class",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:08f5c3e646cc24f5d5f3556a847bff970229f143c1a38475c832f7f6d18e0d6e",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

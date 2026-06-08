@@ -1,0 +1,200 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "crewai"
+  ],
+  "verdict_id": "v_2026-06-08_cline__crewai_8db176",
+  "generated_at": "2026-06-08T04:45:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.59,
+  "headline": "High: shared filesystem and broad write/network tools make prompt injection, data leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline can read/write workspace files and use MCP, while CrewAI can read/write its working directory and accepts developer-defined tool integrations. That creates a plausible file-based or tool-output bridge where one agent\u2019s content can be treated as instructions by the other. The shared filesystem path is documented for both, so this is not speculative.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or exchanged files are parsed as instructions, injection becomes active.",
+        "IF CrewAI tools ingest Cline-generated text without provenance checks, malicious instructions can propagate."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable automatic parsing of agent-generated files as prompts.",
+        "Add a provenance header and reject untrusted instruction blocks.",
+        "Require human review before any tool call triggered by file content.",
+        "requires-engineering: add content-sanitization and provenance tracking between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files in their respective working areas, and Cline explicitly handles model-provider API keys while CrewAI handles API keys for tools and model providers. If they share a workspace or credentials store, sensitive source code or secrets can flow from one agent to the other and then out via broad network egress. The profiles show a real shared-file risk, not a blocked one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the agents share a directory containing secrets or source code, both can access it.",
+        "IF either agent forwards file contents to its model provider or external tools, leakage can occur."
+      ],
+      "mitigations": [
+        "Use separate, least-privilege directories.",
+        "Remove secrets from shared folders before running either agent.",
+        "Rotate any exposed API keys immediately.",
+        "Restrict outbound network access for test runs.",
+        "requires-engineering: enforce secret-scanning and redaction at the workspace boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Cline also modifies git state, while CrewAI can run code in subprocesses and uses developer-defined shared memory. In a shared repo or working tree, concurrent writes and git mutations can overwrite each other or corrupt state, matching the high-risk overlap pattern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout, concurrent commits or file edits can conflict.",
+        "IF either agent writes generated artifacts while the other rewrites them, state corruption is possible."
+      ],
+      "mitigations": [
+        "Run each agent in a separate checkout.",
+        "Serialize write access with a lock file.",
+        "Disable git mutations for one agent during shared runs.",
+        "Review diffs before applying either agent\u2019s changes.",
+        "requires-engineering: add orchestrator-level concurrency control and merge conflict handling."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI\u2019s role-playing crew can consume developer-provided outputs as task inputs, and Cline can generate code, browser-derived facts, and file edits. If CrewAI treats Cline\u2019s output as authoritative, errors or hallucinations can cascade into downstream actions or code changes. Because both agents have tool execution and network access, the blast radius can extend beyond a single document.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI uses Cline-produced text as task instructions or facts without verification, errors propagate.",
+        "IF either agent acts on browser-derived claims from the other, downstream mistakes can be executed."
+      ],
+      "mitigations": [
+        "Require explicit verification before reuse of outputs.",
+        "Keep a human approval step for any action based on the other agent\u2019s text.",
+        "Tag outputs as untrusted until checked against source material.",
+        "Limit one agent to drafting and the other to review only.",
+        "requires-engineering: add structured citations and validation gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated-data certifications or residency constraints, so no specific compliance breach is proven. However, both handle API keys and can move files over broad network egress, so a compliance mismatch could arise if regulated data is introduced. The evidence is insufficient to escalate beyond low, and the other agent is cited because the risk is pairwise.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, compliance review is required.",
+        "IF either agent is configured to send that data to a non-approved provider, a policy breach occurs."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both workspaces.",
+        "Use approved providers only.",
+        "Document retention and deletion settings.",
+        "Review outbound destinations before each run.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-5.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:52bc459e0a34a4e3cedc6c8caa4c45906efe0c9588579344983feb1684ab2056",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__mentat_b7bfff",
+  "generated_at": "2026-06-08T03:00:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.65,
+  "headline": "High: shared filesystem and broad egress create default data-leak and cascading-error risks between Flowise and Mentat.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and run browser/tool flows, while Mentat reads/writes files and uses stdin/stdout with filesystem-shared state. That creates a plausible content-bridging path where attacker-controlled text from one can be treated as instructions by the other. The pathway is not proven by docs, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes untrusted content into a shared workspace that Mentat later reads",
+        "IF Mentat parses Flowise-generated text as instructions or code edits without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable automatic ingestion of shared files",
+        "Add a provenance prefix to all inter-agent artifacts",
+        "Require manual review before Mentat applies any Flowise-produced text",
+        "requires-engineering: add content-sanitization and provenance tracking"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Flowise touches chatflow inputs/outputs and uploaded files on the server filesystem, and Mentat touches source code in selected files via filesystem access. Because both have broad network egress and shared-state paths, sensitive code or chatflow data can leak across the pair in default deployments. The blast radius includes secrets and source material, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or datastore",
+        "IF either agent forwards file contents to its model provider or external tools"
+      ],
+      "mitigations": [
+        "Use separate directories and credentials",
+        "Restrict outbound network destinations",
+        "Redact secrets before either agent reads shared files",
+        "Turn off uploads for Flowise flows handling sensitive inputs",
+        "requires-engineering: enforce per-agent storage isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Flowise can write the server filesystem and shares state via a server datastore; Mentat can write the filesystem and shares state via filesystem. Even without git overlap, concurrent writes to the same mutable workspace can clobber each other or produce inconsistent artifacts. The conflict is plausible in default multi-instance setups, but not enough evidence for high because git locking overlap is not shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or datastore during one run",
+        "IF the orchestrator does not serialize writes or lock files"
+      ],
+      "mitigations": [
+        "Assign disjoint output paths",
+        "Run only one writer at a time",
+        "Enable file locking in the orchestrator",
+        "Snapshot work before each agent writes",
+        "requires-engineering: add transactional coordination for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based agent flow builder whose outputs can become downstream tool inputs, while Mentat proposes diffs and edits based on file content. If Mentat consumes Flowise-produced text as authoritative, an error or hallucination can cascade into incorrect code changes or actions. Because the pair lacks a documented verification boundary, the safer higher severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Mentat uses Flowise output as an edit specification without independent verification",
+        "IF Flowise-generated facts are copied into files that Mentat then edits"
+      ],
+      "mitigations": [
+        "Require a human approval step between agents",
+        "Add schema validation for Flowise outputs",
+        "Have Mentat diff against source-of-truth files only",
+        "Mark Flowise outputs as untrusted by default",
+        "requires-engineering: implement verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise handles chatflow inputs/outputs and tool credentials, while Mentat handles source code in selected files. If regulated data or secrets are placed into the shared workflow, the pair can create retention and residency mismatches because Flowise stores server-side artifacts and Mentat operates on local files. The profiles do not specify certifications, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through Flowise chatflows and then written into files Mentat edits",
+        "IF retention or deletion requirements differ between the server datastore and local workspace"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Set short retention on Flowise artifacts",
+        "Delete temporary files after each session",
+        "Keep secrets out of editable source files",
+        "requires-engineering: document and enforce retention/residency policy"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

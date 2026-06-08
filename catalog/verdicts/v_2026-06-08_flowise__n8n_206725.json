@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__n8n_206725",
+  "generated_at": "2026-06-08T02:02:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High: Flowise and n8n both write shared server-side state, broad egress, and unverified handoff paths create prompt-injection, leakage, and cascading-action risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and uses graph-based tool flows; n8n can also read/write server filesystem and orchestrate tools as workflow nodes. A shared filesystem or datastore handoff can let attacker-controlled content from one agent be treated as instructions by the other, though no direct clipboard/MCP bridge is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes untrusted content into a shared file or datastore that n8n later parses as workflow instructions",
+        "IF n8n ingests Flowise-generated text without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct workspaces",
+        "Add provenance tags to all exchanged files",
+        "Disable automatic parsing of shared text as instructions",
+        "Review any file-based handoff before execution"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Flowise handles model provider keys and tool credentials, while n8n stores per-credential secrets and can call many integration nodes. Both have broad network egress and filesystem access, so a shared workspace or connected system can expose secrets or workflow data to the other and onward to third parties.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent stores secrets or sensitive workflow data in a shared filesystem",
+        "IF n8n integration nodes transmit Flowise-produced files or context to external services"
+      ],
+      "mitigations": [
+        "Store secrets in separate credential stores",
+        "Restrict shared folders to non-sensitive artifacts",
+        "Turn off automatic file uploads in workflows",
+        "Rotate any credentials exposed in shared outputs",
+        "requires-engineering: add per-agent data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the server filesystem and run concurrently with shared state via server datastore or connected systems. That creates a direct write-write conflict surface, and n8n additionally has Execute Command on the server, increasing the chance of clobbering or racing Flowise-managed files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or datastore without locking",
+        "IF n8n Execute Command modifies files that Flowise also writes"
+      ],
+      "mitigations": [
+        "Assign disjoint write directories",
+        "Enable file locks or transactional writes",
+        "Disable Execute Command for shared paths",
+        "Serialize jobs touching the same datastore",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise produces graph-based outputs and tool calls that n8n can consume as workflow inputs. Because n8n can execute commands and invoke many integrations, treating Flowise output as authoritative can turn a mistaken or injected output into real downstream actions without a verification step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses Flowise output directly as an action payload",
+        "IF no human or schema verification occurs between Flowise generation and n8n execution"
+      ],
+      "mitigations": [
+        "Insert a validation step before execution",
+        "Require human approval for destructive actions",
+        "Constrain n8n to read-only test workflows",
+        "Use schema checks on Flowise outputs",
+        "requires-engineering: add signed handoff contracts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles are open-source and docs-only, but Flowise touches chatflow inputs/outputs while n8n processes whatever the workflow handles. If regulated data enters both, differing retention, logging, or residency settings across the two systems can create a compliance mismatch; the profiles do not prove a specific violation, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both systems",
+        "IF their logging or retention settings differ for the same data class"
+      ],
+      "mitigations": [
+        "Document data classes per workflow",
+        "Align retention settings across both systems",
+        "Disable verbose logs for sensitive runs",
+        "Review residency settings before deployment",
+        "requires-engineering: implement policy enforcement across both stacks"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

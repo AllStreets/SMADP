@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "github-copilot"
+  ],
+  "verdict_id": "v_2026-06-08_crewai__github-copilot_6649c0",
+  "generated_at": "2026-06-08T03:54:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.5,
+  "headline": "High: shared filesystem and overlapping write access make prompt injection, data leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory among subagents; GitHub Copilot reads repo context and editor buffers. If CrewAI writes attacker-controlled text into files that Copilot later ingests, instructions can be smuggled through the shared workspace. This is plausible in default developer setups, though not guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted content into the shared working directory and Copilot opens that file as repo context, prompt injection is possible.",
+        "IF Copilot Workspace or chat consumes file text without provenance filtering, injected instructions can influence downstream actions."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Disable automatic ingestion of newly written files into Copilot context.",
+        "Require human review before Copilot Workspace applies edits.",
+        "Use a provenance tag or allowlist for files CrewAI may write.",
+        "requires-engineering: add content sanitization between CrewAI outputs and Copilot inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI touches developer-passed crew data and has broad network egress; Copilot reads repo context and open buffers and sends requests to api.githubcopilot.com. A shared workspace can expose sensitive files to both, and Copilot may transmit that context to a third-party backend. The pair therefore creates a realistic leakage path in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF sensitive data is present in the shared working directory or editor buffers, both agents can access it.",
+        "IF Copilot ingests that context, the data may be sent to api.githubcopilot.com."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared repo and buffers.",
+        "Use a separate workspace for CrewAI outputs.",
+        "Redact sensitive files before opening them in Copilot.",
+        "Restrict CrewAI tool outputs to non-sensitive paths.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "CrewAI can write the host working directory, and Copilot Workspace can apply edits while Copilot also writes editor buffers/repo context. Both therefore have overlapping write access to mutable code state, while CrewAI lacks built-in isolation by default. This can cause conflicting edits or state corruption even without shell access from Copilot.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same files in the same workspace, last-writer-wins conflicts can occur.",
+        "IF Copilot Workspace applies edits while CrewAI is also modifying files, state divergence is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch or directory.",
+        "Pause one agent while the other writes.",
+        "Review diffs before merging outputs.",
+        "Avoid concurrent edits to the same files.",
+        "requires-engineering: add file-locking or transactional merge coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI can generate tool outputs and file changes that Copilot reads as repo context or open buffers. Copilot Workspace can then propose or apply edits based on those inputs, so one agent\u2019s output can become the other\u2019s authoritative input without a verification gate. That creates a realistic chain of propagated mistakes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Copilot consumes CrewAI-produced files as context without independent verification, errors can cascade.",
+        "IF CrewAI writes incorrect code or notes into the workspace, Copilot may amplify them into edits."
+      ],
+      "mitigations": [
+        "Require a human review step between agents.",
+        "Mark CrewAI outputs as untrusted in the workspace.",
+        "Use tests or lint checks before Copilot applies edits.",
+        "Limit Copilot to suggestions only, not auto-apply.",
+        "requires-engineering: add verification checkpoints between agent stages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI is open-source and developer-wrapped, while Copilot is a closed-source GitHub service that sends context to api.githubcopilot.com and uses a GitHub repo OAuth scope. If EU PII or regulated data is placed in the shared workspace, it can flow from a local orchestration environment into a vendor service with different retention and residency characteristics. The profiles do not prove a specific legal breach, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in repo context or editor buffers, Copilot may process it through GitHub services.",
+        "IF the deployment requires residency or retention guarantees not provided by GitHub Copilot, a compliance mismatch exists."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Use a non-regulated sample repo for Copilot-assisted work.",
+        "Review GitHub Copilot data handling settings.",
+        "Restrict CrewAI to synthetic or anonymized inputs.",
+        "requires-engineering: obtain and document a DPA/residency review."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:ed694f0fd15b098cd18e7bc4e802e96682f41ee8cb7ce9dd8f50d4bb505261df",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

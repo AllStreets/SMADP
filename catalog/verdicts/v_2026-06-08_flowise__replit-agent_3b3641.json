@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-08_flowise__replit-agent_3b3641",
+  "generated_at": "2026-06-08T03:30:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: shared filesystem plus broad write/network access creates prompt-injection, data-leakage, and cascading-action risk between Flowise and Replit Agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write files and its flows can ingest uploaded files; Replit Agent can read/write the Repl filesystem and act on code or content in that workspace. If Flowise outputs attacker-controlled text into a shared file, Replit Agent may parse it as instructions. This is not proven by docs as a default bridge, so uncertainty keeps it at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes untrusted content into a file that Replit Agent later reads as task input, injection is possible.",
+        "IF both agents are pointed at the same workspace directory, the attack path exists."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Prefix shared files with a strict schema and reject free-form instructions.",
+        "Add a manual review step before Replit Agent consumes Flowise outputs.",
+        "Disable file-based handoff and use explicit structured JSON only.",
+        "requires-engineering: add provenance tags and content filtering at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Flowise touches chatflow inputs/outputs and secrets, while Replit Agent touches source code, secrets, and deployment configuration. Both have broad network egress and filesystem access, so sensitive material can move from one agent\u2019s workspace into the other\u2019s outputs or remote calls. The shared filesystem and secret-bearing data classes make leakage plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent is given secrets or deployment config in a shared workspace, leakage risk is present.",
+        "IF Flowise or Replit Agent forwards file contents to external APIs, sensitive data can exit the pair."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared files.",
+        "Store credentials in separate secret managers per agent.",
+        "Restrict outbound domains for both agents.",
+        "Review all file uploads before either agent reads them.",
+        "requires-engineering: enforce per-agent workspace isolation and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, and Replit Agent can also modify git state while Flowise runs graph-based flows with server-datastore shared state. If they operate on the same repo or directory, concurrent writes can overwrite each other or corrupt state. Because the profiles explicitly show overlapping mutable surfaces, this is a default-dangerous conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or workspace, write conflicts can occur.",
+        "IF Replit Agent commits while Flowise writes generated artifacts, git and file state can diverge."
+      ],
+      "mitigations": [
+        "Assign each agent a separate workspace.",
+        "Serialize writes with a lock file.",
+        "Disable git writes for one agent during shared runs.",
+        "Use branch-per-agent workflows.",
+        "requires-engineering: add orchestrator-level concurrency control and conflict detection."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise is a multi-agent orchestration layer that can emit tool-driven outputs, and Replit Agent can act on code and deployment changes. If Replit Agent treats Flowise output as authoritative, a mistaken or malicious Flowise result can cascade into code edits or deployment actions. The profiles show the pathway, but not a guaranteed default trust chain, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Replit Agent consumes Flowise-generated instructions without verification, errors can cascade.",
+        "IF Flowise produces incorrect facts or tool calls that Replit Agent executes, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require human approval before execution.",
+        "Validate Flowise outputs against a schema.",
+        "Add a second-pass verifier before code changes.",
+        "Limit Replit Agent to dry-run mode for shared tasks.",
+        "requires-engineering: implement provenance-aware gating between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise handles chatflow inputs/outputs and tool credentials, while Replit Agent handles source code, secrets, and deployment configuration. Their retention and residency policies are not documented here, so a mismatch could expose regulated data across services. Because the profiles do not prove a specific violation, medium is the highest justified severity under uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in both agents and their retention policies differ, compliance risk exists.",
+        "IF EU or PHI data is placed into either agent without a matching DPA or residency control, a breach may occur."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces.",
+        "Confirm retention settings for both services.",
+        "Document data residency for each workflow.",
+        "Delete temporary artifacts after each run.",
+        "requires-engineering: obtain and enforce contractual/compliance controls before production use."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

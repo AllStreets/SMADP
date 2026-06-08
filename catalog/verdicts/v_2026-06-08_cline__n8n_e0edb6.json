@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-08_cline__n8n_e0edb6",
+  "generated_at": "2026-06-08T02:08:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-workspace write conflicts and medium prompt-injection/data-leakage exposure between Cline and n8n; compliance risk is lower but nontrivial.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline can read workspace files and use MCP, while n8n can write server files and process workflow inputs. That creates a plausible content-bridging path where attacker-controlled text from one side is treated as trusted by the other. The pair lacks explicit provenance tracking or isolation in the profiles, so uncertainty does not justify lowering severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Cline ingests n8n-generated files or MCP payloads as instructions, injection is possible.",
+        "IF n8n workflows read Cline-authored workspace content without provenance checks, malicious instructions can propagate."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all handoffs between workspace files and workflows.",
+        "Restrict Cline to a dedicated subdirectory for shared artifacts.",
+        "Disable MCP endpoints that can write executable workflow inputs.",
+        "Review any file-based handoff before n8n consumes it.",
+        "requires-engineering: add content-signing or schema validation at the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem read access, and Cline touches source code while n8n processes whatever the workflow handles. Shared or copied files can therefore expose sensitive code or workflow data to the other agent\u2019s outputs or upstream APIs. The profiles do not show a hard isolation boundary, so this is a default-pathway concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or datastore, file contents can leak across the pair.",
+        "IF n8n workflows send processed content to external integrations, data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate Cline and n8n into different workspaces or volumes.",
+        "Limit n8n credentials to the minimum workflow scope.",
+        "Avoid placing secrets in shared files.",
+        "Turn off automatic export of workflow inputs to external nodes.",
+        "requires-engineering: add DLP or redaction at the handoff boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cline and n8n both have filesystem write and shell execution, and both share state via filesystem or connected systems. In default configurations, concurrent writes can collide on files, git state, or workflow artifacts, and neither profile shows locking. Because the blast radius can include corrupted repos or broken automations, the higher severity is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or directory, file clobbering can occur.",
+        "IF n8n Execute Command and Cline act on the same git checkout, state corruption is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Serialize writes with a simple operator-run lock file.",
+        "Disable n8n Execute Command on shared repos.",
+        "Have Cline commit only after manual review.",
+        "requires-engineering: add transactional locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "n8n is an orchestrator that can act on tool outputs, while Cline can generate code, browser-derived facts, and file edits. If n8n consumes Cline output without verification, mistakes or hallucinations can cascade into automated actions. The profiles show an interaction pathway, but not enough to justify high severity because explicit downstream actions are workflow-dependent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows treat Cline output as authoritative, incorrect facts can trigger downstream actions.",
+        "IF Cline-generated code is executed by n8n without review, errors can propagate."
+      ],
+      "mitigations": [
+        "Insert a human approval step before n8n acts on Cline output.",
+        "Require schema validation on all Cline-to-n8n handoffs.",
+        "Log and diff generated artifacts before execution.",
+        "Use a second verifier agent for critical steps.",
+        "requires-engineering: add automated fact-checking or policy gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not specify a residency or certification mismatch, so there is no documented hard compliance conflict. However, n8n\u2019s broad integration surface and per-credential server storage can create retention or jurisdiction issues if sensitive data is routed through workflows, while Cline also handles model-provider API keys. The risk is present but not inherent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF workflows route regulated data through external integrations, residency or retention obligations may be implicated.",
+        "IF credentials are stored in n8n and reused across jurisdictions, policy mismatch can arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of n8n workflows.",
+        "Use region-appropriate integrations only.",
+        "Rotate and scope credentials narrowly.",
+        "Set short retention on workflow logs.",
+        "requires-engineering: document a data-processing agreement and residency map."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
