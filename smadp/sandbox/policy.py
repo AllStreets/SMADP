@@ -94,7 +94,14 @@ def assert_safe_secrets(env: dict[str, str]) -> None:
 # Image allowlist
 # ---------------------------------------------------------------------------
 
-_IMAGE_DIGEST_RE = re.compile(r"^[a-z0-9./_-]+(?::[a-zA-Z0-9._-]+)?@sha256:[0-9a-f]{64}$")
+# Two accepted forms:
+#   1. Registry-pull form:  <name>[:tag]@sha256:<64hex>   — pinned upstream
+#   2. Local-build form:    sha256:<64hex>                — docker image ID
+# Both let docker resolve a specific immutable image; the latter is for images
+# built locally that we can't tag with a registry digest.
+_IMAGE_DIGEST_RE = re.compile(
+    r"^(?:[a-z0-9./_-]+(?::[a-zA-Z0-9._-]+)?@sha256:[0-9a-f]{64}|sha256:[0-9a-f]{64})$"
+)
 
 _APPROVED_IMAGES_PATH: Final[Path] = Path(__file__).with_name("approved_images.json")
 

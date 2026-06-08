@@ -33,3 +33,8 @@ smadp sandbox work --once --max 3
 # size so each launchd invocation is bounded (~10-30s of LLM work) and the
 # daily run cap (runs_per_day in config/autopilot.yaml) is respected.
 smadp autopilot docs-only-tick --batch-size 3
+
+# Scaffold tick: turn enriched docs-only profiles into Dockerfile + mcp.json
+# adapters. Small batch so each fire is bounded; the skip-attempted list in
+# state/scaffold_tick.jsonl ensures already-tried slugs aren't retried.
+smadp autopilot scaffold-tick --batch-size 3

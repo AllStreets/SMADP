@@ -67,13 +67,21 @@ class GithubMetadataLanguageDetector:
                 f"https://api.github.com/repos/{owner}/{repo}",
                 headers=headers,
                 timeout=15.0,
+                follow_redirects=True,
             )
         except httpx.HTTPError as exc:
             log.warning("language_detector.transport_error", error=repr(exc))
             return Language.UNSUPPORTED
         if not (200 <= meta_resp.status_code < 300):
             return Language.UNSUPPORTED
-        branch = (meta_resp.json() or {}).get("default_branch") or "main"
+        meta = meta_resp.json() or {}
+        # Resolve repo renames: GitHub returns 301 with the new full_name and
+        # follow_redirects walks us there. Use the canonical owner/repo for
+        # subsequent contents probes so they don't 404 against the old path.
+        full_name = meta.get("full_name") or f"{owner}/{repo}"
+        if "/" in full_name:
+            owner, _, repo = full_name.partition("/")
+        branch = meta.get("default_branch") or "main"
 
         # First pass: probe at the repo root. Covers the common single-package
         # case (~80% of agents).
@@ -119,8 +127,11 @@ class GithubMetadataLanguageDetector:
         out.append(repo)
         if repo_lower != repo:
             out.append(repo_lower)
-        # Bare classic/ — AutoGPT-style legacy moved to a sibling.
-        out.append("classic")
+        # Bare role-named dirs that frequently contain the runnable manifest.
+        # `backend` matches aci-style fullstack repos; `server` is the older
+        # equivalent. `core` and `api` appear in many monorepos. Order: probe
+        # the agent-runtime-y names first so we hit the right manifest fast.
+        out.extend(["classic", "backend", "server", "core", "api", "app", "cli"])
         return out
 
     def _probe_at(
@@ -141,6 +152,7 @@ class GithubMetadataLanguageDetector:
                     headers=headers,
                     params={"ref": branch},
                     timeout=15.0,
+                    follow_redirects=True,
                 )
             except httpx.HTTPError as exc:
                 log.warning("language_detector.transport_error", error=repr(exc))

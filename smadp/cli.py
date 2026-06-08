@@ -863,6 +863,108 @@ def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
     click.echo(f"published={summary.published} failed={summary.failed} reason={summary.reason}")
 
 
+@autopilot.command("scaffold-tick")
+@click.option("--batch-size", default=5, type=int)
+@click.pass_context
+def autopilot_scaffold_tick(ctx: click.Context, batch_size: int) -> None:
+    """Pick top-scored not-yet-scaffolded docs-only profiles and scaffold each.
+
+    One per fire: keeps per-tick wall-time bounded and respects the anonymous
+    GitHub API budget. Writes one JSONL row per attempt to
+    ``state/scaffold_tick.jsonl`` for audit.
+    """
+    import json as _json
+    import os as _os
+    from datetime import datetime as _dt
+
+    from smadp.autopilot.scaffolders.language_detector import GithubMetadataLanguageDetector
+    from smadp.autopilot.scaffolders.mcp_adapter import MCPAdapterScaffolder
+
+    config = ctx.obj["config"]
+    profiles_dir = config.repo_root / "catalog" / "profiles"
+    adapters_dir = config.repo_root / "adapters"
+    log_path = config.repo_root / "state" / "scaffold_tick.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Auto-load .env so manual runs see GITHUB_TOKEN without the user having
+    # to `set -a; source .env`. The launchd loop already sources it; this
+    # keeps the CLI symmetric.
+    env_path = config.repo_root / ".env"
+    if env_path.exists():
+        for raw in env_path.read_text("utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            _os.environ.setdefault(k, v)
+
+    already: set[str] = {p.name for p in adapters_dir.iterdir() if p.is_dir()}
+    # Also skip slugs we've already attempted (success or failure) so failed
+    # ones don't re-burn budget every 300s. Delete the row to force a retry.
+    if log_path.exists():
+        for line in log_path.read_text("utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            attempted_slug = row.get("slug")
+            if isinstance(attempted_slug, str):
+                already.add(attempted_slug)
+
+    candidates: list[tuple[float, str, dict[str, Any]]] = []
+    for p in profiles_dir.glob("*.json"):
+        try:
+            profile = _json.loads(p.read_text("utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            continue
+        if profile.get("evidence_level") != "docs-only":
+            continue
+        slug = profile.get("slug") or p.stem
+        if slug in already:
+            continue
+        onexus = profile.get("onexus") or {}
+        if not onexus.get("source_github"):
+            continue
+        score = float(profile.get("composite_score") or 0)
+        candidates.append((score, slug, profile))
+    candidates.sort(key=lambda t: t[0], reverse=True)
+
+    token = _os.environ.get("GITHUB_TOKEN")
+    detector = GithubMetadataLanguageDetector(token=token)
+
+    def _resolve_pin(github_source: str) -> str:
+        return "HEAD"
+
+    scaffolder = MCPAdapterScaffolder(detector=detector, commit_pin_resolver=_resolve_pin)
+
+    attempted = 0
+    succeeded = 0
+    for _, slug, profile in candidates[:batch_size]:
+        target_dir = adapters_dir / slug
+        result = scaffolder.scaffold(profile, target_dir=target_dir)
+        row = {
+            "ts": _dt.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "slug": slug,
+            "success": result.success,
+            "reason": result.reason,
+        }
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(_json.dumps(row) + "\n")
+        attempted += 1
+        if result.success:
+            succeeded += 1
+
+    click.echo(
+        f"scaffold-tick attempted={attempted} succeeded={succeeded} "
+        f"queue_remaining={max(0, len(candidates) - attempted)}"
+    )
+
+
 @autopilot.command("pair-gate-plan")
 @click.option("--top-n", default=100, type=int)
 @click.option("--pair-cap", default=4950, type=int)
