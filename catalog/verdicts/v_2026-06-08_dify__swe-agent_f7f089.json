@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dify",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_dify__swe-agent_f7f089",
+  "generated_at": "2026-06-08T05:32:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: shared Dify datastore plus broad write/egress and SWE-agent\u2019s root-in-Docker create dangerous default interaction risks for leakage, conflicts, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dify can share state via its server datastore and ingests uploaded knowledge-base files, while SWE-agent reads/writes files inside its Docker sandbox and consumes model-provider outputs. That creates a plausible content-to-instructions bridge if one agent\u2019s output is copied into the other\u2019s workspace. No direct shared channel is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Dify outputs are copied into SWE-agent task files or prompts, injection becomes plausible.",
+        "IF a shared datastore or file bridge is enabled between the two agents, the risk increases."
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces.",
+        "Disable any automatic copy/paste or file-sync bridge.",
+        "Strip instructions from Dify outputs before feeding them to SWE-agent.",
+        "Use a fixed prompt template for SWE-agent inputs.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dify touches conversation logs, knowledge-base content, and secrets, and it has broad network egress. SWE-agent touches repository code and also has broad egress plus GitHub tokens in issue mode. If they share the Dify datastore or a workspace, sensitive content can flow from A into B\u2019s outputs or external calls. The profiles do not prove a shared OS workspace, so medium is the highest justified severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or datastore, leakage becomes direct.",
+        "IF SWE-agent is run with issue-mode GitHub tokens, repository content may be exfiltrated through external API calls."
+      ],
+      "mitigations": [
+        "Separate credentials for each agent.",
+        "Run each agent in a distinct workspace.",
+        "Remove secrets from Dify knowledge-base uploads.",
+        "Disable issue mode unless needed.",
+        "requires-engineering: enforce per-agent egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Dify explicitly shares state via a server datastore while SWE-agent uses per-task containers. If they are pointed at the same mutable directory or git checkout, concurrent writes can race and corrupt state; Dify\u2019s shared datastore makes cross-instance interference more plausible. Because the profiles do not show locking, uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering can occur.",
+        "IF SWE-agent is given a git checkout that Dify also mutates, repository state can diverge or corrupt."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Avoid concurrent runs on the same git checkout.",
+        "Serialize write access with a simple operator lock.",
+        "Snapshot the workspace before starting both agents.",
+        "requires-engineering: add filesystem-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dify can produce agent/workflow outputs that SWE-agent may treat as task context, and SWE-agent can then act on them with shell and filesystem authority. That is a classic unverified-output-to-action chain. The profiles do not show an explicit verification step between them, but they also do not prove full automation, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Dify-generated instructions without human review, errors can cascade into actions.",
+        "IF Dify is used to summarize facts for SWE-agent, incorrect summaries can be operationalized."
+      ],
+      "mitigations": [
+        "Require human review before SWE-agent acts on Dify output.",
+        "Pass only structured, minimal fields between agents.",
+        "Add a verification checklist for any Dify-generated task.",
+        "Log source provenance for each instruction.",
+        "requires-engineering: implement schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dify explicitly handles conversation logs, knowledge-base content, and secrets, while SWE-agent handles repository code and GitHub tokens. If regulated or sensitive data is placed into Dify and then routed to SWE-agent, retention and residency obligations can diverge across the two systems. The profiles do not specify a concrete jurisdiction mismatch, so medium is the safest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is uploaded into Dify and then copied into SWE-agent, policy mismatch may occur.",
+        "IF either deployment has stricter retention than the other, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either agent.",
+        "Align retention settings before use.",
+        "Document which data class each agent may process.",
+        "Purge logs after each task.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8c782248ac5e7e08a7d484c4982111530a1ef43c53069ff5d1cf1c462f67ba8a",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

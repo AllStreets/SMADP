@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-08_cline__langgraph_f38719",
+  "generated_at": "2026-06-08T04:57:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.59,
+  "headline": "High-risk shared-workspace and output-chaining between Cline and LangGraph can cause prompt injection, data leakage, and cascading errors by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline reads and writes workspace files and can use MCP, while LangGraph can pass application-defined state through nodes. That creates a plausible content-to-instructions bridge if one agent consumes the other's files or graph state as trusted input. The pathway is not proven universal, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Cline reads a file produced by LangGraph as instructions without provenance checks, injection is possible.",
+        "IF LangGraph ingests Cline-authored workspace content into a node prompt, attacker-controlled text can steer tool use."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all cross-agent files and reject untagged inputs.",
+        "Separate the agents into different workspaces for a quick test run.",
+        "Disable MCP endpoints that accept free-form text until reviewed.",
+        "Require a human approval step before either agent executes tool calls from the other's output."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem access, and Cline explicitly touches source code and browser screenshots while LangGraph handles application-defined graph state. If they share a workspace or checkpointer-backed state, sensitive content can flow from one agent into the other's outputs or backend calls. The shared-state pathway is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or checkpointer store, data can cross between them.",
+        "IF either agent forwards its context to a model provider, shared sensitive content may leave the local environment."
+      ],
+      "mitigations": [
+        "Use separate workspaces and separate checkpointer namespaces.",
+        "Remove secrets and screenshots from shared folders before running both agents.",
+        "Turn off network egress for one agent during a dry run.",
+        "Limit each agent to a least-privilege service account or API key."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cline can write the filesystem and modify git state, and LangGraph can also write the filesystem with developer-defined tools. Because both support multiple instances and Cline shares state via filesystem while LangGraph shares via a checkpointer store, concurrent writes can collide on the same mutable resources. That makes destructive conflicts plausible in default pairings.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git repository, commits or working-tree edits can race.",
+        "IF LangGraph tools write into the same directory Cline edits, file clobbering can occur."
+      ],
+      "mitigations": [
+        "Run each agent in a separate clone or directory.",
+        "Serialize write access with a simple lock file.",
+        "Disable git-writing tools for one agent during shared runs.",
+        "Use branch-per-agent and merge manually after review.",
+        "requires-engineering: add orchestrator-level optimistic concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is an orchestration layer whose nodes may be agents, so it can easily treat Cline's output as authoritative if the developer wires it that way. Cline can generate code, browser-derived facts, and tool outputs that LangGraph may then route into downstream actions. Without an explicit verification node, errors can cascade into real actions or commits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph routes Cline output directly into another action node, mistakes propagate unchecked.",
+        "IF Cline's browser-derived claims are used as facts by LangGraph, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Insert a verification node between Cline and any action-taking node.",
+        "Require citations or structured evidence before LangGraph acts on Cline output.",
+        "Use a human review gate for commits, emails, or external API calls.",
+        "Log and diff Cline outputs before they are consumed downstream."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented in either profile, so a concrete compliance breach is not established. The main compliance risk is indirect: Cline handles browser screenshots and source code, while LangGraph stores application-defined state, which could matter if the operator routes regulated data through both. That is a limited, configuration-dependent concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into browser screenshots or graph state, retention and logging policies must be checked.",
+        "IF the two agents are deployed under different data-handling policies, a mismatch can arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of browser screenshots and graph state.",
+        "Review retention settings for both agents before use.",
+        "Document which system is the system of record for deletions and exports.",
+        "Use a separate environment for any regulated workflow."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

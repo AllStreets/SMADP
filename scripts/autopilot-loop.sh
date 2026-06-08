@@ -35,6 +35,8 @@ smadp sandbox work --once --max 3
 smadp autopilot docs-only-tick --batch-size 3
 
 # Scaffold tick: turn enriched docs-only profiles into Dockerfile + mcp.json
-# adapters. Small batch so each fire is bounded; the skip-attempted list in
-# state/scaffold_tick.jsonl ensures already-tried slugs aren't retried.
-smadp autopilot scaffold-tick --batch-size 3
+# adapters. Batch-size 10 drains the ~200-deep queue in ~7h instead of ~17h
+# at the previous 3-per-fire rate. The skip-attempted list in
+# state/scaffold_tick.jsonl ensures already-tried slugs aren't retried, and
+# runs_per_day in config/autopilot.yaml still caps total daily spend.
+smadp autopilot scaffold-tick --batch-size 10

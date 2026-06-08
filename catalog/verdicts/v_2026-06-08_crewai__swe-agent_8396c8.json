@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_crewai__swe-agent_8396c8",
+  "generated_at": "2026-06-08T05:32:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: shared filesystem and broad write/network defaults make prompt injection, data leakage, and cascading errors plausible across CrewAI and SWE-agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory among subagents; SWE-agent reads/writes inside its Docker sandbox and processes stdin/stdout. If CrewAI passes attacker-controlled files or outputs into SWE-agent, or vice versa via copied artifacts, instruction hijacking is plausible. No direct shared channel is documented, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted content into the shared working directory and SWE-agent later reads it as task context",
+        "IF an operator manually copies agent output from one system into the other without sanitization"
+      ],
+      "mitigations": [
+        "Keep a strict human review step before copying outputs between agents",
+        "Use separate directories for each agent's artifacts",
+        "Prefix imported files with provenance labels",
+        "Disable any parser that treats file text as instructions",
+        "requires-engineering: add content provenance checks between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI touches developer-passed crew data and has broad network egress; SWE-agent touches repository code and can also egress broadly. If both are pointed at the same workspace or secrets, either can expose sensitive material through model-provider calls or tool outputs. The profiles do not prove a shared workspace by default, so medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given the same directory containing secrets or proprietary code",
+        "IF either agent is configured to send file contents to a remote model provider"
+      ],
+      "mitigations": [
+        "Remove secrets from shared directories before running either agent",
+        "Use separate workspaces per agent",
+        "Rotate any exposed API keys after the run",
+        "Restrict outbound network access during sensitive tasks",
+        "requires-engineering: enforce per-agent secret redaction"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "CrewAI can write the host working directory and spawn subprocesses; SWE-agent can write files, modify git state, and has full root inside its Docker sandbox. If they operate on the same repo or mounted path, concurrent writes and git mutations can collide and corrupt state. The profiles do not show locking or isolation between them, so the conflict risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are mounted onto the same repository or working tree",
+        "IF either agent performs git operations while the other writes files in the same path"
+      ],
+      "mitigations": [
+        "Run the agents on separate clones",
+        "Serialize write phases with a human gate",
+        "Disable git mutation in one agent for the session",
+        "Use read-only mounts for one side",
+        "requires-engineering: add file-locking around shared paths"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI is a multi-agent orchestration layer with shared memory, and SWE-agent is an autonomous coding agent that can act on repository changes. If SWE-agent consumes CrewAI-produced plans or facts without verification, errors can cascade into incorrect code edits or actions. There is no documented verification boundary between them, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent uses CrewAI-generated task text as authoritative instructions",
+        "IF CrewAI forwards unverified facts into SWE-agent's action loop"
+      ],
+      "mitigations": [
+        "Require a separate verification step before execution",
+        "Mark CrewAI outputs as untrusted drafts",
+        "Limit SWE-agent to proposing patches only",
+        "Compare outputs against source files before applying changes",
+        "requires-engineering: add structured validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI handles developer-passed crew data and SWE-agent handles repository code plus GitHub tokens for issue mode. If regulated data or secrets are placed into either workflow, differing handling and logging/retention practices can create compliance gaps. The profiles do not specify residency or certifications, so the mismatch is plausible but not proven high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into CrewAI crew inputs or SWE-agent issue mode",
+        "IF one agent logs or retains data longer than the other"
+      ],
+      "mitigations": [
+        "Avoid regulated data in both workflows",
+        "Review logging settings before execution",
+        "Use separate retention policies per agent",
+        "Remove GitHub tokens when issue mode is unnecessary",
+        "requires-engineering: document residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

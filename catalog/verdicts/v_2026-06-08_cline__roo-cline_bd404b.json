@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-08_cline__roo-cline_bd404b",
+  "generated_at": "2026-06-08T05:03:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.53,
+  "headline": "High risk: shared VS Code workspaces and broad write/network tools make Cline\u2194Roo Code prone to prompt injection, data leakage, and conflicting writes by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents share workspace files via filesystem and can use MCP, so one agent can ingest the other\u2019s outputs through files or shared tools. Neither profile shows provenance tracking or isolation, but the bridge is not inherently automatic beyond workspace/tool use, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes instructions into a workspace file that agent_b later reads as trusted content, injection is possible.",
+        "IF either agent consumes MCP or file content without provenance checks, attacker-controlled text can steer tool use."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces.",
+        "Disable MCP servers for one run.",
+        "Require manual review of any file produced by the other agent.",
+        "Use read-only mounts for shared inputs.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch source code and browser screenshots, share state via filesystem, and have broad network egress. That creates a default path for one agent to expose sensitive workspace contents or screenshots through its outputs or API calls, even though no explicit third-party exfiltration is documented beyond configured model providers.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF either agent reads secrets from the shared workspace, the other can surface them in prompts or outputs.",
+        "IF browser screenshots contain sensitive data, either agent can forward them through configured model APIs."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace.",
+        "Run each agent under a separate OS user.",
+        "Disable screenshot capture for sensitive tasks.",
+        "Restrict network egress to approved endpoints.",
+        "requires-engineering: add per-file redaction before model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, modify git state, and run in the same VS Code workspace with shared state via filesystem. Concurrent edits or git operations can overwrite each other or corrupt repository state, and no locking mechanism is shown. This matches the high-risk overlap indicator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same file or branch concurrently, one can overwrite the other.",
+        "IF both agents run git operations without external locking, repository state can become inconsistent."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Pause one agent before the other writes.",
+        "Use file-level locks for shared paths.",
+        "Review git diffs before merge.",
+        "requires-engineering: add workspace-level coordination/locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Each agent can produce code, browser-derived facts, and tool actions, and both can use MCP. If one agent\u2019s output is treated as authoritative by the other without verification, errors can cascade into incorrect edits or actions. The profiles show approval per tool action, which reduces but does not eliminate the pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF agent_b copies agent_a\u2019s generated facts into code or actions without checking them, errors propagate.",
+        "IF either agent uses browser-derived claims from the other as ground truth, downstream actions can be wrong."
+      ],
+      "mitigations": [
+        "Require a verification step before acting on the other agent\u2019s output.",
+        "Cross-check browser-derived claims against primary sources.",
+        "Limit one agent to drafting and the other to review.",
+        "Turn off autonomous execution for high-impact steps.",
+        "requires-engineering: add structured citations and validation gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding agents with similar data classes and no stated residency or certification mismatch, so no clear compliance breach is evidenced. The main concern is shared handling of source code and screenshots under the same workspace, which is a documented gap but not a specific regulatory conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into the shared workspace, compliance review is required.",
+        "IF one deployment has stricter retention than the other, logs may diverge."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents.",
+        "Align retention settings before use.",
+        "Disable verbose logging for sensitive projects.",
+        "Document data handling responsibilities.",
+        "requires-engineering: obtain formal compliance mapping for each deployment."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
