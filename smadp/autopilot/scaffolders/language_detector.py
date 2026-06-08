@@ -75,10 +75,69 @@ class GithubMetadataLanguageDetector:
             return Language.UNSUPPORTED
         branch = (meta_resp.json() or {}).get("default_branch") or "main"
 
+        # First pass: probe at the repo root. Covers the common single-package
+        # case (~80% of agents).
+        language = self._probe_at(owner, repo, "", branch, headers)
+        if language != Language.UNSUPPORTED:
+            return language
+
+        # Second pass: probe common monorepo subdirectory patterns. AutoGPT
+        # keeps the canonical package at classic/, langchain-ai/langgraph at
+        # libs/langgraph/, gpt-engineer/gpt-engineer at the repo-named subdir,
+        # JS monorepos at packages/<name>/.
+        for subdir in self._monorepo_subdirs(repo):
+            language = self._probe_at(owner, repo, subdir, branch, headers)
+            if language != Language.UNSUPPORTED:
+                log.info(
+                    "language_detector.monorepo_match",
+                    github_source=github_source,
+                    subdir=subdir,
+                    language=language.value,
+                )
+                return language
+        return Language.UNSUPPORTED
+
+    @staticmethod
+    def _monorepo_subdirs(repo: str) -> list[str]:
+        """Common monorepo paths to probe when the root has no manifest.
+
+        Each path is rendered relative to the repo root (no leading slash);
+        the manifest filename is appended at probe time.
+        """
+        # `repo` may be mixed-case (Significant-Gravitas/AutoGPT); GitHub
+        # paths are case-sensitive, so probe both the literal and lowercase
+        # forms.
+        repo_lower = repo.lower()
+        bases = ["classic", "libs", "packages", "src", "python"]
+        out: list[str] = []
+        # libs/<repo> style — langchain pattern.
+        for base in bases:
+            out.append(f"{base}/{repo}")
+            if repo_lower != repo:
+                out.append(f"{base}/{repo_lower}")
+        # <repo>/ style — gpt-engineer pattern.
+        out.append(repo)
+        if repo_lower != repo:
+            out.append(repo_lower)
+        # Bare classic/ — AutoGPT-style legacy moved to a sibling.
+        out.append("classic")
+        return out
+
+    def _probe_at(
+        self,
+        owner: str,
+        repo: str,
+        subdir: str,
+        branch: str,
+        headers: dict[str, str],
+    ) -> Language:
+        """Probe each manifest filename inside ``subdir`` of the repo."""
+        prefix = f"{subdir.rstrip('/')}/" if subdir else ""
         for manifest, language in _MANIFEST_TO_LANGUAGE:
+            path = f"{prefix}{manifest}"
             try:
                 resp = httpx.get(
-                    f"https://api.github.com/repos/{owner}/{repo}/contents/{manifest}",
+                    f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
                     headers=headers,
                     params={"ref": branch},
                     timeout=15.0,

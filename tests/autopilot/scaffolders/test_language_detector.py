@@ -73,9 +73,64 @@ def test_detects_rust_from_cargo_toml() -> None:
 
 def test_returns_unsupported_when_no_manifest_matches() -> None:
     det = GithubMetadataLanguageDetector(token=None)
-    responses = [_fake_response(200, {"default_branch": "main"})] + [_fake_response(404, None)] * 6
-    with patch("smadp.autopilot.scaffolders.language_detector.httpx.get", side_effect=responses):
+    call_count = {"n": 0}
+
+    def _side_effect(*_args: object, **_kwargs: object):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return _fake_response(200, {"default_branch": "main"})
+        return _fake_response(404, None)
+
+    with patch(
+        "smadp.autopilot.scaffolders.language_detector.httpx.get",
+        side_effect=_side_effect,
+    ):
         assert det.detect(github_source="x/y") == Language.UNSUPPORTED
+
+
+def test_detects_python_from_monorepo_classic_subdir() -> None:
+    """AutoGPT-style: root has no manifest; classic/pyproject.toml does."""
+    det = GithubMetadataLanguageDetector(token=None)
+
+    def _side_effect(url: str, *_args: object, **kwargs: object):
+        if url.endswith("/repos/Significant-Gravitas/AutoGPT"):
+            return _fake_response(200, {"default_branch": "master"})
+        params = kwargs.get("params") or {}
+        if (
+            "/contents/classic/pyproject.toml" in url
+            and params.get("ref") == "master"
+        ):
+            return _fake_response(200, {"name": "pyproject.toml"})
+        return _fake_response(404, None)
+
+    with patch(
+        "smadp.autopilot.scaffolders.language_detector.httpx.get",
+        side_effect=_side_effect,
+    ):
+        assert (
+            det.detect(github_source="Significant-Gravitas/AutoGPT")
+            == Language.PYTHON
+        )
+
+
+def test_detects_python_from_monorepo_libs_subdir() -> None:
+    """langgraph-style: root has no manifest; libs/<repo>/pyproject.toml does."""
+    det = GithubMetadataLanguageDetector(token=None)
+
+    def _side_effect(url: str, *_args: object, **_kwargs: object):
+        if url.endswith("/repos/langchain-ai/langgraph"):
+            return _fake_response(200, {"default_branch": "main"})
+        if "/contents/libs/langgraph/pyproject.toml" in url:
+            return _fake_response(200, {"name": "pyproject.toml"})
+        return _fake_response(404, None)
+
+    with patch(
+        "smadp.autopilot.scaffolders.language_detector.httpx.get",
+        side_effect=_side_effect,
+    ):
+        assert (
+            det.detect(github_source="langchain-ai/langgraph") == Language.PYTHON
+        )
 
 
 def test_invalid_github_source_raises() -> None:
