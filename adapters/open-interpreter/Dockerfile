@@ -14,7 +14,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /work && chown 65534:65534 /work
 
-RUN pip install --no-cache-dir 'open-interpreter==0.4.3' \
+RUN pip install --no-cache-dir 'setuptools<81' 'open-interpreter==0.4.3' \
  && apt-get purge -y gcc python3-dev libffi-dev \
  && apt-get autoremove -y
 
