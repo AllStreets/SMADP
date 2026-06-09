@@ -102,6 +102,14 @@ flowchart LR
   APPROVE -->|approve| VERDICTS
   APPROVE -->|reject| REJECTED[catalog/_rejected/<br/>preserved + reason]:::gate
   VERDICTS --> SITE
+
+  %% Make subgraph backgrounds transparent so they look clean on both
+  %% GitHub light and dark themes (the default fill renders as sandy
+  %% yellow on the light background).
+  style H fill:none,stroke:#7C3AED,stroke-width:1.5px,color:#A78BFA
+  style A fill:none,stroke:#06B6D4,stroke-width:1.5px,color:#06B6D4
+  style G fill:none,stroke:#F59E0B,stroke-width:1.5px,color:#F59E0B
+  style P fill:none,stroke:#22C55E,stroke-width:1.5px,color:#22C55E
 ```
 
 Two halves. The **autopilot** runs unattended on a 5-minute launchd loop: it drains a queue of enrichment work, scaffolds MCP adapters from GitHub repos, queues sandbox runs, and lets a fresh LLM judge grade each transcript. Every artifact lands in `catalog/pending/`. The **operator** decides what graduates to `catalog/verdicts/` (the public site) by approving from the CLI — singly, by filter, or in bulk:
@@ -291,6 +299,11 @@ graph LR
     EX --> CR[critic]:::agent
     CR -->|revise| PL
   end
+
+  %% Transparent subgraph backgrounds (no yellow on GitHub light theme).
+  style L  fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
+  style S  fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
+  style LP fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
 ```
 
 Chains live under `catalog/chains/`. The seed set has six canonical compositions; new chains can be authored from `/chains/new` in the UI (gated behind the operator queue).
