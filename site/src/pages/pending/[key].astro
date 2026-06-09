@@ -1,0 +1,306 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PENDING_DIR = path.join(__dirname, '..', '..', '..', '..', 'catalog', 'pending');
+
+interface SubVerdict {
+  severity: string;
+  rationale: string;
+  citations: Array<{
+    profile_field?: string | null;
+    evidence_ref?: string | null;
+    quote?: string | null;
+  }>;
+  conditions: string[];
+  mitigations: string[];
+}
+
+interface PendingVerdict {
+  key: string;
+  verdict_id?: string;
+  pair: string[];
+  evidence_level: string;
+  composite_score: number;
+  confidence: number;
+  headline: string;
+  model: { id: string; name: string; rubric_version?: string };
+  generated_at: string;
+  sub_verdicts: Record<string, SubVerdict>;
+  sandbox_runs: Array<{
+    scenario: string;
+    outcome: string;
+    started_at?: string;
+    completed_at?: string;
+    run_id: string;
+  }>;
+  framework_mappings: Record<string, string[]>;
+}
+
+export async function getStaticPaths() {
+  const __filename2 = fileURLToPath(import.meta.url);
+  const __dirname2 = path.dirname(__filename2);
+  const dir = path.join(__dirname2, '..', '..', '..', '..', 'catalog', 'pending');
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  return files.map((f) => ({ params: { key: f.replace(/\.json$/, '') } }));
+}
+
+const { key } = Astro.params;
+const filePath = path.join(PENDING_DIR, `${key}.json`);
+
+let verdict: PendingVerdict | null = null;
+try {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const parsed = JSON.parse(raw);
+  verdict = {
+    key: key as string,
+    verdict_id: parsed.verdict_id,
+    pair: Array.isArray(parsed.pair) ? parsed.pair : Array.isArray(parsed.participants) ? parsed.participants : [],
+    evidence_level: String(parsed.evidence_level ?? 'unknown'),
+    composite_score: Number(parsed.composite_score ?? 0),
+    confidence: Number(parsed.confidence ?? 0),
+    headline: String(parsed.headline ?? ''),
+    model: parsed.model ?? { id: '', name: '' },
+    generated_at: String(parsed.generated_at ?? ''),
+    sub_verdicts: parsed.sub_verdicts ?? {},
+    sandbox_runs: Array.isArray(parsed.sandbox_runs) ? parsed.sandbox_runs : [],
+    framework_mappings: parsed.framework_mappings ?? {},
+  };
+} catch {
+  return Astro.redirect('/pending');
+}
+
+if (!verdict) return Astro.redirect('/pending');
+
+const RISK_ORDER = [
+  'A_prompt_injection',
+  'B_data_leakage',
+  'C_capability_conflict',
+  'D_cascading_error',
+  'E_compliance',
+] as const;
+
+const riskLabel: Record<string, string> = {
+  A_prompt_injection: 'A · Prompt injection',
+  B_data_leakage: 'B · Data leakage',
+  C_capability_conflict: 'C · Capability conflict',
+  D_cascading_error: 'D · Cascading error',
+  E_compliance: 'E · Compliance',
+};
+
+const severityColor = (s: string): string => {
+  switch (s) {
+    case 'none':
+      return '#22C55E';
+    case 'low':
+      return '#84CC16';
+    case 'medium':
+      return '#F59E0B';
+    case 'high':
+      return '#EF4444';
+    case 'critical':
+      return '#7F1D1D';
+    default:
+      return '#71717A';
+  }
+};
+
+const tierColor = (t: string): string => {
+  switch (t) {
+    case 'sandbox-validated':
+      return '#22C55E';
+    case 'profile-verified':
+      return '#7C3AED';
+    case 'docs-only':
+      return '#A78BFA';
+    default:
+      return '#71717A';
+  }
+};
+
+const compositeColor = (s: number): string =>
+  s < 0.3 ? '#22C55E' : s < 0.6 ? '#F59E0B' : '#EF4444';
+
+const sc = compositeColor(verdict.composite_score);
+const confidencePct = Math.round(verdict.confidence * 100);
+const [slugA, slugB] = verdict.pair;
+---
+
+<Layout title={`${slugA} × ${slugB} — Pending — SMADP`} description={verdict.headline}>
+  <section class="container-page mt-8">
+    <a href="/pending" class="font-mono text-xs text-ink-400 hover:text-brand-300"
+      >← pending queue</a
+    >
+
+    <div
+      class="mt-4 rounded-lg border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-200"
+    >
+      <strong>Pending review · not yet posted to the public catalog.</strong>
+      Approve from the CLI:
+      <code class="ml-1 font-mono text-amber-100">smadp pending approve {verdict.key}</code>
+    </div>
+
+    <div
+      class="mt-6 rounded-2xl border border-white/10 bg-gradient-to-br from-ink-900/60 to-ink-950/60 p-8 shadow-glow-sm"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-6">
+        <div class="min-w-0">
+          <span class="heading-eyebrow text-amber-300">Pending pairwise verdict</span>
+          <h1 class="h1 mt-3 text-white">
+            {slugA}<span class="text-ink-500"> × </span>{slugB}
+          </h1>
+          <p class="lead mt-4 max-w-3xl">{verdict.headline}</p>
+
+          <div class="mt-5 flex flex-wrap items-center gap-3">
+            <span
+              class="inline-flex items-center gap-1.5 rounded px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
+              style={`color:${tierColor(verdict.evidence_level)}; background:${tierColor(verdict.evidence_level)}14; border:1px solid ${tierColor(verdict.evidence_level)}55;`}
+            >
+              {verdict.evidence_level}
+            </span>
+            <span class="pill">model: <span class="ml-1 text-cyber-400">{verdict.model.name || verdict.model.id}</span></span>
+            <span class="pill">rubric: <span class="ml-1 text-brand-300">{verdict.model.rubric_version ?? '—'}</span></span>
+            <span class="pill">{verdict.generated_at.slice(0, 10)}</span>
+          </div>
+        </div>
+
+        <div class="grid w-full max-w-xs grid-cols-2 gap-3 sm:w-auto">
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Composite</div>
+            <div
+              class="mt-1 font-display text-4xl font-extrabold leading-none"
+              style={`color:${sc};`}
+            >
+              {verdict.composite_score.toFixed(2)}
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">lower is safer</div>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Confidence</div>
+            <div class="mt-1 font-display text-4xl font-extrabold leading-none text-cyber-400">
+              {confidencePct}%
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">judge confidence</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="container-page mt-12">
+    <h2 class="h2 text-white">Per-risk sub-verdicts</h2>
+    <p class="mt-2 text-sm text-ink-400">
+      The five risk categories evaluated independently. Severities + rationales
+      below; full citations are in the JSON file.
+    </p>
+
+    <div class="mt-8 space-y-4">
+      {RISK_ORDER.map((rk) => {
+        const sv = verdict!.sub_verdicts[rk];
+        if (!sv) return null;
+        const sevC = severityColor(sv.severity);
+        return (
+          <article class="card overflow-hidden">
+            <header class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 class="font-display text-lg font-semibold text-white">
+                  {riskLabel[rk] ?? rk}
+                </h3>
+              </div>
+              <span
+                class="inline-flex items-center gap-1.5 rounded px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
+                style={`color:${sevC}; background:${sevC}14; border:1px solid ${sevC}55;`}
+              >
+                {sv.severity}
+              </span>
+            </header>
+            <p class="mt-5 text-sm leading-relaxed text-ink-200">{sv.rationale}</p>
+            {sv.conditions && sv.conditions.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-amber-400">
+                  Safe under conditions
+                </div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.conditions.map((c) => <li>{c}</li>)}
+                </ul>
+              </div>
+            )}
+            {sv.mitigations && sv.mitigations.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-cyber-400">
+                  Mitigations
+                </div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.mitigations.map((m) => <li>{m}</li>)}
+                </ul>
+              </div>
+            )}
+            <div class="mt-5 text-[11px] text-ink-500">
+              {sv.citations?.length ?? 0} citation{(sv.citations?.length ?? 0) === 1 ? '' : 's'}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  </section>
+
+  {verdict.sandbox_runs.length > 0 && (
+    <section class="container-page mt-12">
+      <h2 class="h2 text-white">Sandbox runs</h2>
+      <div class="mt-6 overflow-hidden rounded-xl border border-white/10 bg-ink-900/40">
+        <table class="w-full text-sm">
+          <thead class="text-left font-mono text-[11px] uppercase tracking-wider text-ink-400">
+            <tr class="border-b border-white/10 bg-ink-850/40">
+              <th class="px-4 py-3">Scenario</th>
+              <th class="px-4 py-3">Outcome</th>
+              <th class="px-4 py-3">Started</th>
+              <th class="px-4 py-3">Run ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {verdict.sandbox_runs.map((r) => (
+              <tr class="border-t border-white/5">
+                <td class="px-4 py-3 text-white">{r.scenario}</td>
+                <td class="px-4 py-3">
+                  <span
+                    class="font-mono text-xs"
+                    style={`color:${r.outcome === 'pass' ? '#22C55E' : '#EF4444'};`}
+                  >
+                    {r.outcome}
+                  </span>
+                </td>
+                <td class="px-4 py-3 font-mono text-xs text-ink-300">
+                  {(r.started_at ?? '').slice(0, 19).replace('T', ' ')}
+                </td>
+                <td class="px-4 py-3 font-mono text-[11px] text-ink-400">{r.run_id}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )}
+
+  <section class="container-page mt-12 mb-16">
+    <div class="card">
+      <h2 class="h3 text-white">Approve or reject</h2>
+      <p class="mt-2 text-sm text-ink-300">
+        This verdict is in the operator review queue. Use the CLI to act on it:
+      </p>
+      <pre class="mt-5 overflow-x-auto rounded-lg border border-white/10 bg-ink-950/60 p-4 text-[12px] text-cyber-300"><code># approve this one
+smadp pending approve {verdict.key}
+
+# reject with audit trail
+smadp pending reject {verdict.key} --reason "..."</code></pre>
+    </div>
+  </section>
+</Layout>
