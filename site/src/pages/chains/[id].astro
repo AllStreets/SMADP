@@ -273,33 +273,60 @@ function indexFor(slug: string, after = -1): number {
   </section>
 
   <script>
-    // Trackpad / mouse-wheel zoom for the topology diagram. Two-finger
-    // scroll = zoom; pinch (which arrives as wheel + ctrlKey on macOS) =
-    // zoom too, slightly more sensitive. Scale clamped to [0.55, 3.0]; a
-    // short CSS transition smooths each tick so the zoom feels continuous
-    // rather than jagged.
+    // Trackpad / mouse-wheel zoom for the topology diagram, implemented
+    // by modifying the SVG viewBox directly (NOT a CSS transform — that
+    // had glitchy ghost-rendering in Safari where both the pre- and
+    // post-transform layers showed at once). Zoom is centered on the
+    // viewBox center; clamped to [0.55, 3.0]. requestAnimationFrame
+    // coalesces rapid wheel ticks into one paint per frame so the zoom
+    // feels smooth without any CSS transitions.
     document.querySelectorAll('[data-topology-zoom]').forEach((wrap) => {
       const svg = wrap.querySelector('svg');
       if (!svg) return;
+      const initial = (svg.getAttribute('viewBox') || '0 0 760 320')
+        .trim()
+        .split(/\s+/)
+        .map(Number);
+      const baseX = initial[0] ?? 0;
+      const baseY = initial[1] ?? 0;
+      const baseW = initial[2] ?? 760;
+      const baseH = initial[3] ?? 320;
+      const cx = baseX + baseW / 2;
+      const cy = baseY + baseH / 2;
+
       let scale = 1;
-      svg.style.transformOrigin = 'center center';
-      svg.style.willChange = 'transform';
-      svg.style.transition = 'transform 90ms ease-out';
+      let queued = false;
+      const paint = () => {
+        const w = baseW / scale;
+        const h = baseH / scale;
+        const x = cx - w / 2;
+        const y = cy - h / 2;
+        svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+        queued = false;
+      };
+
       wrap.addEventListener(
         'wheel',
         (e) => {
           const ev = e as WheelEvent;
           ev.preventDefault();
-          // Gentle factor: pinch (ctrlKey on Mac) gets a slightly larger
-          // multiplier because pinches are deliberate; plain scroll stays
-          // small so accidental swipes don't yank the view around.
+          // Pinch (ctrlKey on Mac trackpad) is more deliberate, so it
+          // gets a larger multiplier than plain two-finger scroll.
           const factor = ev.ctrlKey ? 0.010 : 0.0017;
-          const delta = -ev.deltaY * factor;
-          scale = Math.max(0.55, Math.min(3.0, scale + delta));
-          svg.style.transform = `scale(${scale})`;
+          scale = Math.max(0.55, Math.min(3.0, scale + -ev.deltaY * factor));
+          if (!queued) {
+            queued = true;
+            requestAnimationFrame(paint);
+          }
         },
         { passive: false },
       );
+
+      // Double-click anywhere on the panel resets to 1:1.
+      wrap.addEventListener('dblclick', () => {
+        scale = 1;
+        svg.setAttribute('viewBox', `${baseX} ${baseY} ${baseW} ${baseH}`);
+      });
     });
   </script>
 
