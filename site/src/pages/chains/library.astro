@@ -1,0 +1,173 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Panel from '../../components/Panel.astro';
+import SeverityBar from '../../components/SeverityBar.astro';
+import ChainTopologyBadge from '../../components/ChainTopologyBadge.astro';
+import { getChains, maxSeverity } from '../../lib/chains';
+
+const chains = getChains();
+const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
+  acc[c.topology] = (acc[c.topology] ?? 0) + 1;
+  return acc;
+}, {});
+---
+
+<Layout title="Chain library — SMADP">
+  <section class="container-page mt-10">
+    <a href="/chains" class="font-mono text-xs text-ink-400 hover:text-brand-300">← back to the builder</a>
+    <div class="mt-4 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <span class="heading-eyebrow">Catalog · Chains</span>
+        <h1 class="h1 mt-3 text-white">Chain library</h1>
+        <p class="lead mt-4 max-w-2xl">
+          {chains.length} canonical multi-agent compositions, each analyzed
+          against the five risks plus topology-specific propagation concerns.
+          Every chain on this page was built through the builder and accepted
+          by an operator.
+        </p>
+      </div>
+      <a href="/chains" class="btn-primary">+ Build a chain</a>
+    </div>
+    <div class="mt-6 flex flex-wrap gap-2 text-xs">
+      {Object.entries(topologyCounts).sort((a, b) => b[1] - a[1]).map(([topo, n]) => (
+        <span class="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 font-mono text-ink-300 ring-1 ring-inset ring-white/10">
+          <span class="font-semibold text-brand-300">{n}</span>
+          <span>{topo}</span>
+        </span>
+      ))}
+    </div>
+  </section>
+
+  <section class="container-page mt-10 grid gap-4" id="chain-list">
+    {chains.length === 0 && (
+      <p class="card p-6 text-ink-300" id="chain-empty">No chains yet — be the first to build one.</p>
+    )}
+    {chains.map((c) => (
+      <Panel title={c.name} icon="link" id={c.chain_id} defaultOpen={false}>
+        <Fragment slot="badge">
+          <ChainTopologyBadge topology={c.topology} />
+        </Fragment>
+        <p class="text-sm text-ink-200">{c.headline}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          {c.participants.map((p) => (
+            <a
+              href={`/agents/${p.slug}`}
+              class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10 hover:bg-white/10 hover:text-white"
+            >
+              <span class="font-medium">{p.slug}</span>
+              <span class="text-ink-400">·</span>
+              <span class="text-ink-400">{p.role}</span>
+            </a>
+          ))}
+        </div>
+        <div class="mt-3 flex items-center gap-3">
+          <SeverityBar severity={maxSeverity(c)} />
+          <a
+            class="text-xs text-brand-300 hover:text-brand-200"
+            href={`/chains/${c.chain_id}`}
+          >
+            Open chain →
+          </a>
+        </div>
+      </Panel>
+    ))}
+  </section>
+
+  <!-- Sentinel of chain_ids baked at build time. -->
+  <script type="application/json" id="chain-baked" set:html={JSON.stringify(chains.map((c) => c.chain_id))}></script>
+
+  <script>
+    import { apiFetch } from '../../lib/api';
+
+    type Sev = 'none' | 'low' | 'medium' | 'high' | 'critical';
+    interface ApiChain {
+      chain_id: string;
+      name: string;
+      topology: string;
+      headline: string;
+      author?: string;
+      participants: { slug: string; role: string; notes?: string }[];
+      sub_verdicts: Record<string, { severity: Sev }>;
+    }
+
+    const SEV_COLOR: Record<Sev, string> = {
+      none: '#22C55E', low: '#84CC16', medium: '#F59E0B', high: '#EF4444', critical: '#7F1D1D',
+    };
+    const SEV_RANK: Sev[] = ['none', 'low', 'medium', 'high', 'critical'];
+
+    function maxSev(c: ApiChain): Sev {
+      let i = 0;
+      for (const sv of Object.values(c.sub_verdicts)) {
+        const r = SEV_RANK.indexOf(sv.severity);
+        if (r > i) i = r;
+      }
+      return SEV_RANK[i]!;
+    }
+
+    function escapeHtml(s: string): string {
+      return s.replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[ch]!));
+    }
+
+    function renderNew(c: ApiChain): HTMLElement {
+      const card = document.createElement('div');
+      card.className = 'card relative';
+      const sev = maxSev(c);
+      const byline = c.author ? `by ${escapeHtml(c.author)}` : 'no author given';
+      card.innerHTML = `
+        <div class="absolute right-4 top-4 rounded-md bg-brand-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-brand-300">
+          new · via builder
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-brand-300">⛓</span>
+          <h3 class="font-display text-lg font-semibold text-white">${escapeHtml(c.name)}</h3>
+          <span class="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">${escapeHtml(c.topology)}</span>
+        </div>
+        <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-400">${byline}</p>
+        <p class="mt-3 text-sm text-ink-200">${escapeHtml(c.headline)}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          ${c.participants.map(p => `
+            <a href="/agents/${encodeURIComponent(p.slug)}" class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10 hover:bg-white/10 hover:text-white">
+              <span class="font-medium">${escapeHtml(p.slug)}</span>
+              <span class="text-ink-400">·</span>
+              <span class="text-ink-400">${escapeHtml(p.role)}</span>
+            </a>
+          `).join('')}
+        </div>
+        <div class="mt-3 flex items-center gap-3 text-xs">
+          <span class="inline-flex items-center gap-1.5 font-mono text-ink-300">
+            <span class="inline-block h-2.5 w-2.5 rounded-sm" style="background:${SEV_COLOR[sev]}"></span>
+            max severity ${sev}
+          </span>
+          <span class="text-ink-500">(rebuild the site to bake this chain into the static catalog)</span>
+        </div>
+      `;
+      return card;
+    }
+
+    (async () => {
+      const bakedNode = document.getElementById('chain-baked');
+      const baked = new Set<string>(bakedNode ? JSON.parse(bakedNode.textContent || '[]') : []);
+      try {
+        const resp = await apiFetch<{ items: ApiChain[] }>('/chains');
+        const fresh = (resp.items ?? []).filter((c) => !baked.has(c.chain_id));
+        if (fresh.length === 0) return;
+        const list = document.getElementById('chain-list')!;
+        document.getElementById('chain-empty')?.remove();
+        const header = document.createElement('div');
+        header.className = 'mt-4';
+        header.innerHTML = `
+          <span class="heading-eyebrow">Just submitted</span>
+          <p class="mt-1 text-sm text-ink-400">
+            ${fresh.length} chain${fresh.length === 1 ? '' : 's'} from the builder, not yet baked into the static catalog.
+          </p>
+        `;
+        list.appendChild(header);
+        for (const c of fresh) list.appendChild(renderNew(c));
+      } catch {
+        // backend offline — silently skip
+      }
+    })();
+  </script>
+</Layout>
