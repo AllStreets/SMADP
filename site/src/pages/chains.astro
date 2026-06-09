@@ -55,11 +55,11 @@ const chainCount = getChains().length;
           <span class="font-mono text-[10px] uppercase tracking-wider text-amber-300/90">required</span>
         </div>
         <div class="relative">
-          <input id="cb-search" type="search" class="input w-full" placeholder="Search the catalog — type a name or slug" autocomplete="off"/>
-          <ul id="cb-search-results" class="absolute left-0 right-0 top-full z-20 mt-1 hidden max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-ink-950/95 shadow-glow-sm backdrop-blur"></ul>
+          <input id="cb-search" type="search" class="input w-full" placeholder={`Search ${profiles.length.toLocaleString()} agents in the catalog — name, slug, or capability`} autocomplete="off"/>
+          <ul id="cb-search-results" class="absolute left-0 right-0 top-full z-20 mt-1 hidden max-h-80 overflow-y-auto rounded-lg border border-white/10 bg-ink-950/95 shadow-glow-sm backdrop-blur"></ul>
         </div>
         <p class="text-xs text-ink-400">
-          Click a result to add it. The participant's role is auto-assigned by topology and order — click the role chip to cycle.
+          Searches the live SMADP profile catalog. Each result shows the agent's source type and capabilities — the same fields the sub-verdict analysis reads from. Click to add; the participant's role is auto-assigned by topology and order (click the role chip to cycle).
         </p>
         <ul id="cb-participants" class="mt-1 flex flex-wrap gap-2"></ul>
       </div>
@@ -355,6 +355,40 @@ const chainCount = getChains().length;
   }
 
   // ----- Search -----
+  // Matches against name, slug, vendor, category — and any capability flag
+  // that's set on the profile (e.g., typing "shell" surfaces agents with
+  // execute_shell:true). These are the same caps the chain analyzer reads
+  // from, so the search is literally over the catalog's research data.
+  function capTokens(p: ProfileSummary): string[] {
+    const t: string[] = [];
+    if (p.caps.execute_shell) t.push('shell', 'execute');
+    if (p.caps.write_filesystem) t.push('filesystem', 'write', 'files');
+    if (p.caps.modify_git_state) t.push('git');
+    if (p.caps.install_packages) t.push('install', 'packages');
+    if (p.caps.spawn_subprocesses) t.push('subprocess', 'spawn');
+    if (p.caps.use_mcp) t.push('mcp');
+    if (p.caps.run_browsers) t.push('browser', 'browsers');
+    if (p.io.calls_apis) t.push('api', 'apis', 'network');
+    if (p.caps.network_egress === 'broad') t.push('network', 'broad');
+    return t;
+  }
+  function capSummary(p: ProfileSummary): string {
+    const tags: string[] = [];
+    if (p.caps.execute_shell) tags.push('shell');
+    if (p.caps.write_filesystem) tags.push('fs-write');
+    if (p.caps.modify_git_state) tags.push('git');
+    if (p.caps.use_mcp) tags.push('mcp');
+    if (p.caps.run_browsers) tags.push('browser');
+    if (p.io.calls_apis) tags.push('apis');
+    return tags.slice(0, 4).join(' · ') || 'read-only';
+  }
+  const sourceColor: Record<string, string> = {
+    'open-source': '#22C55E',
+    'closed-source': '#EF4444',
+    'source-available': '#F59E0B',
+    'unknown': '#71717A',
+  };
+
   function renderResults(query: string) {
     const q = query.trim().toLowerCase();
     if (!q) {
@@ -363,25 +397,41 @@ const chainCount = getChains().length;
       return;
     }
     const matches = profileIndex
-      .filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.slug.toLowerCase().includes(q),
-      )
+      .filter((p) => {
+        const inName = p.name.toLowerCase().includes(q);
+        const inSlug = p.slug.toLowerCase().includes(q);
+        const inVendor = p.vendor.toLowerCase().includes(q);
+        const inCategory = p.category.toLowerCase().includes(q);
+        const inCaps = capTokens(p).some((tok) => tok.includes(q));
+        return inName || inSlug || inVendor || inCategory || inCaps;
+      })
       .slice(0, 8);
     if (matches.length === 0) {
-      resultsList.innerHTML = `<li class="px-3 py-2 text-xs text-ink-500">No agents match "${escapeHtml(q)}"</li>`;
+      resultsList.innerHTML = `<li class="px-3 py-2 text-xs text-ink-500">No agents in the catalog match "${escapeHtml(q)}"</li>`;
       resultsList.classList.remove('hidden');
       return;
     }
-    resultsList.innerHTML = matches.map((p) => `
-      <li class="search-result" data-slug="${escapeHtml(p.slug)}" role="option">
-        <div class="min-w-0">
-          <div class="truncate font-medium text-ink-100">${escapeHtml(p.name)}</div>
-          <div class="font-mono text-[10px] text-ink-500">${escapeHtml(p.slug)}</div>
-        </div>
-        <span class="font-mono text-[10px] uppercase tracking-wider text-ink-400">add →</span>
-      </li>
-    `).join('');
+    resultsList.innerHTML = matches.map((p) => {
+      const dot = sourceColor[p.source_type] ?? sourceColor.unknown;
+      return `
+        <li class="search-result" data-slug="${escapeHtml(p.slug)}" role="option">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full" style="background:${dot}" title="${escapeHtml(p.source_type)}"></span>
+              <div class="truncate font-medium text-ink-100">${escapeHtml(p.name)}</div>
+            </div>
+            <div class="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+              <span class="text-ink-500">${escapeHtml(p.slug)}</span>
+              <span class="text-ink-600">·</span>
+              <span class="text-ink-400">${escapeHtml(p.category)}</span>
+              <span class="text-ink-600">·</span>
+              <span class="text-brand-300">${escapeHtml(capSummary(p))}</span>
+            </div>
+          </div>
+          <span class="font-mono text-[10px] uppercase tracking-wider text-ink-400">add →</span>
+        </li>
+      `;
+    }).join('');
     resultsList.classList.remove('hidden');
     resultsList.querySelectorAll<HTMLLIElement>('.search-result').forEach((li) => {
       li.addEventListener('click', () => {
