@@ -40,7 +40,7 @@
 
 You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent. Then an email-drafter. Then a research agent. They share your filesystem, your clipboard, your OAuth scopes, your MCP servers, your wallet. Nobody has systematically studied what happens when they interact — and the casual composition is becoming dangerous.
 
-**SMADP publishes the matrix.** For every pair of autonomous agents — open-source, closed-source, IDE extensions, browser agents, research agents, code agents — we publish:
+**SMADP — the *Safe Multi-Agent Deployment Platform* — publishes the matrix.** For every pair of autonomous agents — open-source, closed-source, IDE extensions, browser agents, research agents, code agents — we publish:
 
 - A **safety profile** (capabilities, IO surfaces, network egress, OAuth scopes, sandboxing model, citations to source).
 - A **pairwise verdict** for every two agents that share a runtime — can they run together, and if not, why not?
