@@ -57,60 +57,9 @@ Every verdict is **evidence-cited** (every claim points to a verbatim quote or a
 
 ## How it runs
 
-```mermaid
-flowchart LR
-  classDef src   fill:#1a0b2e,stroke:#7C3AED,stroke-width:1.5px,color:#e6e9ee
-  classDef llm   fill:#0c1218,stroke:#06B6D4,stroke-width:1.5px,color:#e6e9ee
-  classDef judge fill:#0c1218,stroke:#A78BFA,stroke-width:1.5px,color:#e6e9ee
-  classDef gate  fill:#1f1500,stroke:#F59E0B,stroke-width:1.5px,color:#fde68a
-  classDef pub   fill:#001e0c,stroke:#22C55E,stroke-width:1.5px,color:#bbf7d0
-
-  subgraph H["humans curate"]
-    direction TB
-    SEED[hand-crafted seed catalog]:::src
-  end
-
-  subgraph A["autopilot · launchd · every 300s"]
-    direction TB
-    ENRICH[enrich stubs to docs-only<br/>via README + LLM]:::llm
-    SCAFFOLD[scaffold MCP adapter<br/>Dockerfile + entrypoint]:::llm
-    RUN[sandbox · Docker scenarios<br/>calendar / notes / spreadsheet]:::llm
-    GRADE[sandbox judge<br/>LLM grades transcript]:::llm
-  end
-
-  subgraph G["operator gate"]
-    direction TB
-    PENDING[catalog/pending/<br/>review queue]:::gate
-    APPROVE{smadp pending approve<br/>filter + --limit N --yes}:::gate
-  end
-
-  subgraph P["public catalog"]
-    direction TB
-    VERDICTS[catalog/verdicts/]:::pub
-    SITE[Astro site<br/>~12,800 pages]:::pub
-  end
-
-  ONEXUS[ONEXUS-Agents catalog<br/>6,200+ profiles] --> ENRICH
-  SEED --> VERDICTS
-
-  ENRICH --> PENDING
-  SCAFFOLD --> RUN
-  RUN --> GRADE
-  GRADE --> PENDING
-
-  PENDING --> APPROVE
-  APPROVE -->|approve| VERDICTS
-  APPROVE -->|reject| REJECTED[catalog/_rejected/<br/>preserved + reason]:::gate
-  VERDICTS --> SITE
-
-  %% Make subgraph backgrounds transparent so they look clean on both
-  %% GitHub light and dark themes (the default fill renders as sandy
-  %% yellow on the light background).
-  style H fill:none,stroke:#7C3AED,stroke-width:1.5px,color:#A78BFA
-  style A fill:none,stroke:#06B6D4,stroke-width:1.5px,color:#06B6D4
-  style G fill:none,stroke:#F59E0B,stroke-width:1.5px,color:#F59E0B
-  style P fill:none,stroke:#22C55E,stroke-width:1.5px,color:#22C55E
-```
+<p align="center">
+  <img src=".github/assets/architecture-flow.svg" alt="SMADP architecture — ONEXUS source → autopilot (enrich · scaffold · sandbox · judge) → operator gate (pending review queue + approve/reject) → public catalog (verdicts/ + Astro site)" width="100%"/>
+</p>
 
 Two halves. The **autopilot** runs unattended on a 5-minute launchd loop: it drains a queue of enrichment work, scaffolds MCP adapters from GitHub repos, queues sandbox runs, and lets a fresh LLM judge grade each transcript. Every artifact lands in `catalog/pending/`. The **operator** decides what graduates to `catalog/verdicts/` (the public site) by approving from the CLI — singly, by filter, or in bulk:
 
@@ -277,34 +226,9 @@ It emits five sub-verdicts with severities + rationales + citations. The composi
 
 A **chain** is 3+ agents in a topology — linear, star, or loop. SMADP analyzes each chain end-to-end against the same five risks, plus topology-specific concerns (propagation depth, cycle convergence, fan-out blast radius).
 
-```mermaid
-graph LR
-  classDef agent fill:#1a0b2e,stroke:#A78BFA,stroke-width:1.5px,color:#e6e9ee
-
-  subgraph L["Linear · plan → fix → verify"]
-    P[planner]:::agent --> F[fixer]:::agent --> V[verifier]:::agent
-  end
-
-  subgraph S["Star · orchestrator fan-out + merge"]
-    O[orchestrator]:::agent --> A1[worker 1]:::agent
-    O --> A2[worker 2]:::agent
-    O --> A3[worker 3]:::agent
-    A1 --> M[merger]:::agent
-    A2 --> M
-    A3 --> M
-  end
-
-  subgraph LP["Loop · plan → execute → critic → plan"]
-    PL[planner]:::agent --> EX[executor]:::agent
-    EX --> CR[critic]:::agent
-    CR -->|revise| PL
-  end
-
-  %% Transparent subgraph backgrounds (no yellow on GitHub light theme).
-  style L  fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
-  style S  fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
-  style LP fill:none,stroke:#A78BFA,stroke-width:1.5px,color:#A78BFA
-```
+<p align="center">
+  <img src=".github/assets/chain-topologies.svg" alt="SMADP chain topologies — three panels showing the Linear (plan → fix → verify), Star (orchestrator fan-out + merge), and Loop (plan → execute → critic, revise back to plan) compositions" width="100%"/>
+</p>
 
 Chains live under `catalog/chains/`. The seed set has six canonical compositions; new chains can be authored from `/chains/new` in the UI (gated behind the operator queue).
 
