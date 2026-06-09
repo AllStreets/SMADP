@@ -138,7 +138,20 @@ def lint_catalog(config: Config | None = None) -> LintReport:
                         f"slug {slug!r} appears in multiple files",
                     )
                 profile_slugs.add(slug)
-                # Stubs have no pairings or evidence_refs to track.
+                # Track pairings/evidence_refs so cross-refs against a
+                # full-tier profile still resolve. The stub may have an
+                # empty pairings list or a partial one — that's still the
+                # source of truth for whether reciprocation holds.
+                pairings = data.get("pairings") or []
+                if isinstance(pairings, list):
+                    profile_pairings[slug] = [
+                        p for p in pairings if isinstance(p, str)
+                    ]
+                refs = data.get("evidence_refs") or []
+                if isinstance(refs, list):
+                    for ref in refs:
+                        if isinstance(ref, str):
+                            profile_evidence_refs.add(ref)
                 continue
             else:
                 if profile_validator is not None:
