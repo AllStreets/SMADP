@@ -93,64 +93,51 @@ for (const edge of chain.edges) {
 }
 
 // ----- Topology SVG geometry -----
-// Positions are laid out in an arbitrary "design" coordinate space and the
-// viewBox is then fitted around the actual node bounds + label space — so
-// no matter how many participants are added or which topology is chosen,
-// every node and its slug label stays inside the rendered SVG.
+// Fixed viewBox sizes (the diagram windows). To prevent clipping we shrink
+// the layout — node radius and the radial radius for star/loop — to fit
+// inside those windows for any participant count from 3 to the schema max
+// of 8. We never expand the window itself.
 const nodeCount = chain.participants.length;
-const nodeR = 30;
+const W = 760;
+const H = chain.topology === 'star'
+  ? 320
+  : chain.topology === 'loop'
+    ? 260
+    : 180;
+const nodeR = 22;
 const LABEL_OFFSET = 18; // y-offset of the slug text below each node
 const LABEL_HEIGHT = 14; // approx height of one line of slug text
-const PADDING = 18;      // breathing room inside the viewBox
+const PADDING = 12;
+const cx = W / 2;
+const cy = H / 2;
 
-// Radius for radial layouts scales gently with participant count so 8-node
-// stars/loops don't bunch up at the centre.
-const radialR = Math.max(110, 90 + nodeCount * 6);
-const DESIGN_CX = 0;
-const DESIGN_CY = 0;
+// Largest radius that still leaves room for the node circle, its label,
+// and edge padding inside H. Worst-case vertical span is 2*R for star and
+// 2*R*0.78 for the loop (slightly squashed ellipse). Pick the tighter of
+// each topology's max and a default visual radius.
+const radiusBudget = H / 2 - nodeR - LABEL_OFFSET - LABEL_HEIGHT - PADDING;
+const starR = Math.max(60, Math.min(95, radiusBudget));
+const loopR = Math.max(60, Math.min(95, radiusBudget / 0.78));
+const linearStride = nodeCount > 1
+  ? Math.min(130, (W - 2 * (nodeR + PADDING)) / (nodeCount - 1))
+  : 0;
 
 function pos(i: number): { x: number; y: number } {
   if (chain.topology === 'star') {
-    // Centre node is the hub; the rest fan out evenly around it.
-    if (i === 0) return { x: DESIGN_CX, y: DESIGN_CY };
+    if (i === 0) return { x: cx, y: cy };
     const others = Math.max(1, nodeCount - 1);
     const angle = ((i - 1) / others) * 2 * Math.PI - Math.PI / 2;
-    return {
-      x: DESIGN_CX + Math.cos(angle) * radialR,
-      y: DESIGN_CY + Math.sin(angle) * radialR,
-    };
+    return { x: cx + Math.cos(angle) * starR, y: cy + Math.sin(angle) * starR };
   }
   if (chain.topology === 'loop') {
     const angle = (i / nodeCount) * 2 * Math.PI - Math.PI / 2;
-    // Slightly squashed ellipse so loops read landscape-orientated.
-    return {
-      x: DESIGN_CX + Math.cos(angle) * radialR,
-      y: DESIGN_CY + Math.sin(angle) * (radialR * 0.78),
-    };
+    return { x: cx + Math.cos(angle) * loopR, y: cy + Math.sin(angle) * loopR * 0.78 };
   }
-  // linear / tree / dag: even spacing along a row
-  const stride = 130;
-  const totalSpan = (nodeCount - 1) * stride;
-  return { x: DESIGN_CX - totalSpan / 2 + i * stride, y: DESIGN_CY };
+  // linear / tree / dag
+  const x = cx - ((nodeCount - 1) * linearStride) / 2 + i * linearStride;
+  return { x, y: cy };
 }
 const positions = chain.participants.map((_, i) => pos(i));
-
-// Fit viewBox around every node + its label so nothing clips, regardless of
-// how many participants the user wires in.
-let vbMinX = positions[0]!.x;
-let vbMaxX = positions[0]!.x;
-let vbMinY = positions[0]!.y;
-let vbMaxY = positions[0]!.y;
-for (const p of positions) {
-  if (p.x < vbMinX) vbMinX = p.x;
-  if (p.x > vbMaxX) vbMaxX = p.x;
-  if (p.y < vbMinY) vbMinY = p.y;
-  if (p.y > vbMaxY) vbMaxY = p.y;
-}
-const VB_X = vbMinX - nodeR - PADDING;
-const VB_Y = vbMinY - nodeR - PADDING;
-const VB_W = (vbMaxX - vbMinX) + 2 * (nodeR + PADDING);
-const VB_H = (vbMaxY - vbMinY) + 2 * nodeR + LABEL_OFFSET + LABEL_HEIGHT + PADDING;
 
 function indexFor(slug: string, after = -1): number {
   for (let i = after + 1; i < chain.participants.length; i++) {
@@ -232,8 +219,11 @@ function indexFor(slug: string, after = -1): number {
         </div>
       </div>
 
-      <div class="mt-5 overflow-hidden rounded-xl border border-white/5 bg-ink-950/40 p-4">
-        <svg viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`} preserveAspectRatio="xMidYMid meet" class="mx-auto block h-auto w-full max-w-[760px]" aria-label={`${chain.topology} chain topology`} shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
+      <div
+        class="topology-zoom relative mt-5 overflow-hidden rounded-xl border border-white/5 bg-ink-950/40 p-4"
+        data-topology-zoom
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" class="topology-svg mx-auto block h-auto w-full max-w-[760px]" aria-label={`${chain.topology} chain topology`} shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
           <defs>
             <marker id={`arrow-${chain.chain_id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
@@ -277,9 +267,41 @@ function indexFor(slug: string, after = -1): number {
             );
           })}
         </svg>
+        <div class="pointer-events-none absolute bottom-2 right-3 select-none font-mono text-[10px] uppercase tracking-wider text-ink-500/70">scroll · pinch to zoom</div>
       </div>
     </div>
   </section>
+
+  <script>
+    // Trackpad / mouse-wheel zoom for the topology diagram. Two-finger
+    // scroll = zoom; pinch (which arrives as wheel + ctrlKey on macOS) =
+    // zoom too, slightly more sensitive. Scale clamped to [0.55, 3.0]; a
+    // short CSS transition smooths each tick so the zoom feels continuous
+    // rather than jagged.
+    document.querySelectorAll('[data-topology-zoom]').forEach((wrap) => {
+      const svg = wrap.querySelector('svg');
+      if (!svg) return;
+      let scale = 1;
+      svg.style.transformOrigin = 'center center';
+      svg.style.willChange = 'transform';
+      svg.style.transition = 'transform 90ms ease-out';
+      wrap.addEventListener(
+        'wheel',
+        (e) => {
+          const ev = e as WheelEvent;
+          ev.preventDefault();
+          // Gentle factor: pinch (ctrlKey on Mac) gets a slightly larger
+          // multiplier because pinches are deliberate; plain scroll stays
+          // small so accidental swipes don't yank the view around.
+          const factor = ev.ctrlKey ? 0.010 : 0.0017;
+          const delta = -ev.deltaY * factor;
+          scale = Math.max(0.55, Math.min(3.0, scale + delta));
+          svg.style.transform = `scale(${scale})`;
+        },
+        { passive: false },
+      );
+    });
+  </script>
 
   <!-- ============ Participants ============ -->
   <section class="container-page mt-10">
