@@ -1,36 +1,38 @@
-# SMADP Report
+# SMADP daily catalog briefings
 
-Three-layout research memo (Brief / Prospectus / Dossier) generated at build time from the verdict catalog at `../catalog/`.
+Auto-generated end-of-tick reports from the autopilot loop. Modeled on the
+[ONEXUS-Agents nightly reports](https://github.com/AllStreets/ONEXUS-Agents/tree/main/reports)
+— a quick, scannable summary of what changed in the catalog without having
+to walk the git log.
 
-## Layouts
+Each file at `report/YYYY-MM-DD.md` carries:
 
-| Layout      | Pages | Character                                                       |
-| ----------- | ----- | --------------------------------------------------------------- |
-| Brief       | ~10   | Shortest. Linear narrative. Accessible entry point.             |
-| Prospectus  | ~14   | Investment-bank format. Pitch up front, data appendix in back.  |
-| Dossier     | ~16   | Densest. Editorial. Every risk dimension, every major agent.    |
+- **Totals** — current profile / verdict / adapter / pending counts, with
+  day-over-day deltas.
+- **Tier breakdown** — how many profiles and verdicts sit at each
+  evidence_level (`sandbox-validated` ≻ `profile-verified` ≻ `docs-only`
+  ≻ `unverified-profile`).
+- **Activity today (UTC)** — new verdicts created today, sandbox runs
+  (pass / fail), autopilot budget consumed.
+- **Severity distribution** — sub-verdict severities across the verdicts
+  created today, so trend shifts (e.g. more critical findings on a new
+  adapter batch) are visible without opening files.
+- **Pipeline health** — queue depths, operator review backlog, judge
+  errors logged lifetime.
 
-Each layout has its own print stylesheet — open it, hit `Cmd+P` / `Ctrl+P`, save as PDF.
+## Schedule
 
-## Develop
+The autopilot loop (`scripts/autopilot-loop.sh`) runs every 300s; the last
+step of every tick is `smadp autopilot daily-report`, which **regenerates
+that day's report file**. So `report/<today>.md` always reflects the
+state of disk within ~5 minutes.
+
+## Manual run
 
 ```bash
-pnpm install
-pnpm dev          # live-reload at http://localhost:4321
-pnpm test         # vitest: data layer + aggregations
-pnpm build        # static export to dist/
-pnpm preview      # serve dist/ on http://localhost:4321
-pnpm test:e2e     # Playwright route smoke (requires `pnpm build` or `pnpm preview` running)
+smadp autopilot daily-report
+# writes report/$(date -u +%F).md
 ```
 
-## Architecture
-
-- `src/lib/catalog.ts` — reads `catalog/verdicts/*.json` and `catalog/profiles/*.json` at build time.
-- `src/lib/aggregations.ts` — pure derived computations: ranking, evidence grouping, severity distribution, heatmap matrix, framework coverage.
-- `src/components/` — Astro components for the Navy Memo design system.
-- `src/components/charts/` — hand-coded SVG charts (no JS chart library).
-- `src/pages/` — one file per layout plus the picker landing.
-
-## Honesty
-
-Every verdict on the site carries an evidence badge: **Sandbox** (gold), **Profile** (blue), **Docs** (grey). The methodology section defines all three. The site never silently promotes a docs-only verdict.
+That's all there is. The catalog is the source of truth; this folder is
+the lobby version.

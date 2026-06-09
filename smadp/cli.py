@@ -863,6 +863,17 @@ def autopilot_docs_only_tick(ctx: click.Context, batch_size: int) -> None:
     click.echo(f"published={summary.published} failed={summary.failed} reason={summary.reason}")
 
 
+@autopilot.command("daily-report")
+@click.pass_context
+def autopilot_daily_report(ctx: click.Context) -> None:
+    """Generate today's catalog briefing at report/YYYY-MM-DD.md."""
+    from smadp.autopilot.daily_report import write_report
+
+    cfg = _config_from_ctx(ctx)
+    path = write_report(repo_root=cfg.repo_root)
+    click.echo(f"wrote {path}")
+
+
 @autopilot.command("scaffold-tick")
 @click.option("--batch-size", default=5, type=int)
 @click.pass_context

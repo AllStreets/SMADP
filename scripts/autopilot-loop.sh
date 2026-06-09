@@ -40,3 +40,7 @@ smadp autopilot docs-only-tick --batch-size 3
 # state/scaffold_tick.jsonl ensures already-tried slugs aren't retried, and
 # runs_per_day in config/autopilot.yaml still caps total daily spend.
 smadp autopilot scaffold-tick --batch-size 10
+
+# Daily briefing: regenerate report/YYYY-MM-DD.md so it reflects the catalog
+# state after this tick's writes. Single-file rewrite, ~50ms, no LLM cost.
+smadp autopilot daily-report
