@@ -224,13 +224,21 @@ It emits five sub-verdicts with severities + rationales + citations. The composi
 
 ## Compose chains
 
-A **chain** is 3+ agents in a topology — linear, star, or loop. SMADP analyzes each chain end-to-end against the same five risks, plus topology-specific concerns (propagation depth, cycle convergence, fan-out blast radius).
+A **chain** is 3+ agents arranged in a topology — linear, star, or loop. SMADP applies the same five-risk rubric to the chain end-to-end, plus the topology-specific concerns each shape carries: propagation depth on linear chains, fan-out blast radius and merge-step trust on star chains, cycle convergence and feedback-loop drift on loops.
 
 <p align="center">
   <img src=".github/assets/chain-topologies.svg" alt="SMADP chain topologies — three panels showing the Linear (plan → fix → verify), Star (orchestrator fan-out + merge), and Loop (plan → execute → critic, revise back to plan) compositions" width="100%"/>
 </p>
 
-Chains live under `catalog/chains/`. The seed set has six canonical compositions; new chains can be authored from `/chains/new` in the UI (gated behind the operator queue).
+Chains live under `catalog/chains/`. Three richly-authored examples ship today, one per topology, each carrying a full set of sub-verdicts (rationale, profile-field citations, safe-under conditions, mitigations) plus framework mappings against NIST AI RMF, ISO 42001, and OWASP LLM Top 10:
+
+| Chain | Topology | Composite | Headline risk |
+|---|---|---|---|
+| [Research → Write → Cite](catalog/chains/c_research-write-cite.json) | linear | 0.32 | **A** — retrieved web content is a prompt-injection vector if the writer doesn't fence it |
+| [Plan → Edit → Review](catalog/chains/c_code-review-loop.json) | loop | 0.49 | **C** — all three nodes hold filesystem + git write; no second pair of eyes |
+| [Orchestrator · fan-out · merge](catalog/chains/c_orchestrator-fanout-merge.json) | star | 0.55 | **D** — fan-out errors compound at the merge step; three confident-wrong workers beat one careful-right one |
+
+New chains can be authored from [`/chains`](https://allstreets.github.io/SMADP/chains/) in the UI — three required fields (name, your username, agents), a topology pill, and one submit. Edges, channels, and roles are derived from topology + participant order. Submissions land in `catalog/pending/` for operator review before they appear in the [library](https://allstreets.github.io/SMADP/chains/library/).
 
 ---
 
