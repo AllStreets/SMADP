@@ -88,6 +88,14 @@ class SubVerdicts(BaseModel):
     E_compliance: SubVerdict
 
 
+EvidenceLevel = Literal[
+    "unverified-profile",
+    "docs-only",
+    "profile-verified",
+    "sandbox-validated",
+]
+
+
 class Chain(BaseModel):
     """Authoritative model for `catalog/chains/<chain_id>.json`."""
 
@@ -97,11 +105,19 @@ class Chain(BaseModel):
     chain_id: str
     name: str = Field(min_length=1, max_length=120)
     tagline: str | None = Field(default=None, max_length=240)
+    # Optional metadata added when chains became first-class
+    # (authored examples + builder submissions). All optional so older
+    # fixtures from before the v2 rework still validate.
+    author: str | None = Field(default=None, max_length=120)
     topology: Topology
     participants: list[Participant] = Field(min_length=3, max_length=8)
     edges: list[Edge] = Field(default_factory=list)
     headline: str = Field(min_length=1, max_length=240)
     sub_verdicts: SubVerdicts
+    composite_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_severity: Severity | None = None
+    evidence_level: EvidenceLevel | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     framework_mappings: dict[str, list[str]] = Field(default_factory=dict)
     evidence_refs: list[str] = Field(default_factory=list)
     first_seen_at: datetime

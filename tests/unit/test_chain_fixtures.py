@@ -26,8 +26,10 @@ def test_chain_validates(path: Path) -> None:
     assert path.stem == chain.chain_id
 
 
-def test_at_least_six_chains() -> None:
-    assert len(list(CHAINS.glob("*.json"))) >= 6
+def test_at_least_three_chains() -> None:
+    # We ship one richly-authored example per topology (linear, star, loop).
+    # Builder submissions land in catalog/pending/ first, not here.
+    assert len(list(CHAINS.glob("*.json"))) >= 3
 
 
 def test_chain_participants_resolve_to_profiles() -> None:
