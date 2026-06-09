@@ -10,7 +10,7 @@
 <a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-460-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-7-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-155-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
 <br/>
 
@@ -390,7 +390,7 @@ SMADP would not exist without [ONEXUS-Agents](https://github.com/AllStreets/ONEX
 
 ## License
 
-[MIT](LICENSE). The catalog is publicly auditable; pair verdicts, profiles, chains, and the chronicle are all plain files in this repository's git history.
+[Apache 2.0](LICENSE). Apache (not MIT) because the project encodes novel safety/compliance methodology — the explicit patent grant in Apache 2.0 protects users from patent claims against the rubric, judge prompts, and adapter scaffolder. Consistent with [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents) (sibling project, same license). The catalog itself is publicly auditable; pair verdicts, profiles, chains, and the chronicle are all plain files in this repository's git history.
 
 <div align="center">
 
