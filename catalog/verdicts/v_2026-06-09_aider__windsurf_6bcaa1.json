@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_aider__windsurf_6bcaa1",
+  "generated_at": "2026-06-09T05:24:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors from shared repo/workspace plus Windsurf clipboard/MCP and auto-execute paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider writes to a shared git repo and reads filesystem content; Windsurf shares state via local filesystem and can ingest clipboard/MCP content. That creates a plausible injection bridge where attacker-controlled repo text or copied content can influence the other agent. The pathway is not fully default-to-default, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace path, injection content can cross between them.",
+        "IF Windsurf reads clipboard or MCP content originating from Aider outputs, prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents.",
+        "Use separate repos or workspace copies for each agent.",
+        "Require manual review of any file written by the other agent before reuse.",
+        "Turn off MCP servers unless explicitly needed.",
+        "requires-engineering: add provenance tagging for inter-agent file handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history, while Windsurf touches source code and open files and can send content to its model proxy or MCP servers. With shared filesystem state, sensitive code or secrets in one agent's workspace can flow into the other's backend. This is a default-configuration workspace leak, not merely an unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share a workspace or git repo, files opened by one can be exposed to the other.",
+        "IF Windsurf forwards open files to its model proxy or MCP server, content from Aider's edits can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive repos.",
+        "Avoid placing secrets in tracked files.",
+        "Disable MCP integrations for the shared workspace.",
+        "Review Windsurf privacy/settings for model-proxy uploads.",
+        "requires-engineering: enforce workspace-level access controls between agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, modify git state, execute shell, and spawn subprocesses. Aider explicitly shares state via a shared git repo, while Windsurf shares state via local filesystem and can auto-execute commands. Concurrent edits to the same repo without locking create a strong conflict and corruption risk in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same git repository concurrently, merge conflicts or overwritten changes can occur.",
+        "IF Windsurf auto-execute is enabled while Aider is committing, race conditions become more likely."
+      ],
+      "mitigations": [
+        "Run only one agent at a time per repo.",
+        "Use separate branches for each agent.",
+        "Disable Windsurf auto-execute.",
+        "Commit or stash before switching agents.",
+        "requires-engineering: add file-locking or orchestration locks around shared repos."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider produces git commits and Windsurf can treat workspace content and tool outputs as actionable context. Because Windsurf has command execution and auto-execute paths, Aider's output can become authoritative input for downstream actions without a guaranteed verification step. That makes erroneous code or instructions propagate into irreversible changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes Aider-generated diffs or commit messages as trusted context, errors can cascade into further edits.",
+        "IF Windsurf auto-execute is enabled, a mistaken Aider output can trigger shell actions."
+      ],
+      "mitigations": [
+        "Require human review before executing any agent-generated command.",
+        "Disable Windsurf auto-execute.",
+        "Inspect Aider commits before feeding them to Windsurf.",
+        "Use small, isolated changesets.",
+        "requires-engineering: add verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider is open-source and documents git-repo editing, while Windsurf is closed-source and handles open files plus model-proxy/MCP traffic. The main compliance concern is policy mismatch around code and file contents, but the profiles do not show regulated data classes like PHI or EU PII. The other agent is cited because the risk arises from their combined data flow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace, policy review is required before either agent processes it.",
+        "IF Windsurf model-proxy uploads are disallowed by policy, its default use would violate that policy."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo.",
+        "Review vendor data-processing terms for Windsurf.",
+        "Disable cloud/model-proxy features for sensitive projects.",
+        "Document retention expectations for git history.",
+        "requires-engineering: implement data-class-based routing controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -165,9 +165,22 @@ export interface FrameworksFile {
 
 export interface ChronicleEvent {
   ts: string;
+  // `event` is the canonical field (e.g. "profile.created", "sandbox.run.completed").
+  // The older seed entries used `kind` for the same thing; either is accepted.
+  event?: string;
+  kind?: string;
+  // Actor field — `by` in current entries, `actor` in older seed entries.
+  by?: string;
   actor?: string;
-  kind: string;
+  // Subject — can be a single slug, a pair, or a generic ref. Newer entries
+  // put the slug pair under `pair`; older seed entries use `slug` or `ref`.
+  slug?: string;
+  pair?: string[];
   ref?: string;
+  // Outcome of sandbox / verdict events.
+  outcome?: string;
+  // Free-form details bag.
+  details?: Record<string, unknown>;
   message?: string;
   [k: string]: unknown;
 }

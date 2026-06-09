@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_gpt-engineer__windsurf_cca6f6",
+  "generated_at": "2026-06-09T05:25:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt injection and cascading errors: shared project/workspace paths plus Windsurf\u2019s clipboard/MCP and auto-execute surface can steer gpt-engineer\u2019s file-writing loop.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a shared project directory and has no self-isolation by default; Windsurf shares state via local filesystem and can ingest clipboard/MCP content. That creates a default path for attacker-controlled project files or copied text to influence either agent\u2019s instruction stream, though not as directly as a shared MCP server.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory or workspace files",
+        "IF content from that directory is treated as instructions by either agent"
+      ],
+      "mitigations": [
+        "Use separate project directories for each agent",
+        "Disable clipboard-based handoff between agents",
+        "Require a human review step before either agent follows file content as instructions",
+        "Pin one agent to read-only access for shared artifacts",
+        "requires-engineering: add provenance tagging for files passed between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents read and write project/workspace files, and both call external model APIs by default. gpt-engineer touches generated source code and Windsurf touches open files, so sensitive code or secrets in the shared workspace can flow to either backend during normal operation. The pair is not documented as isolated, so leakage risk is real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared project/workspace",
+        "IF either agent sends file contents to its configured model backend"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace",
+        "Use separate workspaces for code and confidential material",
+        "Disable automatic file upload or context expansion where possible",
+        "Rotate any exposed API keys after a shared-session review",
+        "requires-engineering: enforce per-file redaction before model calls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, subprocess spawning, and broad network egress. Windsurf also modifies git state while gpt-engineer writes files in a project directory; with shared local state and no locking, concurrent edits can overwrite each other or corrupt repository state. This matches the high-risk overlap pattern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or project directory",
+        "IF both are allowed to write or run commands concurrently"
+      ],
+      "mitigations": [
+        "Run only one agent at a time on a given repo",
+        "Use separate clones or worktrees",
+        "Disable git-writing actions in one agent during the other\u2019s session",
+        "Add a manual checkpoint before any commit or destructive shell command",
+        "requires-engineering: add file and git locks across agents"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer\u2019s workflow is to write files then offer to run, while Windsurf\u2019s Cascade can auto-execute commands subject to a setting. If Windsurf consumes gpt-engineer\u2019s generated code or instructions without verification, an error can propagate into shell execution or repository changes. The pair therefore has a strong default cascade path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf treats gpt-engineer output as authoritative input",
+        "IF auto-execute is enabled or command approval is bypassed"
+      ],
+      "mitigations": [
+        "Require explicit human verification of gpt-engineer output before Windsurf acts on it",
+        "Keep Windsurf auto-execute disabled",
+        "Limit gpt-engineer to generating patches, not runnable commands",
+        "Review any shell command generated from the other agent before execution",
+        "requires-engineering: add structured validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Windsurf is closed-source and handles model-provider keys plus open files, while gpt-engineer is open-source and handles OPENAI_API_KEY and generated source code. If regulated or confidential code is placed in the shared workspace, the pair can create retention or residency mismatches through external model calls. The other agent is cited because the risk arises from their combined data flow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data, secrets, or customer code are stored in the shared workspace",
+        "IF either agent forwards that content to an external model provider"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use a separate non-regulated repo for agentic work",
+        "Remove secrets from prompts and files before sessions",
+        "Confirm vendor retention terms before processing sensitive code",
+        "requires-engineering: enforce data-class routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

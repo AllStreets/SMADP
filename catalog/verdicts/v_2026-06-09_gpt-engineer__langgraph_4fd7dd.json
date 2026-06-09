@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-09_gpt-engineer__langgraph_4fd7dd",
+  "generated_at": "2026-06-09T05:54:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High prompt-injection and cascading-error risk from shared project/checkpointer state; data leakage and capability conflicts are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A writes files in a shared project directory and Agent B shares state via a checkpointer store; that creates a plausible bridge where attacker-controlled content from A can be consumed by B as instructions. Neither profile shows provenance tracking or isolation by default, so the interaction is not blocked. The pathway is stronger than manual copy-paste and weaker than a raw web-to-agent chain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Agent B reads A-authored files or shared state as instructions without provenance checks, injection is possible.",
+        "IF the orchestrator exposes A's project directory contents to B, the bridge exists."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all A outputs before B ingests them.",
+        "Disable automatic instruction-following from shared files.",
+        "Separate A and B into isolated workspaces.",
+        "Require B to treat A output as untrusted data unless explicitly marked.",
+        "requires-engineering: add content-sanitization and allowlist parsing at the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystem content, and A uses a per-project directory while B uses application-defined files plus a persistent checkpointer store. That makes shared-workspace leakage plausible in default deployments, especially because both also have broad network egress and call external model providers. The profiles do not prove PHI or secrets exposure, so medium is the highest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same project or application workspace contains sensitive files, both agents can access them.",
+        "IF either agent forwards file contents to its model backend, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Use separate directories for A and B.",
+        "Remove secrets from shared workspaces before running either agent.",
+        "Turn off file syncing into B's checkpointer store.",
+        "Restrict outbound network access during sensitive runs.",
+        "requires-engineering: encrypt or redact persisted graph state."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and A explicitly shares state via the project directory while B shares state via a persistent checkpointer store. Concurrent writes to overlapping mutable resources can corrupt code, state, or generated artifacts, and neither profile shows locking or optimistic concurrency controls. Because the blast radius includes irreversible workspace damage, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or shared state store, write conflicts can occur.",
+        "IF either agent mutates generated code while the other is reading or writing it, corruption is possible."
+      ],
+      "mitigations": [
+        "Run A and B on separate workspaces.",
+        "Serialize write access with a simple operator-managed lock.",
+        "Disable one agent's write path during the other's run.",
+        "Snapshot the workspace before concurrent use.",
+        "requires-engineering: add transactional locking around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A is a code generator that writes files, and B is an orchestration framework that can chain nodes and developer-defined tools. If B consumes A's generated code or text as authoritative input, errors can cascade into downstream actions or further agent steps without verification. The profiles do not show a built-in verification gate, so the safer assumption is a high-risk handoff.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tagline"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated artifacts as trusted inputs, A's mistakes propagate downstream.",
+        "IF B triggers tools or nodes based on A output without validation, the cascade can affect multiple steps."
+      ],
+      "mitigations": [
+        "Insert a human review step between A and B.",
+        "Require schema validation on A outputs before B consumes them.",
+        "Limit B to read-only evaluation of A artifacts.",
+        "Log and diff A outputs before any downstream action.",
+        "requires-engineering: add automated verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch generated source code or application-defined graph state, with no stated residency, certification, or retention mismatch. The evidence does not show a concrete compliance conflict, so only a low residual risk remains from unspecified deployment policies. The other agent is cited because the assessment is pairwise, but no specific mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF the deployment stores regulated data in either agent's workspace, external policy review is needed.",
+        "IF one agent is configured with stricter retention than the other, a mismatch can arise."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Document retention settings for both agents.",
+        "Align workspace cleanup schedules.",
+        "Review vendor terms before production use.",
+        "requires-engineering: implement policy-aware data routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

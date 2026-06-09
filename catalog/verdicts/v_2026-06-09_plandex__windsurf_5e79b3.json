@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "plandex",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_plandex__windsurf_5e79b3",
+  "generated_at": "2026-06-09T05:30:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors from shared workspace and permissive tool use; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Plandex reads and writes a plan-local sandbox and project directory, while Windsurf uses workspace files and clipboard. That creates a plausible content bridge where one agent can ingest the other\u2019s generated files or pasted output as trusted instructions. The pathway is not fully isolated, but it is not a shared MCP channel by default, so medium fits both profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF either agent consumes the other\u2019s generated files as instructions without provenance checks, injection is possible.",
+        "IF clipboard copy-paste is used between the two agents, attacker-controlled text can cross the boundary."
+      ],
+      "mitigations": [
+        "Disable clipboard bridging between agents.",
+        "Keep each agent in a separate workspace directory.",
+        "Require manual review of any file produced by the other agent before execution.",
+        "Add a provenance prefix to inter-agent handoffs.",
+        "requires-engineering: enforce content-type or provenance tagging on shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch source code, and both can read/write filesystem content in their workspaces. Plandex also calls external model providers or Plandex Cloud, while Windsurf sends data to its model proxy or MCP servers. In a shared workspace, file contents can flow into third-party inference backends by default, creating a realistic leakage path for code and open files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace, file contents can be exposed to both backends.",
+        "IF either agent is configured to send workspace context to its model provider, source code may leave the local machine."
+      ],
+      "mitigations": [
+        "Use separate repositories or clones per agent.",
+        "Exclude secrets and sensitive files with ignore rules.",
+        "Turn off auto-upload or remote context sync where available.",
+        "Review outbound API destinations before running either agent.",
+        "requires-engineering: route both agents through a local-only model gateway."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, and git modification capabilities. Plandex uses a shared Plandex server backend across instances, while Windsurf shares state via the local filesystem. If they point at the same repo, concurrent edits and git state changes can race or overwrite each other, and neither profile shows locking. That makes the default overlap dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git repository, concurrent writes can conflict.",
+        "IF both agents modify branch or index state without external locking, one agent can overwrite the other's changes."
+      ],
+      "mitigations": [
+        "Run the agents on separate branches.",
+        "Serialize write access with a simple manual lock file.",
+        "Assign one agent read-only access during the other's edit phase.",
+        "Commit frequently to reduce conflict windows.",
+        "requires-engineering: add orchestrator-level locking around shared repos."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Plandex is a planner with review-then-apply and optional auto-apply, while Windsurf\u2019s Cascade loop can auto-execute depending on settings. If Windsurf consumes Plandex output as authoritative, planning mistakes can cascade into real shell or git actions. The profiles do not show a verification barrier between them, so the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf treats Plandex output as authoritative, downstream actions can be taken on unverified plans.",
+        "IF auto-apply or auto-execute is enabled in either agent, a mistaken plan can become an executed change."
+      ],
+      "mitigations": [
+        "Require human review before apply/execute in both tools.",
+        "Disable auto-apply and auto-execute modes.",
+        "Have Windsurf summarize and verify Plandex output before acting.",
+        "Use a checklist for any shell or git action derived from another agent.",
+        "requires-engineering: insert a validation step between planning and execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source/closed-source coding tools handling source code and open files, but the rubric\u2019s stronger residency or regulated-data triggers are not evidenced. The main compliance issue is a generic logging/retention mismatch risk from different vendors, which is smaller than the data-class scenarios in the rubric. Only profile fields are cited because no separate compliance evidence exists.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into either workspace, vendor policy differences may matter.",
+        "IF one tool retains prompts or logs longer than the other, retention mismatch can occur."
+      ],
+      "mitigations": [
+        "Avoid regulated data in both tools.",
+        "Review each vendor\u2019s retention policy before use.",
+        "Disable chat/history retention where available.",
+        "Keep sensitive projects in a separate environment.",
+        "requires-engineering: formalize a data-processing agreement and residency review."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5b2f39fd5f2aff98bf7946cc13a44b3981796f4d1f42ff54bef9e67e64b3eb35",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

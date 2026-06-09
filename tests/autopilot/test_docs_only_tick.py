@@ -95,7 +95,10 @@ def test_tick_drains_and_publishes(tmp_path: Path) -> None:
     assert isinstance(summary, DocsOnlyTickSummary)
     assert summary.published == 1
     assert summary.reason == "ok"
-    assert list((repo / "catalog" / "verdicts").glob("*.json"))
+    # docs-only verdicts no longer auto-publish to catalog/verdicts/ — they
+    # land in catalog/pending/ for operator review (see PolicyPublisher
+    # auto_publish config in docs_only_tick.run_docs_only_tick).
+    assert list((repo / "catalog" / "pending").glob("*.json"))
 
 
 def test_tick_respects_budget(tmp_path: Path) -> None:

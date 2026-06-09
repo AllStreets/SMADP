@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-09_aider__langgraph_664b4a",
+  "generated_at": "2026-06-09T05:49:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-repo write conflicts and downstream misexecution; prompt-injection and leakage are lower but nonzero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files in a shared repo, so attacker-controlled content in files can be re-ingested as instructions. LangGraph can also consume application-defined files and developer-defined tools, creating a plausible bridge. No MCP/shared clipboard is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF either agent is configured to treat repository or application files as trusted instructions, injection becomes actionable.",
+        "IF the two agents exchange content through the shared repo or graph state, attacker text can cross the boundary."
+      ],
+      "mitigations": [
+        "Separate instruction files from data files in the shared workspace.",
+        "Add a manual review step before either agent executes file-derived instructions.",
+        "Prefix untrusted file content with explicit non-instruction markers.",
+        "Restrict LangGraph nodes that read repo files to read-only parsing.",
+        "requires-engineering: add provenance tagging between file reads and tool execution."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read filesystem content and use broad network egress, so sensitive repo or graph-state data can flow into model-provider calls. Aider explicitly touches source code and git history; LangGraph touches application-defined graph state. The shared workspace and outbound API use make leakage plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive source code or secrets are present in the shared workspace, both agents can ingest them.",
+        "IF either agent forwards its context to a third-party model provider, that data leaves the local environment."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared repo and graph state.",
+        "Use separate model-provider keys and logging settings per agent.",
+        "Disable network egress for one agent during sensitive edits.",
+        "Redact secrets before passing files between agents.",
+        "requires-engineering: enforce workspace-level data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the shared git repo and modify git state, while LangGraph can write application-defined files and persist state via a checkpointer store. Both also support multiple instances and run with no self-isolation, so concurrent writes can corrupt shared artifacts or overwrite each other in default multi-agent use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or shared state store, concurrent writes can race.",
+        "IF LangGraph nodes persist to the same checkpointer namespace as Aider edits, state corruption is possible."
+      ],
+      "mitigations": [
+        "Assign separate working directories or branches.",
+        "Serialize write access with a simple operator-managed lock.",
+        "Use distinct checkpointer namespaces per graph invocation.",
+        "Review and merge git changes before the second agent runs.",
+        "requires-engineering: add transactional locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider produces code edits and git commits, and LangGraph is a stateful orchestrator that can treat upstream outputs as node inputs. If LangGraph consumes Aider's output without verification, mistakes can cascade into automated downstream actions or committed bad code. The pair lacks a built-in verification boundary in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.category"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph routes Aider-generated text directly into action-taking nodes, errors can propagate.",
+        "IF Aider's commit messages or diffs are used as authoritative facts, downstream automation may act on them."
+      ],
+      "mitigations": [
+        "Insert a human review gate before any action node.",
+        "Require schema validation on Aider outputs before LangGraph consumes them.",
+        "Limit LangGraph to read-only analysis of Aider results.",
+        "Keep automated side effects disabled until outputs are verified.",
+        "requires-engineering: implement confidence checks and provenance-aware routing."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch source code, git history, and application-defined graph state, so no specific residency or regulated-data mismatch is evidenced. The main compliance concern is operational logging/retention, but the profiles do not show a concrete breach pathway. The other agent is cited because the assessment is pairwise, though no mismatch is proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared repo or graph state, compliance obligations may apply.",
+        "IF either agent logs prompts or outputs beyond the operator's retention policy, a policy mismatch could arise."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Check logging and retention settings for both agents.",
+        "Use separate environments for regulated and non-regulated work.",
+        "Document data-handling responsibilities before deployment.",
+        "requires-engineering: add retention controls and audit logging."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

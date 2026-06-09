@@ -126,11 +126,17 @@ def run_docs_only_tick(
         return DocsOnlyTickSummary(published=0, failed=0, reason="no_work")
 
     profiles = _load_profiles(repo_root / "catalog" / "profiles")
+    # All autopilot output routes to catalog/pending/ now. Promotion to
+    # catalog/verdicts/ (the public catalog the site indexes) requires a
+    # human gate via `smadp pending approve` (single or batch). This is
+    # the review point — autopilot keeps producing freely, the operator
+    # decides what's posted.
     publisher = PolicyPublisher(
         catalog_root=repo_root / "catalog",
         auto_publish={
-            "docs-only": True,
-            "profile-verified": True,
+            "docs-only": False,
+            "profile-verified": False,
+            "sandbox-validated": False,
             "sandbox-run": False,
         },
     )

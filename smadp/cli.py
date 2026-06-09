@@ -1095,6 +1095,171 @@ def adapters_scaffold(
         raise click.ClickException(f"docker build failed: see {prov_path}")
 
 
+# --------------------------------------------------------------------- pending
+@cli.group()
+def pending() -> None:
+    """Review queue for autopilot-produced verdicts before they're published."""
+
+
+@pending.command("list")
+@click.option("--tier", type=str, default=None, help="Filter by evidence_level (e.g. docs-only).")
+@click.option(
+    "--min-confidence",
+    type=float,
+    default=None,
+    help="Only show verdicts with confidence >= this value (0-1).",
+)
+@click.option(
+    "--max-composite",
+    type=float,
+    default=None,
+    help="Only show verdicts with composite_score <= this value (lower = safer).",
+)
+@click.option(
+    "--pair-contains",
+    type=str,
+    default=None,
+    help="Substring match against any slug in the pair (e.g. 'aider').",
+)
+@click.option("--limit", type=int, default=50, help="Max rows to display.")
+@click.pass_context
+def pending_list(
+    ctx: click.Context,
+    tier: str | None,
+    min_confidence: float | None,
+    max_composite: float | None,
+    pair_contains: str | None,
+    limit: int,
+) -> None:
+    """List pending verdicts awaiting review."""
+    from smadp.autopilot.pending import list_pending
+
+    cfg = _config_from_ctx(ctx)
+    rows = list_pending(
+        repo_root=cfg.repo_root,
+        tier=tier,
+        min_confidence=min_confidence,
+        max_composite=max_composite,
+        pair_contains=pair_contains,
+        limit=limit,
+    )
+    if not rows:
+        click.echo("no pending verdicts match the filter")
+        return
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("key", style="cyan", overflow="fold", max_width=58)
+    table.add_column("pair", style="white")
+    table.add_column("tier", style="magenta")
+    table.add_column("conf", justify="right")
+    table.add_column("score", justify="right")
+    table.add_column("headline", overflow="fold", max_width=40)
+    for v in rows:
+        table.add_row(
+            v.key,
+            " x ".join(v.pair),
+            v.evidence_level,
+            f"{v.confidence:.2f}",
+            f"{v.composite_score:.2f}",
+            v.headline[:60],
+        )
+    console.print(table)
+    click.echo(f"{len(rows)} shown")
+
+
+@pending.command("show")
+@click.argument("key")
+@click.pass_context
+def pending_show(ctx: click.Context, key: str) -> None:
+    """Pretty-print a single pending verdict."""
+    cfg = _config_from_ctx(ctx)
+    path = cfg.repo_root / "catalog" / "pending" / f"{key}.json"
+    if not path.exists():
+        raise click.ClickException(f"no pending verdict at {path}")
+    console.print(Syntax(path.read_text("utf-8"), "json", theme="monokai", line_numbers=False))
+
+
+@pending.command("approve")
+@click.argument("keys", nargs=-1)
+@click.option("--tier", type=str, default=None)
+@click.option("--min-confidence", type=float, default=None)
+@click.option("--max-composite", type=float, default=None)
+@click.option("--pair-contains", type=str, default=None)
+@click.option("--limit", type=int, default=None, help="Cap on batch size (only with filters).")
+@click.option(
+    "--all",
+    "approve_all",
+    is_flag=True,
+    help="Approve every pending verdict that matches the filters (no limit).",
+)
+@click.option("--yes", "yes_flag", is_flag=True, help="Skip the confirmation prompt for batches.")
+@click.pass_context
+def pending_approve(
+    ctx: click.Context,
+    keys: tuple[str, ...],
+    tier: str | None,
+    min_confidence: float | None,
+    max_composite: float | None,
+    pair_contains: str | None,
+    limit: int | None,
+    approve_all: bool,
+    yes_flag: bool,
+) -> None:
+    """Approve pending verdicts. Pass explicit keys, or filters + --limit/--all for bulk."""
+    from smadp.autopilot.pending import approve_batch, list_pending
+
+    cfg = _config_from_ctx(ctx)
+    explicit = list(keys)
+    if explicit:
+        moved = approve_batch(repo_root=cfg.repo_root, keys=explicit)
+        click.echo(f"approved {len(moved)} explicit key(s)")
+        return
+    if limit is None and not approve_all:
+        raise click.ClickException(
+            "no keys given. Pass --limit N or --all to bulk-approve by filter."
+        )
+    # Preview the batch first; require --yes for non-trivial sizes.
+    preview = list_pending(
+        repo_root=cfg.repo_root,
+        tier=tier,
+        min_confidence=min_confidence,
+        max_composite=max_composite,
+        pair_contains=pair_contains,
+        limit=limit,
+    )
+    if not preview:
+        click.echo("no pending verdicts match the filter; nothing approved")
+        return
+    if not yes_flag and len(preview) > 5:
+        sample = ", ".join(v.key for v in preview[:3])
+        click.echo(
+            f"About to approve {len(preview)} verdicts (sample: {sample}…). "
+            f"Re-run with --yes to confirm."
+        )
+        return
+    moved = approve_batch(
+        repo_root=cfg.repo_root,
+        tier=tier,
+        min_confidence=min_confidence,
+        max_composite=max_composite,
+        pair_contains=pair_contains,
+        limit=limit,
+    )
+    click.echo(f"approved {len(moved)} verdict(s)")
+
+
+@pending.command("reject")
+@click.argument("key")
+@click.option("--reason", required=True, help="Why this verdict is being rejected (audit log).")
+@click.pass_context
+def pending_reject(ctx: click.Context, key: str, reason: str) -> None:
+    """Move a pending verdict to catalog/_rejected/ (preserved with a reason)."""
+    from smadp.autopilot.pending import reject_one
+
+    cfg = _config_from_ctx(ctx)
+    target = reject_one(key=key, repo_root=cfg.repo_root, reason=reason)
+    click.echo(f"rejected → {target}")
+
+
 # ----------------------------------------------------------------------- entry
 def main() -> None:
     """Entry point declared in pyproject.toml."""

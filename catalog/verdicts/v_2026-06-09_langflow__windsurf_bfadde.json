@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_langflow__windsurf_bfadde",
+  "generated_at": "2026-06-09T05:36:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High risk of shared-workspace data leakage and cascading errors; prompt-injection risk is moderate because Windsurf can ingest files and Langflow can emit untrusted flow outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can produce flow outputs from uploaded files and arbitrary HTTP/model calls, while Windsurf reads workspace files and can use MCP/clipboard, so attacker-controlled content can cross from one into the other. This is not provably blocked by either profile. The pathway is interaction-based and plausible in default workflows, though not necessarily automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow output is copied into Windsurf or saved into a shared workspace file",
+        "IF Windsurf treats file or clipboard content as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Disable copy-paste of generated prompts between tools",
+        "Use separate folders for Langflow outputs and Windsurf workspaces",
+        "Add a manual review step before any tool-executing content is reused",
+        "requires-engineering: add provenance tags to flow outputs",
+        "requires-engineering: sandbox or sanitize instruction-like text before reuse"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Langflow touches flow inputs, intermediate outputs, and stored per-flow credentials, and it writes to the server filesystem. Windsurf reads workspace files, uses clipboard, and can send content through its model proxy or MCP servers. In a shared workspace or copied-output workflow, sensitive flow data can leak into Windsurf and onward to third parties. The blast radius includes secrets and intermediate outputs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Langflow stores sensitive flow inputs or credentials in files or intermediate outputs",
+        "IF Windsurf opens the same workspace files or receives copied content from Langflow",
+        "IF Windsurf forwards that content through its model proxy or MCP servers"
+      ],
+      "mitigations": [
+        "Keep Langflow and Windsurf on separate workspaces",
+        "Do not store secrets in Langflow flow artifacts",
+        "Turn off clipboard-based transfer between tools",
+        "Review outbound requests from Windsurf before execution",
+        "requires-engineering: enforce per-tool data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write and shell execution, and Windsurf also modifies git state while Langflow can run unsandboxed server-side Python. If they operate on the same directory, concurrent writes and git mutations can overwrite each other or corrupt state. The profiles show no locking or coordination primitive that would prevent this.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or git repository",
+        "IF Windsurf auto-executes commands while Langflow server-side code writes concurrently"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Avoid letting both agents modify the same git repo",
+        "Disable auto-execute in Windsurf for shared projects",
+        "Serialize edits with a human checkpoint",
+        "requires-engineering: add file-locking or transaction coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow can chain multiple agents and execute unsandboxed Python, so its outputs may look authoritative even when wrong. Windsurf\u2019s Cascade loop can then act on those outputs via shell or file edits. Because the profiles show no verification gate between them, a bad Langflow result can cascade into concrete actions in Windsurf.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf uses Langflow-generated text, code, or plans as input",
+        "IF Windsurf auto-executes or approves commands derived from Langflow output"
+      ],
+      "mitigations": [
+        "Require human review of Langflow outputs before reuse",
+        "Disable Windsurf auto-execute on shared tasks",
+        "Ask Langflow to emit structured, machine-checkable outputs",
+        "Compare outputs against an independent source before acting",
+        "requires-engineering: add validation between generation and execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Langflow stores per-flow credentials and server-side flow data, while Windsurf handles workspace files and model-provider keys. The profiles do not specify residency or certification mismatches, so a direct regulatory breach is not proven. However, differing retention and secret-handling practices on the same data class create a plausible compliance gap in shared workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are placed into both tools",
+        "IF one tool retains or logs data longer than the other"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either tool",
+        "Separate secret storage from workflow artifacts",
+        "Review retention settings in both products",
+        "Document which data classes may enter each tool",
+        "requires-engineering: align retention and residency controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
