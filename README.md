@@ -1,12 +1,8 @@
 <div align="center">
 
 <a href="https://allstreets.github.io/SMADP/">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=72&duration=1&pause=99999&color=7C3AED&center=true&vCenter=true&width=900&height=110&lines=S+M+A+D+P" alt="SMADP"/>
+  <img src=".github/assets/smadp-banner.svg" alt="SMADP — Safe Multi-Agent Deployment Platform" width="100%"/>
 </a>
-
-### Safe Multi-Agent Deployment Platform
-
-*Auditable, evidence-cited verdicts on whether **autonomous agents** can safely run together.*
 
 &nbsp;
 
