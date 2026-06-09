@@ -1,112 +1,132 @@
 {
+  "schema_version": "1.0",
   "chain_id": "c_research-write-cite",
-  "edges": [
-    {
-      "carries": [
-        "search results"
-      ],
-      "channel": "prompt",
-      "from": "perplexity",
-      "to": "claude-code"
-    },
-    {
-      "carries": [
-        "draft markdown"
-      ],
-      "channel": "filesystem",
-      "from": "claude-code",
-      "to": "claude-code"
-    }
-  ],
-  "evidence_refs": [],
-  "first_seen_at": "2026-05-04T00:00:00Z",
-  "framework_mappings": {},
-  "headline": "Research findings flow into a writer pass and a citation-checker pass \u2014 risk is the writer trusting unverified retrieval.",
-  "last_refreshed_at": "2026-05-04T00:00:00Z",
-  "name": "Research \u2192 Write \u2192 Cite",
+  "name": "Research → Write → Cite",
+  "tagline": "A retriever, a writer, and a citation-checker — the canonical knowledge-work loop.",
+  "author": "SMADP maintainers",
+  "topology": "linear",
   "participants": [
     {
+      "slug": "perplexity",
       "role": "retriever",
-      "slug": "perplexity"
+      "notes": "Web search + summary; returns text the writer treats as ground truth."
     },
     {
+      "slug": "claude-code",
       "role": "writer",
-      "slug": "claude-code"
+      "notes": "Synthesizes a draft from retrieved material."
     },
     {
-      "notes": "second pass",
+      "slug": "claude-code",
       "role": "critic",
-      "slug": "claude-code"
+      "notes": "Second pass — checks every citation against the retrieved source set."
     }
   ],
-  "schema_version": "1.0",
+  "edges": [
+    {
+      "from": "perplexity",
+      "to": "claude-code",
+      "channel": "prompt",
+      "carries": ["search results", "source URLs", "extracted quotes"]
+    },
+    {
+      "from": "claude-code",
+      "to": "claude-code",
+      "channel": "filesystem",
+      "carries": ["draft markdown"]
+    }
+  ],
+  "headline": "Retrieved web content flows into a writer, then a critic re-checks every citation. Risk is the writer trusting unverified retrieval — and prompt injection riding the retrieval channel.",
   "sub_verdicts": {
     "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Perplexity returns arbitrary web content as the writer's primary context. Without a clearly-delimited untrusted block, attacker-controlled HTML in a search result can hijack the writer's tool-call parser.",
       "citations": [
-        {
-          "profile_field": "perplexity.io_surfaces.calls_apis"
-        }
+        { "profile_field": "perplexity.io_surfaces.calls_apis" },
+        { "profile_field": "claude-code.sandboxing.tool_use_pattern" }
       ],
       "conditions": [
-        "retrieved content is rendered into prompt without sanitization"
+        "Retrieved content is rendered into the prompt without sanitization or untrusted-block fences.",
+        "The writer has tool-use authority (file write, shell) the attacker would want."
       ],
       "mitigations": [
-        "wrap retrieved content in clearly-delimited untrusted block",
-        "have critic pass verify citations point to retrieved sources"
-      ],
-      "rationale": "Retrieved web content is treated as trusted context by the writer, allowing prompt injection from arbitrary search results to leak into the final draft.",
-      "severity": "medium"
+        "Wrap retrieved content in an explicit <untrusted_source>…</untrusted_source> block and instruct the writer to treat it as quoted text only.",
+        "Strip HTML and zero-width characters before passing search results into the writer.",
+        "Have the critic pass re-fetch each cited URL and diff the quote against the live source."
+      ]
     },
     "B_data_leakage": {
+      "severity": "low",
+      "rationale": "Perplexity sees the research query (which may leak intent) and the writer sees retrieved public content. No private data class touched by default.",
       "citations": [
-        {
-          "profile_field": "perplexity.data_classes_touched"
-        }
-      ],
-      "conditions": [],
-      "mitigations": [
-        "redact sensitive terms from search queries"
-      ],
-      "rationale": "Search queries may carry user context to the retriever's vendor, but no privileged secrets are typically in scope.",
-      "severity": "low"
-    },
-    "C_capability_conflict": {
-      "citations": [
-        {
-          "profile_field": "claude-code.capabilities.write_filesystem"
-        }
-      ],
-      "conditions": [],
-      "mitigations": [],
-      "rationale": "The writer and critic share an identical capability surface (claude-code), but their roles are sequential, not concurrent.",
-      "severity": "low"
-    },
-    "D_cascading_error": {
-      "citations": [
-        {
-          "profile_field": "claude-code.capabilities.read_filesystem"
-        }
+        { "profile_field": "perplexity.data_classes_touched" }
       ],
       "conditions": [
-        "citation pass uses same source set as writer"
+        "The query itself doesn't disclose confidential context (e.g., 'how do we respond to <CVE>'). ",
+        "The writer doesn't pull in private files alongside retrieved content."
       ],
       "mitigations": [
-        "have critic pass query an independent retrieval source"
+        "Use generic queries; expand inline before sending to Perplexity.",
+        "Route queries through a vetted proxy when working in a regulated workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "The retriever is read-only; both writer and critic share the same filesystem under one process. No concurrent writers, no git-state contention.",
+      "citations": [
+        { "profile_field": "perplexity.capabilities.write_filesystem" },
+        { "profile_field": "claude-code.capabilities.write_filesystem" }
       ],
-      "rationale": "Errors in retrieval propagate into the draft and may not be caught if the citation-checker pass relies on the same retrieval set.",
-      "severity": "medium"
+      "conditions": [
+        "Writer and critic run sequentially in the same Claude Code session, not in parallel.",
+        "No third process is editing the draft concurrently."
+      ],
+      "mitigations": [
+        "Keep the critic pass synchronous after the writer finishes.",
+        "Lock the draft file during the critic pass to prevent the user editing under the agent's feet."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "The largest practical risk: a hallucinated citation in the writer pass, when the critic only checks structural plausibility and not source-to-quote fidelity, ships as a confident-sounding falsehood.",
+      "citations": [
+        { "profile_field": "claude-code.sandboxing.tool_use_pattern" }
+      ],
+      "conditions": [
+        "The critic pass doesn't re-fetch sources but only spot-checks formatting.",
+        "Retrieved sources are summarized aggressively by Perplexity rather than quoted verbatim."
+      ],
+      "mitigations": [
+        "Require the critic to fetch each cited URL with a tool call and quote-match every claim.",
+        "Reject the draft if more than 10% of citations resolve to 404 or low-similarity content.",
+        "Prefer Perplexity's 'sources' API over its narrative summary for downstream citation."
+      ]
     },
     "E_compliance": {
+      "severity": "low",
+      "rationale": "All three passes touch public web content by default; no regulated data class flows through the chain. If the writer is given private context (e.g., internal docs), the chain inherits the source's regulatory profile.",
       "citations": [
-        {
-          "profile_field": "claude-code.data_classes_touched"
-        }
+        { "profile_field": "claude-code.data_classes_touched" }
       ],
-      "conditions": [],
-      "mitigations": [],
-      "rationale": "No regulated data classes are typically processed in research-and-write workflows.",
-      "severity": "low"
+      "conditions": [
+        "No PHI, PCI, or other regulated data is added to the writer's context.",
+        "Retrieved web content is not stored in a region-restricted workspace."
+      ],
+      "mitigations": [
+        "Document the data-residency requirement at the workspace level and refuse to start the chain if private context is attached.",
+        "Use Perplexity's enterprise tier for any chain that may touch internal documents."
+      ]
     }
   },
-  "topology": "linear"
+  "composite_score": 0.32,
+  "max_severity": "high",
+  "evidence_level": "profile-verified",
+  "confidence": 0.72,
+  "framework_mappings": {
+    "NIST_AI_RMF": ["MAP-2.3", "MEASURE-2.5"],
+    "OWASP_LLM_TOP10": ["LLM01", "LLM06"]
+  },
+  "evidence_refs": [],
+  "first_seen_at": "2026-05-04T00:00:00Z",
+  "last_refreshed_at": "2026-06-09T00:00:00Z"
 }

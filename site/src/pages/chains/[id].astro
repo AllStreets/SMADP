@@ -1,9 +1,26 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import Panel from '../../components/Panel.astro';
 import SeverityBar from '../../components/SeverityBar.astro';
+import EvidenceLevelBadge from '../../components/EvidenceLevelBadge.astro';
+import RiskBadge from '../../components/RiskBadge.astro';
+import FrameworkBadge from '../../components/FrameworkBadge.astro';
 import ChainTopologyBadge from '../../components/ChainTopologyBadge.astro';
-import { getChains, maxSeverity, type Chain } from '../../lib/chains';
+import CodeBlock from '../../components/CodeBlock.astro';
+import {
+  getChains,
+  maxSeverity,
+  computeComposite,
+  type Chain,
+} from '../../lib/chains';
+import {
+  getProfile,
+  getVerdict,
+  compositeColor,
+  severityColor,
+  riskMeta,
+} from '../../data/catalog';
+import { RISK_ORDER } from '../../data/types';
+import type { RiskId } from '../../data/types';
 
 export function getStaticPaths() {
   return getChains().map((chain) => ({
@@ -14,6 +31,84 @@ export function getStaticPaths() {
 
 const { chain } = Astro.props as { chain: Chain };
 
+const composite = computeComposite(chain);
+const compColor = compositeColor(composite);
+const maxSev = chain.max_severity ?? maxSeverity(chain);
+const maxSevColor = severityColor(maxSev);
+const confidencePct = Math.round((chain.confidence ?? 0.65) * 100);
+const evidenceLevel = chain.evidence_level ?? 'profile-verified';
+
+const participantProfiles = chain.participants.map((p) => ({
+  participant: p,
+  profile: getProfile(p.slug) ?? null,
+}));
+
+// Pair verdicts that involve every consecutive participant pair in the chain.
+type PairLink = {
+  a: string;
+  b: string;
+  verdict_id: string;
+  composite_score: number;
+  evidence_level: string;
+  headline: string;
+};
+const pairLinks: PairLink[] = [];
+const seenPairs = new Set<string>();
+for (const edge of chain.edges) {
+  if (edge.from === edge.to) continue;
+  const k = [edge.from, edge.to].sort().join('__');
+  if (seenPairs.has(k)) continue;
+  seenPairs.add(k);
+  const v = getVerdict(edge.from, edge.to);
+  if (v) {
+    pairLinks.push({
+      a: edge.from,
+      b: edge.to,
+      verdict_id: v.verdict_id,
+      composite_score: v.composite_score,
+      evidence_level: v.evidence_level,
+      headline: v.headline,
+    });
+  }
+}
+
+// ----- Topology SVG geometry -----
+const nodeCount = chain.participants.length;
+const W = 760;
+const H = chain.topology === 'star'
+  ? 320
+  : chain.topology === 'loop'
+    ? 260
+    : 180;
+const nodeR = 30;
+
+function pos(i: number): { x: number; y: number } {
+  if (chain.topology === 'star') {
+    if (i === 0) return { x: W / 2, y: H / 2 };
+    const others = nodeCount - 1;
+    const angle = ((i - 1) / others) * 2 * Math.PI - Math.PI / 2;
+    return { x: W / 2 + Math.cos(angle) * 120, y: H / 2 + Math.sin(angle) * 120 };
+  }
+  if (chain.topology === 'loop') {
+    const angle = (i / nodeCount) * 2 * Math.PI - Math.PI / 2;
+    return { x: W / 2 + Math.cos(angle) * 110, y: H / 2 + Math.sin(angle) * 90 };
+  }
+  // linear / tree / dag fallback: even spacing along a row
+  const span = W - 100;
+  const x = 50 + (nodeCount === 1 ? span / 2 : (i / (nodeCount - 1)) * span);
+  return { x, y: H / 2 };
+}
+const positions = chain.participants.map((_, i) => pos(i));
+function indexFor(slug: string, after = -1): number {
+  for (let i = after + 1; i < chain.participants.length; i++) {
+    if (chain.participants[i].slug === slug) return i;
+  }
+  for (let i = 0; i < chain.participants.length; i++) {
+    if (chain.participants[i].slug === slug) return i;
+  }
+  return 0;
+}
+
 const SUB_LABELS: Record<string, string> = {
   A_prompt_injection: 'A · Prompt injection',
   B_data_leakage: 'B · Data leakage',
@@ -21,116 +116,357 @@ const SUB_LABELS: Record<string, string> = {
   D_cascading_error: 'D · Cascading error',
   E_compliance: 'E · Compliance',
 };
-
-const nodeCount = chain.participants.length;
-const W = 720;
-const H = chain.topology === 'star' ? 280 : 160;
-const nodeR = 28;
-
-function pos(i: number): { x: number; y: number } {
-  if (chain.topology === 'star') {
-    if (i === 0) return { x: W / 2, y: H / 2 };
-    const others = nodeCount - 1;
-    const angle = ((i - 1) / others) * 2 * Math.PI;
-    return { x: W / 2 + Math.cos(angle) * 110, y: H / 2 + Math.sin(angle) * 110 };
-  }
-  const span = W - 80;
-  const x = 40 + (nodeCount === 1 ? span / 2 : (i / (nodeCount - 1)) * span);
-  return { x, y: H / 2 };
-}
-
-const positions = chain.participants.map((_, i) => pos(i));
-
-function indexFor(slug: string): number {
-  for (let i = 0; i < chain.participants.length; i++) {
-    if (chain.participants[i].slug === slug) return i;
-  }
-  return 0;
-}
 ---
 
 <Layout title={`${chain.name} — Chain — SMADP`} description={chain.headline}>
+  <!-- ============ Hero ============ -->
   <section class="container-page mt-8">
     <a href="/chains/library" class="font-mono text-xs text-ink-400 hover:text-brand-300">← chain library</a>
-    <div class="mt-4 flex flex-wrap items-start justify-between gap-6">
-      <div class="min-w-0">
-        <span class="heading-eyebrow">Chain</span>
-        <h1 class="h1 mt-2 text-white">{chain.name}</h1>
-        <p class="lead mt-3 max-w-2xl">{chain.headline}</p>
-        <div class="mt-4 flex flex-wrap items-center gap-2">
-          <ChainTopologyBadge topology={chain.topology} />
-          <SeverityBar severity={maxSeverity(chain)} />
+
+    <div class="mt-6 rounded-2xl border border-white/10 bg-gradient-to-br from-ink-900/60 to-ink-950/60 p-8 shadow-glow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-6">
+        <div class="min-w-0">
+          <span class="heading-eyebrow">Chain · {chain.topology}</span>
+          <h1 class="h1 mt-3 text-white">{chain.name}</h1>
+          {chain.tagline && (
+            <p class="mt-2 text-sm text-ink-300 italic">{chain.tagline}</p>
+          )}
+          <p class="lead mt-4 max-w-3xl">{chain.headline}</p>
+
+          <div class="mt-5 flex flex-wrap items-center gap-3">
+            <EvidenceLevelBadge level={evidenceLevel} size="md" />
+            <ChainTopologyBadge topology={chain.topology} />
+            {chain.author && (
+              <span class="pill">authored by <span class="ml-1 text-brand-300">{chain.author}</span></span>
+            )}
+            <span class="pill">{chain.participants.length} agents</span>
+            <span class="pill">{chain.edges.length} edges</span>
+            <span class="pill">{chain.last_refreshed_at.slice(0, 10)}</span>
+          </div>
+        </div>
+
+        <!-- KPI tiles, mirroring the verdict hero layout -->
+        <div class="grid w-full max-w-sm grid-cols-3 gap-3 sm:w-auto">
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Composite</div>
+            <div class="mt-1 font-display text-3xl font-extrabold leading-none" style={`color:${compColor};`}>
+              {composite.toFixed(2)}
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">lower is safer</div>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Max severity</div>
+            <div class="mt-1 font-display text-3xl font-extrabold leading-none uppercase" style={`color:${maxSevColor};`}>
+              {maxSev}
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">across A–E</div>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+            <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Confidence</div>
+            <div class="mt-1 font-display text-3xl font-extrabold leading-none text-cyber-400">
+              {confidencePct}%
+            </div>
+            <div class="mt-1 text-[10px] text-ink-500">judge confidence</div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- ============ Topology graph ============ -->
   <section class="container-page mt-10">
-    <Panel title="Topology" icon="layers" defaultOpen>
-      <div class="overflow-x-auto">
-        <svg viewBox={`0 0 ${W} ${H}`} class="h-auto w-full max-w-[720px]" aria-label="Chain topology">
-          {chain.edges.map((e) => {
-            const a = positions[indexFor(e.from)];
-            const b = positions[indexFor(e.to)];
+    <div class="card">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="h3 text-white">Topology</h2>
+          <p class="mt-1 text-sm text-ink-400">
+            {chain.participants.length} participants · {chain.edges.length} edges · {chain.topology} arrangement
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-5 overflow-x-auto rounded-xl border border-white/5 bg-ink-950/40 p-4">
+        <svg viewBox={`0 0 ${W} ${H}`} class="h-auto w-full max-w-[760px]" aria-label={`${chain.topology} chain topology`} shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
+          <defs>
+            <marker id={`arrow-${chain.chain_id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
+            </marker>
+          </defs>
+          {chain.edges.map((e, i) => {
+            const fi = indexFor(e.from);
+            const ti = indexFor(e.to, fi);
+            const a = positions[fi];
+            const b = positions[ti];
+            if (fi === ti) {
+              // self-loop: small arc above the node
+              const cx = a.x + 30;
+              const cy = a.y - 50;
+              return (
+                <path
+                  d={`M ${a.x} ${a.y - nodeR} Q ${cx} ${cy} ${a.x + nodeR} ${a.y}`}
+                  stroke="#A78BFA" stroke-width="1.8" fill="none"
+                  marker-end={`url(#arrow-${chain.chain_id})`}
+                  opacity="0.85"
+                />
+              );
+            }
             return (
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(167,139,250,0.5)" stroke-width="2" />
+              <line
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke="#A78BFA" stroke-width="1.8" opacity="0.7"
+                marker-end={`url(#arrow-${chain.chain_id})`}
+              />
             );
           })}
           {chain.participants.map((p, i) => {
             const { x, y } = positions[i];
             return (
               <g>
-                <circle cx={x} cy={y} r={nodeR} fill="#1F1633" stroke="#A78BFA" stroke-width="2" />
-                <text x={x} y={y + 4} text-anchor="middle" font-size="11" fill="#E5E7EB">{p.role}</text>
-                <text x={x} y={y + nodeR + 16} text-anchor="middle" font-size="11" fill="#A1A1AA">{p.slug}</text>
+                <circle cx={x} cy={y} r={nodeR + 4} fill="#A78BFA" opacity="0.1"/>
+                <circle cx={x} cy={y} r={nodeR} fill="#1F1633" stroke="#A78BFA" stroke-width="2.2"/>
+                <text x={x} y={y - 2} text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#E5DEFF">{p.role}</text>
+                <text x={x} y={y + nodeR + 18} text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#A1A1AA">{p.slug}</text>
               </g>
             );
           })}
         </svg>
       </div>
-      <ul class="mt-4 grid gap-2 text-xs text-ink-300 sm:grid-cols-2">
-        {chain.edges.map((e) => (
-          <li class="rounded-md border border-white/5 bg-white/[0.02] p-2">
-            <span class="font-mono text-ink-200">{e.from}</span>
-            <span class="mx-1 text-ink-500">→</span>
-            <span class="font-mono text-ink-200">{e.to}</span>
-            <span class="ml-2 rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">{e.channel}</span>
-            {e.carries && e.carries.length > 0 && (
-              <span class="ml-2 text-ink-400">carries {e.carries.join(', ')}</span>
+    </div>
+  </section>
+
+  <!-- ============ Participants ============ -->
+  <section class="container-page mt-10">
+    <div class="card">
+      <h2 class="h3 text-white">Participants</h2>
+      <p class="mt-1 text-sm text-ink-400">Each agent's role inside the chain, with a link to its full profile.</p>
+      <ul class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {participantProfiles.map(({ participant, profile }, i) => (
+          <li class="rounded-xl border border-white/5 bg-ink-950/40 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">#{i + 1} · {participant.role}</div>
+                {profile ? (
+                  <a class="mt-1 inline-flex items-center gap-1.5 font-display text-lg font-semibold text-white hover:text-brand-200" href={`/agents/${profile.slug}`}>
+                    {profile.name}
+                    <span class="text-xs text-ink-500">→</span>
+                  </a>
+                ) : (
+                  <div class="mt-1 font-display text-lg font-semibold text-ink-200">{participant.slug}</div>
+                )}
+                <div class="mt-0.5 font-mono text-[11px] text-ink-500">{participant.slug}</div>
+              </div>
+              {profile && (
+                <span class="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">{profile.source_type}</span>
+              )}
+            </div>
+            {participant.notes && (
+              <p class="mt-3 text-xs leading-relaxed text-ink-300">{participant.notes}</p>
             )}
           </li>
         ))}
       </ul>
-    </Panel>
-
-    <div class="mt-6 grid gap-4">
-      {Object.entries(chain.sub_verdicts).map(([key, sv]) => (
-        <Panel
-          title={SUB_LABELS[key] || key}
-          icon="alert-triangle"
-          id={key.toLowerCase()}
-          defaultOpen={sv.severity === 'high' || sv.severity === 'critical'}
-        >
-          <Fragment slot="badge"><SeverityBar severity={sv.severity} /></Fragment>
-          <p class="text-sm text-ink-200">{sv.rationale}</p>
-          {sv.conditions.length > 0 && (
-            <div class="mt-3">
-              <p class="text-xs font-semibold uppercase tracking-wider text-ink-400">Conditions</p>
-              <ul class="mt-1 list-inside list-disc text-sm text-ink-200">
-                {sv.conditions.map((c) => <li>{c}</li>)}
-              </ul>
-            </div>
-          )}
-          {sv.mitigations.length > 0 && (
-            <div class="mt-3">
-              <p class="text-xs font-semibold uppercase tracking-wider text-ink-400">Mitigations</p>
-              <ul class="mt-1 list-inside list-disc text-sm text-ink-200">
-                {sv.mitigations.map((m) => <li>{m}</li>)}
-              </ul>
-            </div>
-          )}
-        </Panel>
-      ))}
     </div>
+  </section>
+
+  <!-- ============ Edges / connections ============ -->
+  <section class="container-page mt-10">
+    <div class="card">
+      <h2 class="h3 text-white">Connections</h2>
+      <p class="mt-1 text-sm text-ink-400">How data flows between participants. Channel and payload are evaluated against the five-risk rubric below.</p>
+      <table class="table-zebra mt-5 w-full text-sm">
+        <thead class="text-left font-mono text-[11px] uppercase tracking-wider text-ink-400">
+          <tr>
+            <th class="px-3 py-2">From</th>
+            <th class="px-3 py-2">→</th>
+            <th class="px-3 py-2">To</th>
+            <th class="px-3 py-2">Channel</th>
+            <th class="px-3 py-2">Carries</th>
+          </tr>
+        </thead>
+        <tbody>
+          {chain.edges.map((e) => (
+            <tr class="border-t border-white/5">
+              <td class="px-3 py-2 font-mono text-xs text-ink-200">{e.from}</td>
+              <td class="px-3 py-2 text-ink-500">→</td>
+              <td class="px-3 py-2 font-mono text-xs text-ink-200">{e.to}</td>
+              <td class="px-3 py-2">
+                <span class="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-brand-300">{e.channel}</span>
+              </td>
+              <td class="px-3 py-2 text-xs text-ink-300">
+                {e.carries && e.carries.length > 0 ? e.carries.join(', ') : <span class="text-ink-500">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ Per-risk sub-verdicts ============ -->
+  <section class="container-page mt-12">
+    <h2 class="h2 text-white">Per-risk sub-verdicts</h2>
+    <p class="mt-2 text-sm text-ink-400">
+      Each risk is evaluated independently across the chain. Severity bars are authoritative; the composite is informational.
+    </p>
+
+    <div class="mt-8 space-y-4">
+      {RISK_ORDER.map((rk: RiskId) => {
+        const sv = chain.sub_verdicts[rk];
+        const meta = riskMeta(rk);
+        return (
+          <article class="card overflow-hidden">
+            <header class="flex flex-wrap items-start justify-between gap-4">
+              <div class="flex items-start gap-4">
+                <RiskBadge risk={rk} size="md" />
+                <div>
+                  <h3 class="font-display text-lg font-semibold text-white">{meta?.name ?? rk}</h3>
+                  {meta && (
+                    <p class="mt-1 text-xs text-ink-500">weight {meta.weight.toFixed(2)} of composite</p>
+                  )}
+                </div>
+              </div>
+              <div class="w-full max-w-xs">
+                <SeverityBar severity={sv.severity} />
+              </div>
+            </header>
+
+            <p class="mt-5 text-sm leading-relaxed text-ink-200">
+              {sv.rationale}
+              {sv.citations && sv.citations.length > 0 && (
+                <span class="ml-1 inline-flex flex-wrap gap-1 align-baseline">
+                  {sv.citations.map((c, idx) => (
+                    <span class="font-mono text-[10px] text-brand-300" title={c.profile_field ?? c.quote ?? c.evidence_ref ?? ''}>
+                      [{idx + 1}]
+                    </span>
+                  ))}
+                </span>
+              )}
+            </p>
+
+            {sv.citations && sv.citations.length > 0 && (
+              <ol class="mt-3 list-decimal list-inside space-y-0.5 text-[11px] font-mono text-ink-500">
+                {sv.citations.map((c) => (
+                  <li>{c.profile_field ?? c.evidence_ref ?? c.quote ?? '(citation)'}</li>
+                ))}
+              </ol>
+            )}
+
+            {sv.conditions && sv.conditions.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-amber-400">Safe under conditions</div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.conditions.map((c) => <li>{c}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {sv.mitigations && sv.mitigations.length > 0 && (
+              <div class="mt-5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-emerald-400">Mitigations</div>
+                <ul class="mt-2 list-disc list-inside space-y-1 text-sm text-ink-200">
+                  {sv.mitigations.map((m) => <li>{m}</li>)}
+                </ul>
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  </section>
+
+  <!-- ============ Related pair verdicts ============ -->
+  {pairLinks.length > 0 && (
+    <section class="container-page mt-12">
+      <div class="card">
+        <h2 class="h3 text-white">Pair verdicts referenced by this chain</h2>
+        <p class="mt-1 text-sm text-ink-400">
+          Each connection in the chain is also evaluated as a stand-alone pair. Open the pair verdict for evidence-level detail per edge.
+        </p>
+        <ul class="mt-5 grid gap-3 sm:grid-cols-2">
+          {pairLinks.map((pl) => (
+            <li>
+              <a href={`/verdicts/${pl.verdict_id}`} class="block rounded-xl border border-white/5 bg-ink-950/40 p-4 hover:border-brand-500/50 hover:bg-ink-900/50">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="font-mono text-xs text-ink-200">{pl.a} × {pl.b}</div>
+                  <div class="font-mono text-sm font-bold" style={`color:${compositeColor(pl.composite_score)}`}>{pl.composite_score.toFixed(2)}</div>
+                </div>
+                <p class="mt-2 line-clamp-2 text-xs text-ink-300">{pl.headline}</p>
+                <div class="mt-3 flex items-center gap-2">
+                  <EvidenceLevelBadge level={pl.evidence_level} size="sm" />
+                  <span class="text-xs text-brand-300">open verdict →</span>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
+  <!-- ============ Framework mappings ============ -->
+  {Object.keys(chain.framework_mappings ?? {}).length > 0 && (
+    <section class="container-page mt-12">
+      <div class="card">
+        <h2 class="h3 text-white">Framework mappings</h2>
+        <p class="mt-1 text-sm text-ink-400">
+          Controls this chain touches across NIST AI RMF, ISO/IEC 42001, and the OWASP LLM Top 10.
+        </p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          {Object.entries(chain.framework_mappings).flatMap(([fw, ids]) =>
+            ids.map((cid) => (
+              <FrameworkBadge framework={fw} control={cid} href={`/frameworks#${cid}`} />
+            )),
+          )}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- ============ Reproducibility ============ -->
+  <section class="container-page mt-12">
+    <div class="card">
+      <h2 class="h3 text-white">Reproducibility</h2>
+      <p class="mt-1 text-sm text-ink-400">
+        Re-derive this chain's sub-verdicts by re-running the same agent profiles against the rubric.
+      </p>
+      <dl class="mt-5 grid gap-3 text-xs sm:grid-cols-2">
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Chain ID</dt>
+          <dd class="mt-1 break-all font-mono text-brand-300">{chain.chain_id}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Schema version</dt>
+          <dd class="mt-1 font-mono text-cyber-400">{chain.schema_version}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">First seen</dt>
+          <dd class="mt-1 font-mono text-ink-200">{chain.first_seen_at}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Last refreshed</dt>
+          <dd class="mt-1 font-mono text-ink-200">{chain.last_refreshed_at}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Author</dt>
+          <dd class="mt-1 font-mono text-ink-200">{chain.author ?? '(not provided)'}</dd>
+        </div>
+        <div class="rounded-lg border border-white/5 bg-ink-900/50 p-3">
+          <dt class="font-mono uppercase tracking-wider text-ink-400">Evidence level</dt>
+          <dd class="mt-1 font-mono text-ink-200">{evidenceLevel}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ============ Raw ============ -->
+  <section class="container-page mt-12">
+    <details class="rounded-xl border border-white/10 bg-ink-900/40">
+      <summary class="cursor-pointer px-5 py-3 font-mono text-xs text-ink-300 hover:text-white">
+        show raw chain JSON
+      </summary>
+      <div class="border-t border-white/10 p-2">
+        <CodeBlock code={chain} title={`${chain.chain_id}.json`} />
+      </div>
+    </details>
   </section>
 </Layout>

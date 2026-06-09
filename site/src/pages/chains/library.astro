@@ -1,15 +1,22 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import Panel from '../../components/Panel.astro';
 import SeverityBar from '../../components/SeverityBar.astro';
 import ChainTopologyBadge from '../../components/ChainTopologyBadge.astro';
-import { getChains, maxSeverity } from '../../lib/chains';
+import EvidenceLevelBadge from '../../components/EvidenceLevelBadge.astro';
+import { getChains, maxSeverity, computeComposite } from '../../lib/chains';
+import { compositeColor } from '../../data/catalog';
 
 const chains = getChains();
+
 const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
   acc[c.topology] = (acc[c.topology] ?? 0) + 1;
   return acc;
 }, {});
+
+const avgComposite = chains.length
+  ? chains.reduce((a, c) => a + computeComposite(c), 0) / chains.length
+  : 0;
+const sandboxValidated = chains.filter((c) => c.evidence_level === 'sandbox-validated').length;
 ---
 
 <Layout title="Chain library — SMADP">
@@ -20,21 +27,42 @@ const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
         <span class="heading-eyebrow">Catalog · Chains</span>
         <h1 class="h1 mt-3 text-white">Chain library</h1>
         <p class="lead mt-4 max-w-2xl">
-          {chains.length} canonical multi-agent compositions, each analyzed
-          against the five risks plus topology-specific propagation concerns.
-          Every chain on this page was built through the builder and accepted
-          by an operator.
+          {chains.length} multi-agent compositions, each analyzed against the
+          five risks plus topology-specific propagation concerns. Every chain
+          on this page was authored, then graded by the same rubric the
+          pairwise verdicts use.
         </p>
       </div>
       <a href="/chains" class="btn-primary">+ Build a chain</a>
     </div>
-    <div class="mt-6 flex flex-wrap gap-2 text-xs">
-      {Object.entries(topologyCounts).sort((a, b) => b[1] - a[1]).map(([topo, n]) => (
-        <span class="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 font-mono text-ink-300 ring-1 ring-inset ring-white/10">
-          <span class="font-semibold text-brand-300">{n}</span>
-          <span>{topo}</span>
-        </span>
-      ))}
+
+    <!-- KPI strip -->
+    <div class="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4">
+        <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Chains</div>
+        <div class="mt-1 font-display text-3xl font-extrabold text-white">{chains.length}</div>
+      </div>
+      <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4">
+        <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Avg composite</div>
+        <div class="mt-1 font-display text-3xl font-extrabold" style={`color:${compositeColor(avgComposite)}`}>
+          {avgComposite.toFixed(2)}
+        </div>
+      </div>
+      <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4">
+        <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Sandbox validated</div>
+        <div class="mt-1 font-display text-3xl font-extrabold text-emerald-400">{sandboxValidated}</div>
+      </div>
+      <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4">
+        <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Topologies</div>
+        <div class="mt-1 flex flex-wrap gap-1.5">
+          {Object.entries(topologyCounts).sort((a, b) => b[1] - a[1]).map(([topo, n]) => (
+            <span class="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[11px] text-ink-300 ring-1 ring-inset ring-white/10">
+              <span class="font-semibold text-brand-300">{n}</span>
+              <span>{topo}</span>
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   </section>
 
@@ -42,38 +70,53 @@ const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
     {chains.length === 0 && (
       <p class="card p-6 text-ink-300" id="chain-empty">No chains yet — be the first to build one.</p>
     )}
-    {chains.map((c) => (
-      <Panel title={c.name} icon="link" id={c.chain_id} defaultOpen={false}>
-        <Fragment slot="badge">
-          <ChainTopologyBadge topology={c.topology} />
-        </Fragment>
-        <p class="text-sm text-ink-200">{c.headline}</p>
-        <div class="mt-3 flex flex-wrap items-center gap-2">
-          {c.participants.map((p) => (
-            <a
-              href={`/agents/${p.slug}`}
-              class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10 hover:bg-white/10 hover:text-white"
-            >
-              <span class="font-medium">{p.slug}</span>
-              <span class="text-ink-400">·</span>
-              <span class="text-ink-400">{p.role}</span>
-            </a>
-          ))}
-        </div>
-        <div class="mt-3 flex items-center gap-3">
-          <SeverityBar severity={maxSeverity(c)} />
-          <a
-            class="text-xs text-brand-300 hover:text-brand-200"
-            href={`/chains/${c.chain_id}`}
-          >
-            Open chain →
-          </a>
-        </div>
-      </Panel>
-    ))}
+    {chains.map((c) => {
+      const score = computeComposite(c);
+      const sev = c.max_severity ?? maxSeverity(c);
+      return (
+        <a href={`/chains/${c.chain_id}`} class="card group block transition hover:border-brand-500/40">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <ChainTopologyBadge topology={c.topology} />
+                <h3 class="font-display text-xl font-semibold text-white group-hover:text-brand-200">{c.name}</h3>
+              </div>
+              {c.tagline && <p class="mt-1 text-xs italic text-ink-400">{c.tagline}</p>}
+              <p class="mt-3 max-w-3xl text-sm text-ink-200">{c.headline}</p>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                {c.author && <span class="font-mono text-[11px] text-ink-400">by {c.author}</span>}
+                {c.evidence_level && <EvidenceLevelBadge level={c.evidence_level} size="sm" />}
+                <span class="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-ink-300">{c.participants.length} agents</span>
+                <span class="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-ink-300">{c.edges.length} edges</span>
+              </div>
+              <div class="mt-4 flex flex-wrap gap-1.5">
+                {c.participants.map((p) => (
+                  <span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10">
+                    <span class="font-medium">{p.slug}</span>
+                    <span class="text-ink-400">·</span>
+                    <span class="text-ink-400">{p.role}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-3">
+              <div class="rounded-xl border border-white/10 bg-ink-950/60 p-4 text-center">
+                <div class="font-mono text-[10px] uppercase tracking-wider text-ink-400">Composite</div>
+                <div class="mt-1 font-display text-3xl font-extrabold leading-none" style={`color:${compositeColor(score)}`}>
+                  {score.toFixed(2)}
+                </div>
+                <div class="mt-1 text-[10px] text-ink-500">lower is safer</div>
+              </div>
+              <div class="w-44">
+                <SeverityBar severity={sev} />
+              </div>
+            </div>
+          </div>
+        </a>
+      );
+    })}
   </section>
 
-  <!-- Sentinel of chain_ids baked at build time. -->
   <script type="application/json" id="chain-baked" set:html={JSON.stringify(chains.map((c) => c.chain_id))}></script>
 
   <script>
@@ -120,7 +163,6 @@ const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
           new · via builder
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-brand-300">⛓</span>
           <h3 class="font-display text-lg font-semibold text-white">${escapeHtml(c.name)}</h3>
           <span class="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">${escapeHtml(c.topology)}</span>
         </div>
@@ -128,11 +170,11 @@ const topologyCounts = chains.reduce<Record<string, number>>((acc, c) => {
         <p class="mt-3 text-sm text-ink-200">${escapeHtml(c.headline)}</p>
         <div class="mt-3 flex flex-wrap items-center gap-2">
           ${c.participants.map(p => `
-            <a href="/agents/${encodeURIComponent(p.slug)}" class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10 hover:bg-white/10 hover:text-white">
+            <span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-200 ring-1 ring-inset ring-white/10">
               <span class="font-medium">${escapeHtml(p.slug)}</span>
               <span class="text-ink-400">·</span>
               <span class="text-ink-400">${escapeHtml(p.role)}</span>
-            </a>
+            </span>
           `).join('')}
         </div>
         <div class="mt-3 flex items-center gap-3 text-xs">

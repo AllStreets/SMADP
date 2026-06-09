@@ -1,151 +1,161 @@
 {
+  "schema_version": "1.0",
   "chain_id": "c_orchestrator-fanout-merge",
-  "edges": [
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "autogen",
-      "to": "claude-code"
-    },
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "autogen",
-      "to": "cursor"
-    },
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "autogen",
-      "to": "aider"
-    },
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "claude-code",
-      "to": "autogen"
-    },
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "cursor",
-      "to": "autogen"
-    },
-    {
-      "carries": [],
-      "channel": "message-bus",
-      "from": "aider",
-      "to": "autogen"
-    }
-  ],
-  "evidence_refs": [],
-  "first_seen_at": "2026-05-04T00:00:00Z",
-  "framework_mappings": {},
-  "headline": "Router fans work to three coders and merges results \u2014 concurrent git modifications and divergent edits dominate.",
-  "last_refreshed_at": "2026-05-04T00:00:00Z",
-  "name": "Orchestrator Fan-out + Merge",
+  "name": "Orchestrator · fan-out · merge (star)",
+  "tagline": "One orchestrator parallelizes work across worker agents, then a merger reconciles their outputs into a single artifact.",
+  "author": "SMADP maintainers",
+  "topology": "star",
   "participants": [
     {
+      "slug": "autogen",
       "role": "router",
-      "slug": "autogen"
+      "notes": "Orchestrator: decomposes the input task and dispatches to workers."
     },
     {
+      "slug": "crewai",
       "role": "executor",
-      "slug": "claude-code"
+      "notes": "Worker 1 — runs on a subtask in parallel with workers 2 and 3."
     },
     {
+      "slug": "crewai",
       "role": "executor",
-      "slug": "cursor"
+      "notes": "Worker 2."
     },
     {
+      "slug": "crewai",
       "role": "executor",
-      "slug": "aider"
+      "notes": "Worker 3."
     },
     {
-      "notes": "merger",
-      "role": "judge",
-      "slug": "autogen"
+      "slug": "claude-code",
+      "role": "writer",
+      "notes": "Merger: reconciles worker outputs into a single response."
     }
   ],
-  "schema_version": "1.0",
+  "edges": [
+    {
+      "from": "autogen",
+      "to": "crewai",
+      "channel": "message-bus",
+      "carries": ["subtask spec", "worker_id=1"]
+    },
+    {
+      "from": "autogen",
+      "to": "crewai",
+      "channel": "message-bus",
+      "carries": ["subtask spec", "worker_id=2"]
+    },
+    {
+      "from": "autogen",
+      "to": "crewai",
+      "channel": "message-bus",
+      "carries": ["subtask spec", "worker_id=3"]
+    },
+    {
+      "from": "crewai",
+      "to": "claude-code",
+      "channel": "message-bus",
+      "carries": ["worker output", "confidence", "evidence"]
+    }
+  ],
+  "headline": "The fan-out makes workers cheap and parallel; the merge is where everything collides — disagreement between workers, hallucinated facts, and overlapping side-effects all land on the merger at once.",
   "sub_verdicts": {
     "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "The orchestrator passes a structured spec, but any worker can return content the merger ingests as part of its prompt context. A compromised or simply-confused worker can inject merger-targeting instructions through its output field.",
       "citations": [
-        {
-          "profile_field": "autogen.capabilities.execute_shell"
-        }
+        { "profile_field": "autogen.sandboxing.tool_use_pattern" },
+        { "profile_field": "crewai.io_surfaces.stdin_stdout" }
       ],
       "conditions": [
-        "merge result fed back into router as context"
+        "Workers receive any external input (web, files, user content) that the orchestrator's spec doesn't sanitize.",
+        "Merger treats worker outputs as trusted summary rather than untrusted user content."
       ],
       "mitigations": [
-        "validate each executor output independently",
-        "use consensus-based merging"
-      ],
-      "rationale": "Router distributes task prompts to three executors. If merged results are re-used as input to next iteration, injected content from one executor can influence others.",
-      "severity": "medium"
+        "Schema-validate worker outputs; reject any output containing tool-use markers.",
+        "Have the merger wrap each worker's output in an explicit untrusted-block before reasoning over it.",
+        "Run workers in sandboxes with no shared filesystem to the merger."
+      ]
     },
     "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen's message bus broadcasts subtask specs to every worker. If the spec carries context one worker needs but another shouldn't see (e.g., customer PII relevant only to a billing subtask), the bus leaks it across the fleet.",
       "citations": [
-        {
-          "profile_field": "autogen.io_surfaces.calls_apis"
-        }
+        { "profile_field": "autogen.io_surfaces.calls_apis" },
+        { "profile_field": "crewai.io_surfaces.calls_apis" }
       ],
-      "conditions": [],
-      "mitigations": [],
-      "rationale": "Message-bus communication is internal; no external data exposure unless executors are misconfigured to leak secrets in their outputs.",
-      "severity": "low"
+      "conditions": [
+        "Single shared message bus visible to all workers.",
+        "Orchestrator includes contextual data in the spec rather than routing it per-worker."
+      ],
+      "mitigations": [
+        "Use per-worker channels rather than a broadcast bus.",
+        "Strip the spec down to the minimum each worker needs; route sensitive context through a separate, scoped channel.",
+        "Run workers under distinct identities so an audit can attribute who saw what."
+      ]
     },
     "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Multiple workers may operate on the same external resource (an issue tracker, a shared scratch directory, a downstream API rate-limit budget). Without locks at the orchestrator, last-write-wins corruption is the default.",
       "citations": [
-        {
-          "profile_field": "claude-code.capabilities.execute_shell"
-        },
-        {
-          "profile_field": "cursor.capabilities.execute_shell"
-        },
-        {
-          "profile_field": "aider.capabilities.execute_shell"
-        }
+        { "profile_field": "crewai.capabilities.use_mcp" },
+        { "profile_field": "autogen.sandboxing.tool_use_pattern" }
       ],
       "conditions": [
-        "multiple executors write to same files concurrently"
+        "Workers share any external write target (database, filesystem, third-party API).",
+        "Orchestrator dispatches concurrently without per-resource coordination."
       ],
       "mitigations": [
-        "use git merge conflict markers",
-        "assign non-overlapping file regions to executors",
-        "enforce sequential commit order"
-      ],
-      "rationale": "Three concurrent executors (claude-code, cursor, aider) all modify the same workspace. Concurrent git operations will cause conflicts, merge failures, or corrupted diffs.",
-      "severity": "high"
+        "Partition external resources by worker_id; never let two workers touch the same row/file.",
+        "Have the orchestrator hold all writes until merge, applying them in deterministic order.",
+        "Use optimistic-concurrency tokens on every shared write."
+      ]
     },
     "D_cascading_error": {
+      "severity": "high",
+      "rationale": "The merge step compounds errors: one hallucinating worker contaminates the merged artifact, and the merger has no way to know which input to trust. With three workers, the merger usually picks the majority — three confident wrong answers beat one careful right answer.",
       "citations": [
-        {
-          "profile_field": "autogen.capabilities.read_filesystem"
-        }
+        { "profile_field": "crewai.sandboxing.tool_use_pattern" },
+        { "profile_field": "claude-code.sandboxing.tool_use_pattern" }
       ],
       "conditions": [
-        "merger does not validate diffs before applying"
+        "Workers return narrative output without per-claim citations.",
+        "Merger uses majority-vote or last-write-wins to resolve conflicts."
       ],
       "mitigations": [
-        "merger runs test suite after each merge",
-        "implement rollback on test failure"
-      ],
-      "rationale": "If one executor produces a buggy diff that is merged, it corrupts the shared state for all downstream executors. Cascading failures propagate through merges.",
-      "severity": "high"
+        "Require workers to return evidence references per claim; have the merger reject claims without evidence.",
+        "Send the same subtask to two workers and treat divergence as a stop condition.",
+        "Cap the chain at N=3 workers; beyond that the merge step's reliability falls off a cliff."
+      ]
     },
     "E_compliance": {
+      "severity": "medium",
+      "rationale": "All workers and the merger typically run under one OAuth principal. Compliance frameworks expect role separation between executor and reviewer; this topology collapses that distinction into the merger.",
       "citations": [
-        {
-          "profile_field": "autogen.data_classes_touched"
-        }
+        { "profile_field": "autogen.permissions_requested.oauth_scopes" },
+        { "profile_field": "crewai.permissions_requested.oauth_scopes" }
       ],
-      "conditions": [],
-      "mitigations": [],
-      "rationale": "Concurrent executors working on the same codebase do not inherently introduce compliance violations unless the code itself contains regulated logic.",
-      "severity": "low"
+      "conditions": [
+        "Workers and merger share a single identity in the upstream system.",
+        "Workflow processes data subject to ISO 42001 or SOC 2 logical-access controls."
+      ],
+      "mitigations": [
+        "Run workers under distinct service-account identities; require the merger to authenticate separately.",
+        "Log every worker → merger payload to an immutable audit store keyed by worker_id.",
+        "Document the principal-collapse explicitly in the workflow's compliance attestation."
+      ]
     }
   },
-  "topology": "star"
+  "composite_score": 0.55,
+  "max_severity": "high",
+  "evidence_level": "profile-verified",
+  "confidence": 0.65,
+  "framework_mappings": {
+    "NIST_AI_RMF": ["GOVERN-2.1", "MEASURE-2.7"],
+    "ISO_42001": ["A.6.2.2", "A.8.4.1"],
+    "OWASP_LLM_TOP10": ["LLM05", "LLM08", "LLM10"]
+  },
+  "evidence_refs": [],
+  "first_seen_at": "2026-06-09T00:00:00Z",
+  "last_refreshed_at": "2026-06-09T00:00:00Z"
 }

@@ -40,11 +40,18 @@ export interface SubVerdict {
   mitigations: string[];
 }
 
+export type EvidenceLevel =
+  | 'unverified-profile'
+  | 'docs-only'
+  | 'profile-verified'
+  | 'sandbox-validated';
+
 export interface Chain {
   schema_version: '1.0';
   chain_id: string;
   name: string;
   tagline?: string;
+  author?: string;
   topology: ChainTopology;
   participants: ChainParticipant[];
   edges: ChainEdge[];
@@ -56,10 +63,40 @@ export interface Chain {
     D_cascading_error: SubVerdict;
     E_compliance: SubVerdict;
   };
+  composite_score?: number;
+  max_severity?: SubVerdict['severity'];
+  evidence_level?: EvidenceLevel;
+  confidence?: number;
   framework_mappings: Record<string, string[]>;
   evidence_refs: string[];
   first_seen_at: string;
   last_refreshed_at: string;
+}
+
+const SEVERITY_SCORES: Record<SubVerdict['severity'], number> = {
+  none: 0.0,
+  low: 0.2,
+  medium: 0.5,
+  high: 0.8,
+  critical: 1.0,
+};
+
+const RISK_WEIGHTS = {
+  A_prompt_injection: 0.10,
+  B_data_leakage: 0.30,
+  C_capability_conflict: 0.25,
+  D_cascading_error: 0.20,
+  E_compliance: 0.15,
+} as const;
+
+/** Composite from sub-verdicts using the canonical rubric weights. */
+export function computeComposite(chain: Chain): number {
+  if (typeof chain.composite_score === 'number') return chain.composite_score;
+  let total = 0;
+  for (const [k, w] of Object.entries(RISK_WEIGHTS) as [keyof typeof RISK_WEIGHTS, number][]) {
+    total += SEVERITY_SCORES[chain.sub_verdicts[k].severity] * w;
+  }
+  return Math.round(total * 100) / 100;
 }
 
 let _cache: Chain[] | null = null;
