@@ -19,13 +19,31 @@ def _container_runtime() -> str | None:
                 proc = subprocess.run([name, "info"], capture_output=True, timeout=5)
             except (subprocess.TimeoutExpired, OSError):
                 continue
-            if proc.returncode == 0:
+            if proc.returncode != 0:
+                continue
+            # `<runtime> info` reports the daemon is up, but says nothing
+            # about whether the runtime can actually pull + run a container.
+            # GitHub Actions runners ship podman that can `info` but exit
+            # 125 on a real `run` (rootless registry / cgroup quirks).
+            # Verify by running the smallest possible container.
+            try:
+                ok = subprocess.run(
+                    [name, "run", "--rm", "alpine:3.20", "true"],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+            if ok.returncode == 0:
                 return name
     return None
 
 
 _RUNTIME = _container_runtime()
-pytestmark = pytest.mark.skipif(_RUNTIME is None, reason="docker/podman not available")
+pytestmark = pytest.mark.skipif(
+    _RUNTIME is None,
+    reason="container runtime can't actually run a container in this env",
+)
 
 
 def _alpine_digest() -> str:
