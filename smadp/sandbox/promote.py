@@ -165,6 +165,16 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
             "generated_at": utcnow(),
         }
     )
+
+    # Sandbox-judge: LLM-grade the transcript and replace seed sub-verdicts
+    # with real severities + rationales + a real composite_score. Only runs
+    # when the model.id is still the seed placeholder so re-promote doesn't
+    # clobber a human-reviewed grading. Best-effort: failures log and leave
+    # the verdict as-is (still publishable, just at sandbox-seed quality).
+    if persisted.model.id == "sandbox-seed":
+        persisted = _grade_with_llm_or_skip(
+            verdict=persisted, run_row=dict(row), config=config, run_id=run_id
+        )
     if target_dir == "pending":
         repo.save_pending_verdict(persisted)
     else:
@@ -202,6 +212,34 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     record_run_actual(budget_path, dollars=actual_dollars)
 
     return result
+
+
+def _grade_with_llm_or_skip(
+    *,
+    verdict: Verdict,
+    run_row: dict[str, Any],
+    config: Config,
+    run_id: str,
+) -> Verdict:
+    """LLM-grade a sandbox run; on any failure log + return the verdict unchanged.
+
+    Imports are local so the sandbox promote path stays usable in tests + CI
+    environments that don't have OPENAI_API_KEY or the openai SDK installed.
+    """
+    try:
+        from smadp.sandbox.judge import JudgeError, grade_sandbox_run
+    except Exception as exc:
+        log.warning("sandbox.judge.import_failed", run_id=run_id, error=repr(exc))
+        return verdict
+    try:
+        result = grade_sandbox_run(verdict=verdict, config=config, run_row=run_row)
+    except JudgeError as exc:
+        log.warning("sandbox.judge.skipped", run_id=run_id, error=repr(exc))
+        return verdict
+    except Exception as exc:
+        log.warning("sandbox.judge.unexpected", run_id=run_id, error=repr(exc))
+        return verdict
+    return result.verdict
 
 
 def _maybe_promote(current: EvidenceLevel, target: EvidenceLevel) -> EvidenceLevel | None:

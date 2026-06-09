@@ -36,7 +36,7 @@ from tenacity import (
 )
 
 from smadp.config import OPENAI_API_KEY_ENV, Config, load_config
-from smadp.llm.prompts import pairwise_judge, profile_extraction
+from smadp.llm.prompts import pairwise_judge, profile_extraction, sandbox_judge
 
 logger = structlog.get_logger(__name__)
 
@@ -175,6 +175,29 @@ class LLMClient:
             tool_choice_name=pairwise_judge.TOOL_NAME,
             log_event="llm.judge_pair",
             log_context={"prompt_version": pairwise_judge.VERSION},
+        )
+
+    async def judge_sandbox_run(
+        self,
+        payload: sandbox_judge.SandboxJudgeInput,
+    ) -> StructuredCallResult:
+        """Grade a sandbox-run transcript against the 5-risk rubric."""
+        user_text = sandbox_judge.build_user_message(payload)
+        tool: dict[str, Any] = {
+            "type": "function",
+            "function": {
+                "name": sandbox_judge.TOOL_NAME,
+                "description": sandbox_judge.TOOL_DESCRIPTION,
+                "parameters": sandbox_judge.TOOL_INPUT_SCHEMA,
+            },
+        }
+        return await self._call_tool(
+            system_text=sandbox_judge.SYSTEM,
+            user_text=user_text,
+            tool=tool,
+            tool_choice_name=sandbox_judge.TOOL_NAME,
+            log_event="llm.judge_sandbox_run",
+            log_context={"prompt_version": sandbox_judge.VERSION},
         )
 
     async def _call_tool(
