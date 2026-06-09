@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-09_crewai__replit-agent_ff9845",
+  "generated_at": "2026-06-09T01:41:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.77,
+  "headline": "High risk of data leakage and cascading errors: CrewAI\u2019s shared-memory orchestration can feed Replit Agent sensitive workspace data and unverified outputs into broad-write, networked actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can expose shared memory and reads/writes the host working directory, while Replit Agent reads and writes Repl workspace files. That creates a plausible file-based instruction bridge where attacker-controlled content in shared files can influence either agent. This is not provably blocked, but it is not a default clipboard/manual-only path either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory",
+        "IF either agent treats file contents as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories",
+        "Add a read-only handoff file for A\u2192B",
+        "Require explicit provenance tags on any file-fed instructions",
+        "Disable automatic execution of file-sourced prompts",
+        "requires-engineering: add content-sanitizing middleware between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, and Replit Agent touches source code, secrets, and deployment configuration with persistent Repl files plus broad network egress. If they share a workspace or credentials, sensitive data can flow from A into B and then out through B\u2019s cloud-connected APIs. The blast radius includes secrets and deployment material.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same secrets or source tree are available to both agents",
+        "IF Replit Agent is allowed to transmit workspace contents to external services"
+      ],
+      "mitigations": [
+        "Remove secrets from any shared workspace",
+        "Use separate credentials per agent",
+        "Restrict B to a scrubbed copy of files",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-agent data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, spawn subprocesses, and use broad network egress. Replit Agent also modifies git state and persists filesystem changes across sessions, while CrewAI has no default isolation. Concurrent writes to the same repo or workspace can corrupt state or overwrite each other without locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or directory",
+        "IF no external lock or coordination primitive is enforced"
+      ],
+      "mitigations": [
+        "Assign disjoint working directories",
+        "Serialize write phases with a lock file",
+        "Disable git writes for one agent",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI is a multi-agent orchestration framework with shared memory, so its outputs can become authoritative inputs for Replit Agent, which can then act inside a persistent Repl with shell and deployment access. That creates a default path from generated text to real actions without a verification gate, making mistaken facts or malicious instructions cascade into code or deployment changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Replit Agent consumes CrewAI output as task instructions",
+        "IF no human or automated verification step checks the handoff"
+      ],
+      "mitigations": [
+        "Insert a review step before B acts",
+        "Require structured, schema-validated handoffs",
+        "Limit B to dry-run mode first",
+        "Log and diff all proposed actions",
+        "requires-engineering: add policy checks before execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "CrewAI is documented as handling developer-passed crew data and API keys, while Replit Agent touches source code, secrets, and deployment configuration in a cloud Repl with persistent workspace files. If regulated or confidential data is placed into the shared workflow, the pair can create a residency/retention mismatch and expose secrets to a separate cloud service. The other agent is cited because the risk is the interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or customer secrets are processed in the shared workflow",
+        "IF retention or residency requirements differ between the two environments"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair",
+        "Use redacted test data only",
+        "Document retention and residency for both systems",
+        "Purge shared workspaces after each run",
+        "requires-engineering: obtain a DPA and formal compliance review"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dify",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_dify__windsurf_c059dd",
+  "generated_at": "2026-06-09T02:08:16Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt-injection, data leakage, and cascading errors from shared filesystem/clipboard plus broad egress and auto-execute-capable tooling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dify can read/write uploaded knowledge base files and shares state via Dify server datastore, while Windsurf reads/writes workspace files and uses clipboard/MCP. That creates a plausible content-to-instruction bridge even without explicit provenance tracking. The pathway is not proven default-manual, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dify outputs file-derived text into shared datastore and Windsurf ingests it as instructions, injection is possible.",
+        "IF Windsurf clipboard or MCP content is treated as trusted prompts, attacker-controlled text can steer actions."
+      ],
+      "mitigations": [
+        "Disable shared datastore handoff for untrusted content.",
+        "Add provenance labels to all inter-agent text.",
+        "Require explicit human review before executing file-derived instructions.",
+        "Restrict Windsurf clipboard/MCP ingestion to allowlisted sources.",
+        "requires-engineering: add parser hardening and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dify touches knowledge base content and conversation logs, and Windsurf touches source code and open files. Both have broad network egress, so sensitive material from either side can be sent outward if shared workspace or copied context is exposed. The profiles show a plausible shared-data path, but not an unavoidable exfiltration default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or datastore, sensitive files can flow between them.",
+        "IF either agent forwards retrieved content to external model providers, leakage can occur."
+      ],
+      "mitigations": [
+        "Separate workspaces and credentials per agent.",
+        "Block sensitive folders from Windsurf indexing.",
+        "Limit Dify knowledge-base uploads to approved documents.",
+        "Turn off broad egress except to required endpoints.",
+        "requires-engineering: enforce DLP and per-agent network policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and execute shells; Windsurf also modifies git state and uses MCP, while Dify runs server-side code tools in a sandbox container but still writes files. Shared mutable resources plus no documented locking create a real conflict path, especially for git/workspace edits. Uncertainty about exact overlap pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, concurrent writes can clobber files.",
+        "IF Windsurf auto-executes commands while Dify writes generated artifacts, state divergence can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint directories per agent.",
+        "Disable Windsurf auto-execute for shared repos.",
+        "Serialize write operations with a lock file.",
+        "Keep git operations manual and single-writer.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Dify can generate agent/workflow outputs from knowledge-base content, and Windsurf\u2019s Cascade loop can act on tool outputs with terminal execution subject to auto-execute settings. If Windsurf treats Dify output as authoritative, a bad or injected result can cascade into code changes or commands. That downstream action authority makes the blast radius high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes Dify output without verification, erroneous instructions can be executed.",
+        "IF Cascade auto-execute is enabled, a mistaken plan can become immediate shell action."
+      ],
+      "mitigations": [
+        "Require human approval for every cross-agent action.",
+        "Insert a verification step before any command execution.",
+        "Use structured outputs with schema validation.",
+        "Limit Dify to advisory-only outputs.",
+        "requires-engineering: add provenance-aware gating between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dify explicitly handles conversation logs and knowledge-base content, while Windsurf handles source code and open files. If regulated or confidential data is placed into both, differing retention and residency controls can create a compliance mismatch. The profiles do not show a specific jurisdiction or certification conflict, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in Dify conversation logs and also opened in Windsurf, retention policy mismatch may arise.",
+        "IF one agent is deployed under stricter residency rules than the other, compliance can fail."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workflows.",
+        "Document retention settings for both tools.",
+        "Restrict Windsurf projects to non-regulated code.",
+        "Review vendor residency and DPA terms before deployment.",
+        "requires-engineering: align logging and retention controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.6"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8c782248ac5e7e08a7d484c4982111530a1ef43c53069ff5d1cf1c462f67ba8a",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

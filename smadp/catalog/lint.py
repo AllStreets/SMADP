@@ -78,6 +78,13 @@ def lint_catalog(config: Config | None = None) -> LintReport:
     report = LintReport()
 
     profile_validator = _load_schema(cfg.schema_dir / "profile.schema.json")
+    # Tier-aware: autopilot-bootstrapped stubs carry evidence_level
+    # ``unverified-profile`` and don't yet have the full Safety Profile shape.
+    # They validate against a minimal schema until enrichment lifts them to
+    # docs-only (or higher).
+    unverified_profile_validator = _load_schema(
+        cfg.schema_dir / "profile.unverified.schema.json"
+    )
     verdict_validator = _load_schema(cfg.schema_dir / "verdict.schema.json")
     evidence_validator = _load_schema(cfg.schema_dir / "evidence.schema.json")
 
@@ -96,19 +103,57 @@ def lint_catalog(config: Config | None = None) -> LintReport:
             if data is None:
                 report.add("error", "profile.parse", target, "could not parse JSON")
                 continue
-            if profile_validator is not None:
-                for err in profile_validator.iter_errors(data):
+            tier = data.get("evidence_level")
+            if tier == "unverified-profile":
+                # Stubs are autopilot-bootstrapped from ONEXUS records and
+                # don't yet have the full Safety Profile fields (vendor,
+                # source_type, sandboxing, etc.) — those land at enrichment
+                # time. Validate against the relaxed schema only; skip the
+                # full Pydantic model since the stub shape is constructed in
+                # code and known-valid by construction.
+                if unverified_profile_validator is not None:
+                    for err in unverified_profile_validator.iter_errors(data):
+                        report.add(
+                            "error",
+                            "profile.unverified-schema",
+                            target,
+                            f"{'/'.join(str(p) for p in err.absolute_path)}: {err.message}",
+                        )
+                slug = data.get("slug")
+                if not isinstance(slug, str):
+                    report.add("error", "profile.unverified-schema", target, "slug missing")
+                    continue
+                if path.stem != slug:
                     report.add(
                         "error",
-                        "profile.schema",
+                        "profile.filename",
                         target,
-                        f"{'/'.join(str(p) for p in err.absolute_path)}: {err.message}",
+                        f"filename {path.stem!r} does not match slug {slug!r}",
                     )
-            try:
-                profile = Profile.model_validate(data)
-            except ValidationError as exc:
-                report.add("error", "profile.pydantic", target, str(exc))
+                if slug in profile_slugs:
+                    report.add(
+                        "error",
+                        "profile.duplicate",
+                        slug,
+                        f"slug {slug!r} appears in multiple files",
+                    )
+                profile_slugs.add(slug)
+                # Stubs have no pairings or evidence_refs to track.
                 continue
+            else:
+                if profile_validator is not None:
+                    for err in profile_validator.iter_errors(data):
+                        report.add(
+                            "error",
+                            "profile.schema",
+                            target,
+                            f"{'/'.join(str(p) for p in err.absolute_path)}: {err.message}",
+                        )
+                try:
+                    profile = Profile.model_validate(data)
+                except ValidationError as exc:
+                    report.add("error", "profile.pydantic", target, str(exc))
+                    continue
             # Check filename matches slug
             if path.stem != profile.slug:
                 report.add(
@@ -226,14 +271,17 @@ def lint_catalog(config: Config | None = None) -> LintReport:
                     target,
                     f"pair {(a, b)!r} is not alphabetized",
                 )
-            # Filename must match the alphabetized pair
+            # Filename must match the alphabetized pair OR the autopilot's
+            # date-prefixed verdict_id form (multiple verdicts per pair
+            # over time keep history without clobbering).
             expected_name = f"{min(a, b)}__{max(a, b)}.json"
-            if path.name != expected_name:
+            autopilot_name = f"{verdict.verdict_id}.json"
+            if path.name not in (expected_name, autopilot_name):
                 report.add(
                     "error",
                     "verdict.filename",
                     target,
-                    f"filename should be {expected_name!r}",
+                    f"filename should be {expected_name!r} or {autopilot_name!r}",
                 )
             # Both slugs must resolve to existing profiles
             for slug in (a, b):

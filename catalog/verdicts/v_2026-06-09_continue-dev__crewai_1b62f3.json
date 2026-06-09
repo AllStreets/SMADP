@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "crewai"
+  ],
+  "verdict_id": "v_2026-06-09_continue-dev__crewai_1b62f3",
+  "generated_at": "2026-06-09T01:19:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High-risk default workspace sharing and tool-enabled orchestration create prompt-injection, data-leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can use MCP and reads/writes workspace files, while CrewAI can ingest developer-defined tools and shared memory. That creates a plausible path where attacker-controlled file or tool output from one agent is treated as instructions by the other. The pair is not isolated by default, so the interaction is more than manual copy-paste.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory",
+        "IF CrewAI tools or prompts consume Continue-generated file content without sanitization"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable MCP tools for untrusted content paths",
+        "Add provenance tags to all inter-agent files",
+        "Require manual review before CrewAI consumes Continue output",
+        "requires-engineering: enforce content filtering at the orchestrator boundary"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code and open editor buffers and has broad network egress; CrewAI receives data the developer passes into a crew and also has broad egress. If the same workspace or sensitive files are shared, either agent can expose data through model-provider or tool calls. This is not provably blocked by either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same repository or editor buffers",
+        "IF either agent forwards file contents to a remote model provider or tool endpoint"
+      ],
+      "mitigations": [
+        "Restrict both agents to non-sensitive test data",
+        "Use local-only model providers where possible",
+        "Split secrets into separate unshared files",
+        "Review outbound tool/model destinations",
+        "requires-engineering: add DLP or redaction before egress"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the filesystem, and Continue shares state via filesystem while CrewAI has no default self-isolation. Concurrent writes to the same working tree can overwrite each other or corrupt artifacts even without git mutation. The overlap is real in default setups, though not as severe as unrestricted git conflicts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory",
+        "IF their runs overlap in time without external locking"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Serialize write-heavy tasks",
+        "Use file locks for shared artifacts",
+        "Keep one agent read-only on shared paths",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI is a multi-agent orchestrator with shared memory and tool execution, so it can treat Continue\u2019s outputs as authoritative inputs. Continue can generate code or file edits that CrewAI then acts on, and CrewAI can execute tools or subprocesses based on that content. That creates a default path from one agent\u2019s output to the other\u2019s actions with potentially irreversible effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI consumes Continue-produced text as task state or instructions",
+        "IF CrewAI tool execution is enabled for downstream actions"
+      ],
+      "mitigations": [
+        "Require explicit verification before acting on Continue output",
+        "Disable autonomous tool execution for untrusted tasks",
+        "Use a human approval step for commits, emails, or deployments",
+        "Log and diff all agent-generated instructions",
+        "requires-engineering: add schema validation for inter-agent handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare conflicting residency, certification, or retention constraints. The main compliance risk is indirect: sensitive code or editor buffers from Continue may be passed into CrewAI\u2019s developer-defined crew data. No specific residency mismatch is evidenced, so this remains a low, documentation-limited concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared crew input",
+        "IF the deployment imposes retention or residency rules not reflected in these profiles"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Document data-handling boundaries",
+        "Minimize logged prompts and outputs",
+        "Confirm provider retention settings",
+        "requires-engineering: map deployment to a formal compliance control set"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0820721749abb380081f6858d26da05d63ec22cf80a17341f2465796985469f7",
+    "profile_b_hash": "sha256:52bc459e0a34a4e3cedc6c8caa4c45906efe0c9588579344983feb1684ab2056",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

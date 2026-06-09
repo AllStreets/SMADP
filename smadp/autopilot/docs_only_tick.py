@@ -71,6 +71,34 @@ def _publish(publisher: PolicyPublisher, judge_name: str, output: dict[str, Any]
     return publisher.commit(output)
 
 
+def _persist_evidence_chunk(evidence_dir: Path, chunk: dict[str, str]) -> None:
+    """Write one README chunk to catalog/_evidence/sha256-<hash>.json.
+
+    Skips chunks that are already on disk (sha-addressed, so identical
+    content is content-addressed-stable). Safe to call repeatedly.
+    """
+    sha = chunk.get("sha")
+    if not sha:
+        return
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    target = evidence_dir / f"sha256-{sha}.json"
+    if target.exists():
+        return
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "sha256": sha,
+        "source_url": chunk.get("source_url", ""),
+        "fetched_at": now,
+        "fetcher": "smadp.autopilot.profile_enrich.v1",
+        "media_type": chunk.get("media_type", "text/markdown"),
+        "quote": chunk.get("quote", ""),
+        "context": chunk.get("context"),
+    }
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(target)
+
+
 def run_docs_only_tick(
     *,
     repo_root: Path,
@@ -134,6 +162,11 @@ def run_docs_only_tick(
             break
         try:
             result = judge.evaluate(work, profiles=profiles)
+            # Persist any evidence the judge produced so the refs the verdict
+            # carries are resolvable by `smadp validate`. Without this step
+            # docs-only enrichments accumulate orphan evidence refs.
+            for chunk in getattr(result, "evidence", []) or []:
+                _persist_evidence_chunk(repo_root / "catalog" / "_evidence", chunk)
             _publish(publisher, str(judge.name), result.verdict)
             record_run_actual(budget_path, dollars=float(result.cost_usd))
             published += 1

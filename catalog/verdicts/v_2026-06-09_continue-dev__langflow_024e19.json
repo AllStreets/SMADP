@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-09_continue-dev__langflow_024e19",
+  "generated_at": "2026-06-09T03:02:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared filesystem and unsandboxed flow execution create dangerous default interaction between Continue and Langflow.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue reads and writes workspace files and uses MCP; Langflow can ingest uploaded files and chain tools in flows. That creates a plausible instruction-injection path through shared files or flow inputs. The pair is not documented as isolated, so the interaction is more than manual copy-paste, but not clearly a raw-web parser case.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow inputs include files or text produced by Continue without sanitization",
+        "IF Continue reads a workspace file that Langflow later treats as instructions"
+      ],
+      "mitigations": [
+        "Add a strict delimiter and provenance tag to all cross-agent text",
+        "Disable file-based handoff between the tools",
+        "Require human review before Langflow executes any instruction-like content",
+        "Use separate workspaces for each agent",
+        "requires-engineering: add content filtering or prompt-firewalling at the integration boundary"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code and open editor buffers, while Langflow reads server filesystem and uploaded flow files. Both have broad network egress and can send content to model providers or HTTP services. Shared filesystem/state makes leakage plausible in default setups, though the profiles do not prove uncontrolled third-party exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or uploaded files",
+        "IF either agent forwards file contents to a remote model provider or HTTP service"
+      ],
+      "mitigations": [
+        "Separate workspaces and credentials per agent",
+        "Restrict Langflow flows from reading source-code directories",
+        "Turn off uploads for sensitive files",
+        "Use local-only model providers for both agents",
+        "requires-engineering: enforce per-agent data-loss-prevention rules"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Continue has filesystem write access and shared state via filesystem across instances; Langflow has filesystem write access plus server-side state and unsandboxed Python code by default. If both operate on the same directory or shared mutable resources, concurrent writes can corrupt files or overwrite each other's outputs. The default overlap is dangerous and not lock-protected in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or shared store",
+        "IF Langflow Python components mutate files that Continue also edits"
+      ],
+      "mitigations": [
+        "Assign disjoint directories to each agent",
+        "Disable Langflow file-writing components for shared paths",
+        "Pause one agent while the other writes",
+        "Use OS-level file locks on shared artifacts",
+        "requires-engineering: add transactional coordination for shared writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Continue can produce code or instructions from editor context, and Langflow can chain agents and tools in flows. If Langflow consumes Continue's output as authoritative, errors can cascade into automated actions or downstream tool calls. The pair lacks a documented verification boundary, so the safer reading is that default flow composition can amplify mistakes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uses Continue-generated text as a flow input without verification",
+        "IF a Langflow node triggers tools or actions based on that text"
+      ],
+      "mitigations": [
+        "Insert a verification step before any downstream action",
+        "Require citations or structured schemas from Continue outputs",
+        "Mark Continue output as untrusted in Langflow",
+        "Limit Langflow nodes to read-only evaluation",
+        "requires-engineering: add automated consistency checks between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Continue handles model-provider API keys and workspace code, while Langflow stores per-flow credentials and processes uploaded files/server filesystem data. The profiles show different storage and retention surfaces, so compliance risk exists if regulated data is routed through both. No specific residency or certification mismatch is proven, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into both agents' workspaces or flows",
+        "IF Langflow stores credentials or outputs longer than Continue's editor-session context"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared flows",
+        "Use separate retention policies for each agent",
+        "Disable logging of sensitive prompts and outputs",
+        "Review credential storage settings in Langflow",
+        "requires-engineering: align residency and retention controls across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0820721749abb380081f6858d26da05d63ec22cf80a17341f2465796985469f7",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "gpt-engineer"
+  ],
+  "verdict_id": "v_2026-06-09_gemini-cli__gpt-engineer_45d6bb",
+  "generated_at": "2026-06-09T03:57:17Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-workspace prompt injection and cascading errors; data leakage and capability conflicts are medium due to overlapping filesystem and shell access.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files, and agent_a explicitly shares state via filesystem and git while agent_b shares via the project directory. That creates a default path for one agent to ingest the other\u2019s outputs as trusted content. No stronger shared channel is documented, so this is not high, but the filesystem bridge is enough for prompt injection.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes instructions into repo files that agent_b later reads as prompt context",
+        "IF agent_b consumes agent_a-generated files without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents into different working directories",
+        "Add a file allowlist for agent_b inputs",
+        "Prefix agent_a outputs with machine-readable provenance markers",
+        "Review any shared file before the second agent reads it",
+        "requires-engineering: add provenance-aware parsing between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches source code, cwd files, and shell environment, and has broad network egress; agent_b reads and writes the project directory and also has broad network egress. In a shared workspace, sensitive files can flow from agent_a into agent_b outputs or outbound API calls. The profiles do not show local-only inference, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared project directory",
+        "IF either agent includes file contents in prompts or API calls"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared directory",
+        "Use separate per-agent worktrees",
+        "Disable network access during file inspection",
+        "Redact sensitive files before either agent runs",
+        "requires-engineering: enforce data-loss-prevention filters on outbound prompts"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, install packages, read and write the filesystem, and agent_a can modify git state while agent_b writes in the project directory. With shared filesystem state and no locking mechanism documented, concurrent edits can corrupt files or git history. This matches the high-risk overlap pattern because both can mutate the same workspace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or project directory",
+        "IF agent_a and agent_b run concurrently without external locking"
+      ],
+      "mitigations": [
+        "Run only one agent at a time",
+        "Use separate branches or worktrees",
+        "Lock the repository before edits",
+        "Commit after each agent finishes",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a can produce code or file changes that agent_b may read from the shared project directory, and agent_b is explicitly a code-generation loop that writes files then offers to run them. That makes A\u2019s output a likely input to B without a verification step, so mistakes or malicious content can cascade into generated code or executed commands.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a-produced files as authoritative context",
+        "IF agent_b runs or incorporates code generated from agent_a output without review"
+      ],
+      "mitigations": [
+        "Require human review before execution",
+        "Insert a verification step between agents",
+        "Use signed handoff files only",
+        "Limit agent_b to read-only analysis of agent_a output",
+        "requires-engineering: add automated validation of inter-agent handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only document generic code/project data handling, so no specific residency or regulated-data mismatch is evidenced. The main compliance concern is that agent_a handles shell environment and API keys while agent_b can execute generated code with the user\u2019s privileges, but that is a general operational risk rather than a documented policy conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared project directory",
+        "IF organizational policy forbids executing generated code with user privileges"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the workspace",
+        "Review secret-handling settings before use",
+        "Run in a restricted test project",
+        "Avoid executing generated code automatically",
+        "requires-engineering: map each agent to a formal data-handling policy"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:c79a9072bf378f149dd87651e37a45fbcd45737884a5f6c4ccc8a81d2379dc54",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

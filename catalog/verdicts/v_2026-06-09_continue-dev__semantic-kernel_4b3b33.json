@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-09_continue-dev__semantic-kernel_4b3b33",
+  "generated_at": "2026-06-09T03:02:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk shared filesystem and MCP pathways make prompt injection, data leakage, and output-cascade hazards plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can use MCP and shares state via filesystem, while Semantic Kernel can call MCP servers and has application-defined files. That creates a plausible path for attacker-controlled file or tool output from agent_a to be consumed by agent_b as instructions. The interaction is documented enough to avoid guessing, but not isolated enough for none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes attacker-controlled content into workspace files that agent_b later reads",
+        "IF agent_b routes MCP or plugin output into prompt text without provenance filtering"
+      ],
+      "mitigations": [
+        "Disable shared workspace access between the two agents",
+        "Require provenance tags on all file- and MCP-derived text",
+        "Add a manual review step before agent_b treats agent_a output as instructions",
+        "Restrict MCP servers to a allowlist for both agents",
+        "requires-engineering: implement content-sanitization and instruction/data separation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a reads and writes workspace files and touches source code/open editor buffers; agent_b can read files and uses application-defined files plus external model providers. If they share a workspace or memory-backed context, sensitive code or context can flow from agent_a into agent_b and then to third-party inference. The blast radius is multiple work products, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or workspace",
+        "IF agent_b forwards shared context or file contents to Azure OpenAI, OpenAI, or Hugging Face"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Turn off automatic file ingestion for agent_b",
+        "Redact secrets before either agent reads shared files",
+        "Use local-only models for sensitive sessions",
+        "requires-engineering: add per-agent data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have filesystem write and read access, and agent_a explicitly shares state via filesystem while agent_b shares state via memory store. Even without git writes, concurrent edits to the same files or application context can overwrite each other or create inconsistent state. Because the overlap exists in default capabilities, medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents modify the same workspace files or application context concurrently",
+        "IF no external locking or merge coordination is enabled"
+      ],
+      "mitigations": [
+        "Assign disjoint file scopes to each agent",
+        "Serialize write operations with a lock file",
+        "Review diffs before applying either agent's edits",
+        "Keep one agent read-only during the other's write phase",
+        "requires-engineering: add optimistic concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a can produce code or file edits that agent_b may treat as authoritative application context, and agent_b is a kernel+plugins orchestrator that can act on that context through tools. Without a verification boundary, errors or malicious content from agent_a can cascade into downstream actions by agent_b. The default pathway is dangerous and can cause irreversible bad actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a-generated files or context without independent verification",
+        "IF agent_b is configured to execute plugin actions based on that context"
+      ],
+      "mitigations": [
+        "Require a human approval gate before agent_b acts on agent_a output",
+        "Add a verification prompt that checks facts against source files",
+        "Limit agent_b to read-only analysis when ingesting agent_a output",
+        "Log and diff all agent_a-produced artifacts before use",
+        "requires-engineering: implement typed handoff contracts between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles are open-source, but agent_a handles source code and editor buffers while agent_b handles application context and may send it to external model providers. If regulated or proprietary data is placed in the shared workflow, retention and residency obligations can diverge across the two stacks. The profiles do not prove a specific violation, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or proprietary source code is placed into the shared workflow",
+        "IF agent_b forwards that data to a non-approved external provider or retains it longer than agent_a"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair's shared workspace",
+        "Use approved providers with matching retention settings",
+        "Document a data-handling policy for both agents",
+        "Purge shared context after each task",
+        "requires-engineering: align residency and retention controls across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0820721749abb380081f6858d26da05d63ec22cf80a17341f2465796985469f7",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

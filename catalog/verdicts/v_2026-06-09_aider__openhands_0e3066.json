@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "openhands"
+  ],
+  "verdict_id": "v_2026-06-09_aider__openhands_0e3066",
+  "generated_at": "2026-06-09T03:24:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-repo write conflicts and medium risk of prompt/data leakage when Aider and OpenHands operate on the same codebase.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files and OpenHands can read/write files in its runtime sandbox, so a shared workspace can let attacker-controlled file content flow from one agent into the other as trusted instructions. This is not proven by a direct bridge, but the shared-repo/shared-volume pathways make injection plausible for both agents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or mounted workspace",
+        "IF one agent writes instruction-like content into files the other later reads"
+      ],
+      "mitigations": [
+        "Separate the agents onto different repos or mounts",
+        "Add a human review step before either agent consumes files written by the other",
+        "Prefix untrusted file content as data in prompts",
+        "Disable automatic ingestion of newly written files where possible",
+        "requires-engineering: add provenance tagging for inter-agent file handoff"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history, while OpenHands touches files mounted into its runtime; if those overlap, both agents can expose the same sensitive code or secrets through their model-provider calls. The profiles show broad network egress and model-provider APIs for both, so leakage is plausible in default coding workflows even though the exact workspace sharing is not fully documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same sensitive repository or mounted volume is accessible to both agents",
+        "IF either agent sends file contents from that workspace to its model provider"
+      ],
+      "mitigations": [
+        "Use separate least-privilege workspaces",
+        "Remove secrets from the shared repo before running either agent",
+        "Restrict model-provider access to approved files only",
+        "Rotate any credentials present in the workspace",
+        "requires-engineering: enforce per-file redaction before inference"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and modify git state, and Aider explicitly shares state via a shared git repo while OpenHands shares state via a mounted volume. That creates a direct write-write conflict on the same mutable resources, with risk of lost edits or corrupted git history in default collaborative use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository or shared mounted files",
+        "IF both make concurrent edits without an external lock or merge gate"
+      ],
+      "mitigations": [
+        "Run only one writer at a time",
+        "Use separate branches per agent",
+        "Require a merge/review step before commits land",
+        "Lock the repo during agent execution",
+        "requires-engineering: add optimistic concurrency control around shared writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider produces edits and commits, and OpenHands can act through shell/browser/editor loops; if OpenHands treats Aider's output as authoritative, an error can cascade from generated code into executed actions. The pair has enough downstream authority that verification gaps matter, but the profiles do not prove fully automatic action chaining.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands consumes Aider-generated patches or instructions without verification",
+        "IF OpenHands then executes shell, browser, or file actions based on that output"
+      ],
+      "mitigations": [
+        "Require explicit verification before applying Aider output",
+        "Diff-review all patches before execution",
+        "Limit OpenHands to read-only mode during handoff",
+        "Add a second-pass checker for generated commands",
+        "requires-engineering: insert a policy gate between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider is documented as open-source coding tooling that handles source code and git history, while OpenHands runs code in a Docker runtime and touches mounted files. The profiles do not show a clear residency or certification mismatch, so only a low compliance risk is evident from differing runtime and retention surfaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace",
+        "IF the operator requires a specific residency or retention control not present in the runtime"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo",
+        "Document where runtime files are stored",
+        "Use separate environments for regulated and unregulated work",
+        "Review retention settings before starting",
+        "requires-engineering: add policy enforcement for data residency"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:0345cd7b3df6bba823b893f8ad14411216e1ed73428db3bb44ba121b9768c380",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

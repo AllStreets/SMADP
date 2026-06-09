@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -29,6 +29,10 @@ _MAX_CHUNKS = 6
 class JudgeResult:
     verdict: dict[str, Any]
     cost_usd: float
+    # Evidence chunks the enricher produced and the LLM may have cited. The
+    # tick is responsible for persisting these to catalog/_evidence/ so the
+    # refs the profile carries are resolvable by `smadp validate`.
+    evidence: list[dict[str, str]] = field(default_factory=list)
 
 
 class ProfileEnrichmentJudge:
@@ -73,7 +77,21 @@ class ProfileEnrichmentJudge:
             enriched["onexus"] = stub["onexus"]
         if "composite_score" in stub:
             enriched["composite_score"] = stub["composite_score"]
-        return JudgeResult(verdict=enriched, cost_usd=self.cost_per_call_usd)
+        # Fill in schema-required fields the LLM extraction prompt doesn't
+        # ask for. These are derivable from the source-repo URL and the run
+        # timestamps; they keep autopilot-enriched profiles schema-compliant.
+        enriched.setdefault("schema_version", "1.1")
+        if "vendor" not in enriched:
+            owner = github.split("/", 1)[0]
+            enriched["vendor"] = {"type": "org", "handle": owner, "url": None}
+        enriched.setdefault("first_seen_at", now_iso)
+        enriched["last_refreshed_at"] = now_iso
+        enriched.setdefault("pairings", [])
+        return JudgeResult(
+            verdict=enriched,
+            cost_usd=self.cost_per_call_usd,
+            evidence=evidence,
+        )
 
     @staticmethod
     def _chunk_readme(text: str, *, source_url: str) -> list[dict[str, str]]:

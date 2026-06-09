@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "openhands"
+  ],
+  "verdict_id": "v_2026-06-09_crewai__openhands_ca6a5c",
+  "generated_at": "2026-06-09T01:24:57Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-workspace prompt injection and data leakage: CrewAI\u2019s host working directory plus OpenHands\u2019 runtime sandbox can cross-contaminate outputs and files by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI reads and writes the host working directory and uses shared memory by default, while OpenHands reads/writes files in its runtime sandbox and can call MCP servers. If the pair is bridged through a shared workspace or copied outputs, attacker-controlled content from one can be treated as instructions by the other. The pathway is plausible in default pair deployments, though not guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mounted directory or copied artifacts",
+        "IF either agent parses the other agent\u2019s file output as instructions"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable automatic ingestion of peer-generated files",
+        "Add a provenance header check before parsing outputs",
+        "Use read-only mounts for cross-agent handoff",
+        "requires-engineering: add content-sanitization and instruction-stripping filters"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, and OpenHands touches files mounted into its runtime. If they share a workspace or mounted volume, sensitive inputs can flow from CrewAI-managed files into OpenHands outputs or tool calls. This is a default-configuration risk when operators reuse the same project directory, though not a guaranteed leak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF the same directory or mounted volume is visible to both agents",
+        "IF sensitive files are written by one agent and read by the other"
+      ],
+      "mitigations": [
+        "Use separate encrypted workspaces",
+        "Keep secrets out of shared folders",
+        "Mount only the minimum required files into OpenHands",
+        "Rotate any exposed API keys after a shared run",
+        "requires-engineering: enforce per-agent access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, subprocess spawning, and network egress. OpenHands also has modify_git_state and MCP access, while CrewAI can write the host working directory. If they target the same repo or directory, concurrent writes and git mutations can race and corrupt state or overwrite each other. The overlap is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or filesystem path",
+        "IF git state is modified without external locking"
+      ],
+      "mitigations": [
+        "Assign disjoint directories per agent",
+        "Serialize write operations with a lock file",
+        "Disable git writes in one agent during parallel runs",
+        "Run one agent read-only for review tasks",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI\u2019s role-playing crew and shared memory can produce outputs that OpenHands may consume as task context, and OpenHands has an action-oriented shell/browser/editor loop. If OpenHands treats CrewAI output as authoritative, a mistaken or malicious intermediate result can cascade into real actions such as edits, commits, or external requests. This interaction is plausible and high impact.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands uses CrewAI output as task input without verification",
+        "IF the downstream task includes file edits, commits, or external actions"
+      ],
+      "mitigations": [
+        "Require explicit verification before acting on peer output",
+        "Insert a human approval step for destructive actions",
+        "Use structured schemas for handoff messages",
+        "Limit OpenHands to dry-run mode for handoffs",
+        "requires-engineering: implement provenance-aware task routing"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare a residency, certification, or retention mismatch. CrewAI handles developer-passed crew data and OpenHands handles mounted runtime files, so compliance risk is mainly operator-controlled rather than inherent to the pair. No specific cross-border or regulated-data violation is evidenced here, so the lower severity is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent without matching controls",
+        "IF the runtime or workspace retention policy differs from the data policy"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Document retention settings for both runtimes",
+        "Use separate storage for sensitive projects",
+        "Confirm residency settings before deployment",
+        "requires-engineering: add policy enforcement and audit logging"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:0345cd7b3df6bba823b893f8ad14411216e1ed73428db3bb44ba121b9768c380",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
