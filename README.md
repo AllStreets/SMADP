@@ -314,10 +314,16 @@ SMADP would not exist without [ONEXUS-Agents](https://github.com/AllStreets/ONEX
 
 ## License
 
-[Apache 2.0](LICENSE). Apache (not MIT) because the project encodes novel safety/compliance methodology — the explicit patent grant in Apache 2.0 protects users from patent claims against the rubric, judge prompts, and adapter scaffolder. Consistent with [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents) (sibling project, same license). The catalog itself is publicly auditable; pair verdicts, profiles, chains, and the chronicle are all plain files in this repository's git history.
+**Apache-2.0.** Copyright 2026 Connor Evans.
+
+The catalog (profiles, verdicts, chains, evidence) and every output of the autopilot pipeline are publicly redistributable under [Apache 2.0](LICENSE) — including its explicit patent grant covering the five-risk rubric, the sandbox judge prompts, and the adapter scaffolder. Each catalogued agent's own upstream code retains its own license (see the `license` field on every profile). Use commercially or non-commercially under the Apache 2.0 terms. Apache (not MIT) because the patent grant matters for a project that encodes safety/compliance methodology; consistent with [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents), the sibling project SMADP reads from.
 
 <div align="center">
-
+<br/>
+<strong>SMADP</strong> — auditable, evidence-cited verdicts on whether autonomous agents can safely run together.
+<br/><br/>
+<a href="https://allstreets.github.io/SMADP/">live site</a> · <a href="https://github.com/AllStreets/ONEXUS-Agents">upstream catalog</a> · <a href="https://github.com/AllStreets/SMADP/issues">issues</a>
+<br/><br/>
 <sub>Built with <a href="https://astro.build">Astro 4</a>, <a href="https://fastapi.tiangolo.com">FastAPI</a>, <a href="https://docs.pydantic.dev">Pydantic v2</a>, <a href="https://modelcontextprotocol.io">MCP</a>, and <a href="https://openai.com">OpenAI</a>.</sub>
 
 </div>
