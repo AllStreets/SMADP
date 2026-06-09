@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "roo-cline",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_roo-cline__swe-agent_5b69c4",
+  "generated_at": "2026-06-08T05:56:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and broad write/network privileges make prompt injection, data leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Roo Code can read/write VS Code workspace files and use MCP, while SWE-agent reads/writes files inside its Docker sandbox and uses stdin/stdout. A shared filesystem bridge is plausible if the orchestrator exposes the same workspace or copies outputs between them, so injected instructions in one agent\u2019s artifacts could influence the other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or exchanged files are treated as instructions, prompt injection becomes viable.",
+        "IF the orchestrator forwards one agent\u2019s raw output into the other agent\u2019s prompt, the risk increases."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP routes that expose untrusted content.",
+        "Require explicit human review before copying outputs between agents.",
+        "Prefix all inter-agent artifacts as untrusted data.",
+        "requires-engineering: add provenance tags to every exchanged file or message."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Roo Code has broad filesystem access, browser screenshots, and network egress; SWE-agent has broad filesystem access and network egress inside its container. If they share a workspace or the same sensitive repository, either agent can expose data through model/API calls or copied outputs, creating a default-path leakage risk beyond a single document.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given the same repository or workspace containing secrets, leakage becomes plausible.",
+        "IF either agent is configured to send file contents to its model backend, sensitive data can leave the local environment."
+      ],
+      "mitigations": [
+        "Remove secrets from shared workspaces.",
+        "Use separate repositories or clones per agent.",
+        "Turn off browser/screenshot capture for sensitive tasks.",
+        "Restrict network egress to approved endpoints only.",
+        "requires-engineering: enforce secret scanning before any outbound prompt or API call."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, modify git state, read/write files, and spawn subprocesses. Roo Code shares state via filesystem across instances, while SWE-agent runs with full root inside its Docker sandbox. If they touch the same repo or mounted directory, concurrent writes and git mutations can clobber each other and cause irreversible repository corruption or lost work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout or mounted directory, write conflicts are likely.",
+        "IF either agent auto-commits or rewrites files without locking, repository state can be corrupted."
+      ],
+      "mitigations": [
+        "Assign separate branches per agent.",
+        "Use file locks around shared paths.",
+        "Pause one agent before the other writes.",
+        "Require manual review before git commits.",
+        "requires-engineering: add transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Roo Code can produce browser-derived outputs and code changes, and SWE-agent can act on repository state with shell and git access. If SWE-agent treats Roo Code\u2019s outputs as authoritative without verification, a mistaken or malicious suggestion can cascade into incorrect edits or commits in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Roo Code\u2019s generated text or patches without validation, errors can propagate.",
+        "IF Roo Code\u2019s browser-derived content is used as factual input, downstream actions may be based on unverified data."
+      ],
+      "mitigations": [
+        "Require diff review before applying patches.",
+        "Validate claims against source files or tests.",
+        "Keep a human approval step before commits.",
+        "Separate research outputs from execution inputs.",
+        "requires-engineering: add schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding agents with no explicit residency, certification, or retention mismatch documented. Roo Code handles browser screenshots and model provider API keys, while SWE-agent handles GitHub tokens for issue mode, but the profiles do not show a concrete cross-agent compliance conflict; uncertainty remains, so this stays low rather than none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF either agent is used on regulated data with a noncompliant backend, compliance risk increases.",
+        "IF the two agents are assigned different retention or residency policies, a mismatch can emerge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Confirm backend retention settings for both agents.",
+        "Use separate credentials for each agent.",
+        "Document data handling expectations before execution.",
+        "requires-engineering: align retention and residency policies across both tools."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3467a1c605b4c1e5bb0da82ccceaacaefa1cce7bbf60240c7b2b83b858bb1a0e",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

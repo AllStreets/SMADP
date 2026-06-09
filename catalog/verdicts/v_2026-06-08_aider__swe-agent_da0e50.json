@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_aider__swe-agent_da0e50",
+  "generated_at": "2026-06-08T05:55:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.59,
+  "headline": "High: shared git-repo writes and broad egress make Aider\u2194SWE-agent conflicts and unsafe output propagation plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider writes git-tracked files in a shared git repo, and SWE-agent reads/writes files inside its task sandbox; if either agent consumes the other's generated file content as instructions, prompt injection is plausible. The pair lacks a documented provenance barrier, but the bridge is indirect rather than a guaranteed parser path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Aider's edits are copied into SWE-agent's task context without provenance filtering, injection risk materializes.",
+        "IF SWE-agent reads repository text as instructions rather than data, attacker-controlled content can steer behavior."
+      ],
+      "mitigations": [
+        "Add a provenance header to inter-agent handoffs.",
+        "Restrict SWE-agent to read-only ingestion of Aider outputs.",
+        "Use a separate review step before any file is treated as instructions.",
+        "Keep the agents on separate repos unless a handoff is explicitly staged."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider shares state via a shared git repo and touches source code and git history; SWE-agent has broad filesystem access inside its Docker sandbox and can read repository code under analysis. That creates a default path for code or history to flow between them, though the sandbox limits the blast radius to repository data rather than arbitrary host secrets.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository checkout, Aider's git history and code can be exposed to SWE-agent.",
+        "IF either agent is given secrets in the repository, the other can read them through shared files."
+      ],
+      "mitigations": [
+        "Use separate working copies per agent.",
+        "Remove secrets from the repo before running either agent.",
+        "Mount only the minimum required subdirectory into SWE-agent.",
+        "Disable sharing of git history unless explicitly needed."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can execute shell, write the filesystem, and modify git state in a shared repo; SWE-agent can also execute shell, install packages, write the filesystem, and modify git state. With overlapping write authority and no locking mechanism stated, concurrent edits and git-state corruption are a default risk, and recovery may require manual conflict resolution.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout concurrently, conflicting commits or file overwrites can occur.",
+        "IF either agent auto-applies edits while the other is mid-task, repository state can diverge."
+      ],
+      "mitigations": [
+        "Serialize access to the shared repo.",
+        "Assign each agent a separate branch.",
+        "Require a human merge step before pushing changes.",
+        "Pause one agent while the other is writing files.",
+        "Use filesystem snapshots or disposable clones."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider's auto-commit workflow can turn its outputs into durable repository changes, and SWE-agent is designed to act autonomously on repository code under analysis. If SWE-agent treats Aider-produced edits or summaries as authoritative, errors can cascade into further edits or commits without verification, making the pair unsafe by default for unattended workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Aider's generated patches or summaries without independent verification, mistakes propagate.",
+        "IF either agent is allowed to commit or apply changes based on the other's output, cascading errors can accumulate."
+      ],
+      "mitigations": [
+        "Require explicit diff review before applying any handoff.",
+        "Force SWE-agent to verify Aider outputs against source files.",
+        "Limit Aider to suggestions only for the first pass.",
+        "Block auto-commit until a human approves the final diff."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding agents with no stated regulated-data certifications or residency constraints, so there is no documented compliance mismatch to score higher. The only relevant concern is that Aider handles model-provider API keys and SWE-agent may handle GitHub tokens, but the profiles do not show a residency or retention conflict between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent's workspace, separate compliance review is required.",
+        "IF one deployment routes logs to a different jurisdiction than the other, a residency mismatch may arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both workspaces.",
+        "Review logging and retention settings before use.",
+        "Store API keys in separate secret managers.",
+        "Document jurisdiction for each model provider."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

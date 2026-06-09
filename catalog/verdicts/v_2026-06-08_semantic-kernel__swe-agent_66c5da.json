@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "semantic-kernel",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_semantic-kernel__swe-agent_66c5da",
+  "generated_at": "2026-06-08T06:08:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.515,
+  "headline": "High: shared filesystem and broad egress create prompt-injection, leakage, and cascading-action risks between Semantic Kernel and SWE-agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel can use MCP and read/write application files, while SWE-agent reads/writes files inside its Docker sandbox and consumes stdin/stdout. A shared filesystem or copied artifacts can let attacker-controlled content from one agent influence the other, though no direct default bridge is documented. The pathway is plausible but not proven to be default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange files through a shared workspace or copied artifacts, prompt injection becomes reachable.",
+        "IF either agent parses the other's file output as instructions, malicious content can steer tool use."
+      ],
+      "mitigations": [
+        "Disable shared folders between the two runtimes.",
+        "Treat all inter-agent files as untrusted text.",
+        "Add a manual review step before any tool-executing prompt consumes the other agent's output.",
+        "Use separate workspaces per agent.",
+        "requires-engineering: add provenance tags to every exchanged artifact."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel touches application context and can call external model APIs; SWE-agent touches repository code and can also use model-provider APIs. If they share files or a workspace, sensitive context from A can flow into B's outputs or outbound API calls. The profiles do not prove a default shared workspace, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or artifact store, data can cross from A to B.",
+        "IF B forwards its context to a third-party model provider, any sensitive content inherited from A may leave the environment."
+      ],
+      "mitigations": [
+        "Keep separate directories for each agent.",
+        "Redact secrets before handing artifacts from A to B.",
+        "Turn off automatic file ingestion where possible.",
+        "Review outbound prompts before model calls.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have filesystem write capability and broad network egress. Semantic Kernel is a library with application-defined files, while SWE-agent has full root inside its Docker sandbox and can modify git state. If orchestrated against the same mutable repo or workspace, concurrent writes can conflict even without explicit locking; the profiles do not show locking or isolation between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or directory, file clobbering is possible.",
+        "IF the orchestrator does not serialize writes, git state or generated files can diverge."
+      ],
+      "mitigations": [
+        "Assign each agent its own working tree.",
+        "Serialize write operations with a simple lock file.",
+        "Have only one agent perform git mutations.",
+        "Run a quick diff before merging outputs.",
+        "requires-engineering: add transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Semantic Kernel is designed to compose plugins and agents, so its outputs can become structured inputs for SWE-agent. SWE-agent can then act on those inputs with shell, subprocess, and git privileges. Without an explicit verification step, a bad or injected A output can cascade into irreversible repository changes or external actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Semantic Kernel output as authoritative instructions, errors can propagate into actions.",
+        "IF the workflow allows commits or shell commands without human review, a mistaken upstream fact can cause downstream damage."
+      ],
+      "mitigations": [
+        "Require a human approval step before SWE-agent acts on A's output.",
+        "Ask SWE-agent to restate and verify key facts before execution.",
+        "Limit A to drafting only, not command generation.",
+        "Disable automatic commit or shell execution for high-impact tasks.",
+        "requires-engineering: add schema validation for inter-agent messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. Semantic Kernel handles application context and SWE-agent handles repository code, but the profiles do not show a specific regulated data class or a documented compliance conflict. The risk is therefore limited to potential policy mismatch if the operator routes sensitive data through both.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is routed through both agents, compliance review is required.",
+        "IF the operator imposes different retention policies on the shared data, policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data to either agent.",
+        "Document retention settings for each runtime.",
+        "Keep separate logs for each agent.",
+        "Confirm residency requirements before deployment.",
+        "requires-engineering: implement policy-based routing for sensitive data."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:698493e9e2bf6da383b1e6a3755c4bfdd52b537cc8c59f5aa8797665d5a64d41",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_autogen__swe-agent_e4a464",
+  "generated_at": "2026-06-08T16:19:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem writes and broad egress make AutoGen\u2192SWE-agent interactions risky for prompt injection, data leakage, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can write files and read filesystem content, and SWE-agent also reads/writes files in its Docker sandbox. If AutoGen places attacker-controlled text into shared files or task artifacts, SWE-agent may ingest it as instructions. This is not proven by a documented bridge, but the shared file pathway is plausible and both agents expose it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share any writable workspace or handoff file, prompt injection becomes reachable.",
+        "IF SWE-agent parses AutoGen-produced file content as instructions, the attack path is active."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Prefix handoff files with a fixed schema and reject free-form instructions.",
+        "Require manual review before SWE-agent consumes AutoGen outputs.",
+        "Disable file-based handoffs for untrusted content.",
+        "requires-engineering: add provenance tags to every inter-agent artifact."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen touches application data and has broad network egress; SWE-agent touches repository code and also has broad egress. If either agent writes sensitive material into shared files or forwards it to model providers, the other can expose it further. The profiles show a plausible shared-workspace leakage path, though not a documented one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace, file contents can cross between them.",
+        "IF either agent sends workspace contents to a model provider, sensitive data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive data out of the shared workspace.",
+        "Use per-agent sandboxes with no shared mount.",
+        "Redact secrets before passing artifacts between agents.",
+        "Turn off network egress for one agent during handoff review.",
+        "requires-engineering: enforce content filters on inter-agent file exchange."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, install packages, read/write the filesystem, and use broad network egress. SWE-agent can also modify git state, while AutoGen can spawn subprocesses and run code executors. In a shared directory, concurrent writes and git mutations can collide and corrupt state; the profiles do not show locking, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git checkout, concurrent edits can conflict.",
+        "IF either agent runs package installs in the shared environment, dependency state can diverge."
+      ],
+      "mitigations": [
+        "Assign separate working trees.",
+        "Serialize write operations with a simple operator checklist.",
+        "Freeze package installation during multi-agent runs.",
+        "Avoid letting both agents touch git simultaneously.",
+        "requires-engineering: add file locks around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen is a multi-agent orchestration framework that can emit tool outputs and code-execution results; SWE-agent is an autonomous coding agent that can act on repository tasks. If SWE-agent treats AutoGen outputs as authoritative, errors or hallucinations can cascade into incorrect code changes or actions. No verification step is shown in either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes AutoGen summaries without independent verification, errors can propagate.",
+        "IF AutoGen forwards unvalidated tool results into SWE-agent tasks, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require SWE-agent to re-check any AutoGen-produced facts.",
+        "Use a human approval step before code changes.",
+        "Limit AutoGen outputs to structured summaries.",
+        "Compare outputs against repository state before acting.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show similar model-provider API-key handling, but no explicit residency, certification, or retention mismatch is documented. The main compliance concern is operational logging of secrets and repository data, which is possible in both agents but not shown as divergent. The other agent is cited because the risk is pairwise policy alignment, not a single-agent violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF one deployment routes EU personal data through a US-only model provider, residency risk appears.",
+        "IF logs retain repository contents or secrets longer than policy allows, retention risk appears."
+      ],
+      "mitigations": [
+        "Review logging settings for both agents.",
+        "Avoid placing regulated data in prompts or files.",
+        "Use separate API keys per agent.",
+        "Set short log retention.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

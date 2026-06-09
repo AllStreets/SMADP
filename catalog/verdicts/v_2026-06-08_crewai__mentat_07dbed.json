@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-08_crewai__mentat_07dbed",
+  "generated_at": "2026-06-08T16:38:28Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem writes and broad egress create default risks of data leakage, prompt injection, and cascading mis-edits between CrewAI and Mentat.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory among subagents; Mentat reads files passed on the command line and writes diffs after confirmation. If CrewAI outputs attacker-controlled text into shared files, Mentat may ingest it as trusted content. The bridge is plausible in default filesystem-based workflows, though not a direct parser hijack.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted content into a file that Mentat later opens",
+        "IF Mentat is pointed at a workspace containing CrewAI-generated instructions"
+      ],
+      "mitigations": [
+        "Separate the agents into different directories",
+        "Disable automatic file handoff between agents",
+        "Require human review of any CrewAI-generated text before Mentat reads it",
+        "Use read-only mounts for CrewAI outputs",
+        "requires-engineering: add provenance tags to shared files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI touches developer-passed crew data and has broad network egress; Mentat reads selected source files and also has broad egress. A shared workspace or copied artifacts can move sensitive code or secrets from one agent into the other\u2019s context and then out to model providers. This is a default-path risk because both agents can access files and transmit context.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF either agent is given secrets or regulated data in its working set",
+        "IF shared files are copied between CrewAI and Mentat without redaction"
+      ],
+      "mitigations": [
+        "Keep sensitive inputs out of the shared workspace",
+        "Redact secrets before either agent runs",
+        "Use separate API keys and accounts per agent",
+        "Restrict outbound network access at the host firewall",
+        "requires-engineering: add DLP scanning on file handoff"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "CrewAI can write the host working directory and Mentat can also write files while sharing state via filesystem. That creates a direct write-write conflict on the same mutable workspace, and Mentat additionally modifies git state. Without explicit locking, concurrent edits can overwrite each other or corrupt repository state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory at the same time",
+        "IF Mentat is run on a git checkout while CrewAI writes files into that checkout"
+      ],
+      "mitigations": [
+        "Run each agent in a separate working tree",
+        "Serialize file writes with a lock file",
+        "Avoid concurrent git operations",
+        "Review and merge diffs manually after each run",
+        "requires-engineering: add workspace-level transaction locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI is a multi-agent orchestration framework with shared memory, and Mentat is a diff-based coding assistant that proposes edits after reading files. If CrewAI produces incorrect facts or instructions, Mentat can turn them into code changes with limited verification. The pathway exists in default workflows, but Mentat\u2019s confirmation step reduces blast radius below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI-generated output is used as input to Mentat without independent verification",
+        "IF Mentat applies diffs derived from CrewAI summaries or plans"
+      ],
+      "mitigations": [
+        "Require a second human review before applying diffs",
+        "Cross-check CrewAI outputs against source files",
+        "Limit CrewAI to planning only",
+        "Ask Mentat to cite exact file hunks before editing",
+        "requires-engineering: add automated consistency checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch developer-passed crew data or selected source files, with no stated residency or certification mismatch. The main compliance concern is generic handling of secrets and logs, but the profiles do not show a specific regulated-data violation. I do not cite the other agent beyond the pair context because no mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent\u2019s workspace",
+        "IF logging or retention settings differ from the operator\u2019s policy"
+      ],
+      "mitigations": [
+        "Keep regulated data out of both tools",
+        "Disable verbose logging",
+        "Use separate secrets for each agent",
+        "Review retention settings before launch"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_open-interpreter__swe-agent_97e086",
+  "generated_at": "2026-06-08T16:18:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.91,
+  "composite_score": 0.62,
+  "headline": "High-risk shared filesystem and broad shell/network access make prompt injection, data leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the whole local filesystem and uses clipboard/stdin-stdout, while SWE-agent reads and writes files inside its sandbox. Because A\u2019s outputs can be copied into B\u2019s task context and both can touch shared files, injected instructions can propagate. This is not provably blocked by either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is pasted or written into a file that agent_b reads, injection becomes active.",
+        "IF both agents share a workspace directory, malicious instructions can traverse the bridge."
+      ],
+      "mitigations": [
+        "Disable copy/paste of agent_a outputs into agent_b inputs.",
+        "Use separate directories for each agent.",
+        "Add a human review step before agent_b executes any instructions from agent_a.",
+        "Strip code fences and imperative text from transferred content.",
+        "requires-engineering: add provenance tags to all inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Agent A can access anything reachable on the local machine and has broad network egress; agent B can read repository files and also has broad egress. If sensitive local data enters A\u2019s context, B can receive it through shared files or copied outputs, and either agent can transmit it externally. The pair therefore creates a realistic exfiltration path by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present on the host or in the repo, either agent can expose them.",
+        "IF agent_a or agent_b is allowed to summarize file contents to an external model provider, leakage can occur."
+      ],
+      "mitigations": [
+        "Run each agent on separate machines or containers.",
+        "Remove secrets from the workspace before starting.",
+        "Block outbound network except to approved model endpoints.",
+        "Mount only the minimum required files into each agent.",
+        "requires-engineering: add DLP filtering on all outbound prompts and tool outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, package installation, and git-state modification. A shares state via filesystem, while B is isolated per task but still writes inside its sandbox. If they target the same checkout or mounted directory, concurrent edits and git mutations can overwrite each other or corrupt state. The overlap is substantial and dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git working tree, write conflicts are likely.",
+        "IF either agent runs package installs in the shared environment, state drift can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Serialize all write operations with a lock file.",
+        "Disable git writes for one agent during the other\u2019s run.",
+        "Snapshot the workspace before each task.",
+        "requires-engineering: implement orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A can generate shell commands, file edits, and other artifacts that B may treat as task input. B\u2019s workflow is autonomous and can act on repository changes without strong provenance guarantees. That makes A-to-B error propagation plausible in default use, though B can still inspect and correct outputs before acting.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a-generated patches or instructions without verification, errors cascade.",
+        "IF agent_a produces incorrect code or commands that are then executed by agent_b, downstream faults spread."
+      ],
+      "mitigations": [
+        "Require B to diff and review all A-produced artifacts.",
+        "Use a checklist before executing any generated command.",
+        "Limit A to drafting only, not execution.",
+        "Log and compare intended vs actual file changes.",
+        "requires-engineering: add automated validation gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. The main compliance concern is that A touches anything reachable on the local machine while B is limited to repository code in Docker, so a mismatch could arise only if regulated data is placed in A\u2019s broader environment. The profiles do not prove such a violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored on the host used by agent_a, compliance scope may expand.",
+        "IF the repository analyzed by agent_b contains regulated data, retention rules must be checked."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both workspaces.",
+        "Document data-class boundaries for each agent.",
+        "Review retention settings before starting.",
+        "Use separate access-controlled storage for sensitive inputs.",
+        "requires-engineering: formalize residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

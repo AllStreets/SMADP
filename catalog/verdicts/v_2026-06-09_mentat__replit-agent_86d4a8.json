@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mentat",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-09_mentat__replit-agent_86d4a8",
+  "generated_at": "2026-06-09T00:57:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High risk of shared-workspace data leakage and capability conflict; prompt-injection and cascading-error risks are medium.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Mentat reads and writes filesystem content and uses diff-based edit proposals, while Replit Agent operates inside a persistent Repl workspace with shell/tool access. If Replit content is copied into Mentat or both touch the same files, attacker-controlled text can be treated as instructions. The shared filesystem bridge makes this plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF files from the Replit workspace are copied into Mentat for editing",
+        "IF both agents operate on the same repository checkout without content provenance checks"
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces",
+        "Require manual review of any file content before Mentat edits it",
+        "Prefix imported text with provenance labels",
+        "Use read-only exports for handoff files",
+        "requires-engineering: add provenance tracking between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Mentat touches source code and model-provider API keys, and Replit Agent touches source code, secrets, and deployment configuration. Both have broad network egress and shared filesystem-based state, so sensitive material can flow from one agent\u2019s workspace into the other\u2019s outputs or remote APIs. The blast radius includes secrets and deployment data, making this dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF either agent is given files containing secrets or deployment configuration",
+        "IF the two agents share a filesystem or copied workspace artifacts"
+      ],
+      "mitigations": [
+        "Do not place secrets in shared workspaces",
+        "Rotate any API keys before cross-agent handoff",
+        "Use separate repos or Repls per agent",
+        "Redact sensitive files before transfer",
+        "requires-engineering: enforce workspace isolation and secret-scanning"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and modify git state, and both support multiple instances. Mentat shares state via filesystem, while Replit Agent persists Repl filesystem across sessions. Concurrent edits to the same repo can race and overwrite each other without locking, which matches the high-severity overlap indicator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same git branch or directory",
+        "IF no external lock or merge gate serializes their writes"
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch",
+        "Serialize edits with a simple lock file",
+        "Review and merge one agent\u2019s diff before the other runs",
+        "Avoid concurrent runs on the same checkout",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals, and Replit Agent can act inside the Repl with tool calls and user checkpoints. If Replit consumes Mentat\u2019s output as authoritative, an error can cascade into concrete actions. The pair is not fully autonomous, but the handoff path exists in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Replit Agent applies Mentat-generated diffs without independent verification",
+        "IF Mentat output is used as the sole source for downstream actions"
+      ],
+      "mitigations": [
+        "Require a second human review of diffs",
+        "Compare proposed changes against the original files",
+        "Run tests before applying edits",
+        "Limit Replit Agent to advisory mode for imported diffs",
+        "requires-engineering: add structured validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Mentat handles model-provider API keys, while Replit Agent handles Replit Secrets store and third-party API keys plus deployment configuration. Even without a named jurisdiction mismatch, the pair can place the same sensitive data class under different retention and handling regimes across two vendors. That creates a compliance mismatch risk in default coding workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF the same secret or deployment artifact is processed by both vendors",
+        "IF retention or deletion expectations differ between the two environments"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared tasks",
+        "Document which vendor stores each secret",
+        "Delete temporary artifacts after handoff",
+        "Use separate credentials per environment",
+        "requires-engineering: align retention and deletion policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.7.4",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:caf12a153078caa56158bcf7b8361c9272129c91ef71c0f5d5459fbfc3063884",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

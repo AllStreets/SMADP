@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dify",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-08_dify__mentat_b825ca",
+  "generated_at": "2026-06-08T18:31:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and write access create prompt-injection, data-leakage, and cascading-error risks; Dify\u2019s server-side execution amplifies impact.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dify can read/write filesystem and uses shared state via Dify server datastore; Mentat reads/writes files and shares state via filesystem. That creates a plausible content-to-instruction bridge if one agent consumes the other\u2019s files or outputs. No MCP/shared clipboard is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Dify writes agent-generated instructions into a shared workspace that Mentat later reads as trusted text",
+        "IF Mentat ingests Dify-produced file content without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Require explicit human review before Mentat reads Dify outputs",
+        "Prefix all inter-agent artifacts with provenance headers",
+        "Disable automatic file ingestion between agents",
+        "requires-engineering: add provenance-aware parsing"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch files and broad network egress is enabled, so shared workspace content can flow into model-provider requests. Dify handles knowledge base content and conversation logs; Mentat handles source code in selected files. This can expose sensitive code or logs across the pair in default-style workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or synced files",
+        "IF either agent sends file contents to its model backend during normal operation"
+      ],
+      "mitigations": [
+        "Use separate repositories or directories",
+        "Redact secrets before either agent processes files",
+        "Restrict network egress to approved model endpoints",
+        "Turn off automatic ingestion of unrelated files",
+        "requires-engineering: enforce per-agent data boundaries"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write to the same directory in plausible shared-workspace setups, and Mentat can modify git state while Dify can write files server-side. Without locking or coordination primitives in the profiles, concurrent edits can overwrite each other or corrupt repository state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same checkout or shared directory",
+        "IF Dify\u2019s server-side writes and Mentat\u2019s git edits occur concurrently"
+      ],
+      "mitigations": [
+        "Assign disjoint directories",
+        "Serialize edits with a single operator",
+        "Pause one agent while the other writes",
+        "Commit frequently to reduce conflict windows",
+        "requires-engineering: add file-locking or transactional merge coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dify can produce agent/workflow outputs that Mentat may treat as edit guidance, and Mentat applies diff-based edits after user confirmation. That is a real cascade path, but Mentat\u2019s confirmation step reduces severity below high because it is not fully automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Mentat consumes Dify-generated plans or code suggestions as authoritative",
+        "IF the operator approves Mentat diffs without independent verification"
+      ],
+      "mitigations": [
+        "Require a second human review of diffs",
+        "Compare Dify output against source-of-truth docs",
+        "Limit Dify to drafting, not final instructions",
+        "Ask Mentat to cite exact file hunks before editing",
+        "requires-engineering: add verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the only documented data classes are knowledge base content, conversation logs, and source code. No residency, certification, or retention mismatch is stated, so compliance risk is limited to generic policy gaps rather than a specific violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the operator routes regulated data into either agent without a separate policy review",
+        "IF retention or residency requirements differ from the deployment environment"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Document retention settings for both tools",
+        "Keep separate logs for each agent",
+        "Review vendor/data-processing terms before deployment",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.6.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8c782248ac5e7e08a7d484c4982111530a1ef43c53069ff5d1cf1c462f67ba8a",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

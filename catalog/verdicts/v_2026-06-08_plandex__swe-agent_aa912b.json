@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "plandex",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-08_plandex__swe-agent_aa912b",
+  "generated_at": "2026-06-08T06:02:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.41,
+  "headline": "High risk of capability conflict and cascading errors from shared write-heavy coding agents; prompt-injection and leakage are lower but nonzero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Plandex and SWE-agent both expose stdin/stdout and filesystem-based workflows, so manual copy-paste or file handoff could carry malicious instructions. However, neither profile shows a shared MCP server or clipboard bridge, and Plandex\u2019s plan-local sandbox plus SWE-agent\u2019s per-task container reduce direct hijack paths.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies agent_a output into agent_b prompts without review, injection becomes plausible.",
+        "IF either agent is configured to parse raw file content as instructions, the risk increases."
+      ],
+      "mitigations": [
+        "Review copied text before pasting between agents.",
+        "Keep agent outputs in separate files and label them clearly.",
+        "Disable any auto-import or auto-apply mode during handoff.",
+        "Use a human-written summary instead of raw agent output."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "Both agents can read and write local files, but the profiles show separate isolation models: Plandex uses a plan-local sandbox and SWE-agent uses a Docker sandbox per task. No shared workspace, OAuth principal, or default cross-agent upload path is documented, so leakage is possible mainly through operator-mediated file sharing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF the operator mounts the same directory into both agents, file leakage becomes plausible.",
+        "IF sensitive source code is copied from one agent's workspace into the other, the second agent can expose it in outputs."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Avoid placing secrets in shared project files.",
+        "Redact sensitive snippets before handoff.",
+        "Verify container mounts before starting each task."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, and git-state modification, so concurrent edits to the same repository can race and overwrite each other. Plandex\u2019s shared_state_with_other_instances via backend and SWE-agent\u2019s no shared state across tasks do not prevent conflict if the operator points both at the same repo.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given write access to the same repository checkout, conflicting commits or file overwrites can occur.",
+        "IF either agent auto-applies changes while the other is still editing, race conditions are likely."
+      ],
+      "mitigations": [
+        "Assign only one agent write access at a time.",
+        "Use separate branches for each agent.",
+        "Require a manual diff review before merge.",
+        "Pause one agent before the other starts editing."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Plandex\u2019s review-then-apply workflow can still feed its generated plan or patch suggestions into SWE-agent, which may then act on them using shell and git tools. SWE-agent is not documented as verifying upstream reasoning, so A-to-B propagation can amplify mistakes, though the sandbox limits blast radius to code changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent is instructed to implement Plandex-generated changes without independent verification, errors can cascade.",
+        "IF Plandex outputs an incorrect patch plan and the operator forwards it unchanged, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require SWE-agent to re-derive changes from the repository state.",
+        "Ask for a second-pass critique before applying patches.",
+        "Compare proposed diffs against tests before merge.",
+        "Limit automated apply steps until review is complete."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding tools with docs-only evidence and no stated regulated-data certifications or residency claims. The main compliance issue is operational: if the operator feeds secrets or regulated code into either agent, their broad network and file access could create policy violations, but no inherent mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent's workspace, local policy obligations may apply.",
+        "IF the operator routes secrets through model-provider APIs, retention and logging policies become relevant."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both workspaces.",
+        "Use dummy fixtures for testing.",
+        "Check provider retention settings before use.",
+        "Restrict secrets to environment variables outside agent-visible files."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5b2f39fd5f2aff98bf7946cc13a44b3981796f4d1f42ff54bef9e67e64b3eb35",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
