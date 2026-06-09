@@ -1,0 +1,256 @@
+---
+import { getVerdicts, getProfiles } from '../data/catalog';
+import type { Verdict, Profile } from '../data/types';
+
+const verdicts: Verdict[] = getVerdicts();
+const profiles: Profile[] = getProfiles();
+
+// Build a slug → display info map. Restrict the graph to agents that appear
+// in at least one verdict; pulling all 6,000+ profiles would crash WebGL.
+const slugsInVerdicts = new Set<string>();
+for (const v of verdicts) {
+  for (const slug of v.pair) slugsInVerdicts.add(slug);
+}
+
+const nodes = profiles
+  .filter((p) => slugsInVerdicts.has(p.slug))
+  .map((p) => ({
+    id: p.slug,
+    name: p.name,
+    category: (p as { category?: string }).category ?? 'other',
+    source_type: (p as { source_type?: string }).source_type ?? 'open-source',
+    tier: (p as { evidence_level?: string }).evidence_level ?? 'unverified-profile',
+  }));
+
+// Severity colors lifted from catalog/_meta/risk-taxonomy.json. The edge
+// color encodes the verdict's max sub-verdict severity, so a single high
+// finding makes the line red even if other risks are low.
+const SEVERITY_COLOR: Record<string, string> = {
+  none: '#22C55E',
+  low: '#84CC16',
+  medium: '#F59E0B',
+  high: '#EF4444',
+  critical: '#7F1D1D',
+};
+const SEVERITY_RANK: Record<string, number> = {
+  none: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+};
+
+interface GraphLink {
+  source: string;
+  target: string;
+  color: string;
+  width: number;
+  severity: string;
+  verdict_id: string;
+  composite: number;
+  headline: string;
+  tier: string;
+}
+
+const links: GraphLink[] = [];
+for (const v of verdicts) {
+  if (!v.pair || v.pair.length < 2) continue;
+  const [a, b] = v.pair;
+  if (!slugsInVerdicts.has(a) || !slugsInVerdicts.has(b)) continue;
+  let worst: string = 'none';
+  for (const risk of [
+    'A_prompt_injection',
+    'B_data_leakage',
+    'C_capability_conflict',
+    'D_cascading_error',
+    'E_compliance',
+  ] as const) {
+    const sev = v.sub_verdicts[risk]?.severity ?? 'none';
+    if (SEVERITY_RANK[sev] > SEVERITY_RANK[worst]) worst = sev;
+  }
+  links.push({
+    source: a,
+    target: b,
+    color: SEVERITY_COLOR[worst] ?? '#71717A',
+    width: 1 + SEVERITY_RANK[worst] * 0.7,
+    severity: worst,
+    verdict_id: v.verdict_id,
+    composite: v.composite_score,
+    headline: v.headline,
+    tier: v.evidence_level,
+  });
+}
+
+const TIER_COLOR: Record<string, string> = {
+  'unverified-profile': '#71717A',
+  'docs-only': '#A78BFA',
+  'profile-verified': '#7C3AED',
+  'sandbox-validated': '#22C55E',
+};
+
+const graphPayload = {
+  nodes: nodes.map((n) => ({
+    id: n.id,
+    name: n.name,
+    category: n.category,
+    tier: n.tier,
+    color: TIER_COLOR[n.tier] ?? '#A78BFA',
+    val: 1, // re-computed client-side from edge degree
+  })),
+  links,
+};
+---
+
+<div
+  class="relative overflow-hidden rounded-xl border border-white/10 bg-ink-950/60"
+  style="height: 720px;"
+>
+  <!-- HUD overlay -->
+  <div
+    class="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-4 p-4 text-xs"
+  >
+    <span class="rounded-md bg-ink-900/80 px-2 py-1 font-mono uppercase tracking-wider text-ink-300">
+      {nodes.length} agents · {links.length} verdicts
+    </span>
+    <span
+      id="g3d-hover"
+      class="rounded-md bg-ink-900/80 px-2 py-1 font-mono text-ink-200"
+      style="max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+    ></span>
+  </div>
+
+  <!-- Legend -->
+  <div
+    class="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col gap-1.5 rounded-md bg-ink-900/70 p-3 font-mono text-[10px] uppercase tracking-wider"
+  >
+    <div class="text-ink-400">Edge color · worst sub-verdict severity</div>
+    <div class="flex flex-wrap gap-x-3 gap-y-1">
+      <span class="text-emerald-400">● none</span>
+      <span style="color:#84CC16;">● low</span>
+      <span class="text-amber-400">● medium</span>
+      <span class="text-red-400">● high</span>
+      <span style="color:#7F1D1D;">● critical</span>
+    </div>
+    <div class="mt-1 text-ink-400">Node color · profile tier</div>
+    <div class="flex flex-wrap gap-x-3 gap-y-1">
+      <span class="text-ink-500">● unverified</span>
+      <span class="text-brand-300">● docs-only</span>
+      <span class="text-brand-500">● profile-verified</span>
+      <span class="text-emerald-400">● sandbox-validated</span>
+    </div>
+  </div>
+
+  <!-- Controls hint -->
+  <div
+    class="pointer-events-none absolute bottom-3 right-3 z-10 rounded-md bg-ink-900/70 p-2 font-mono text-[10px] text-ink-400"
+  >
+    drag = rotate · scroll = zoom · click node = open agent
+  </div>
+
+  <!-- The actual graph mounts here -->
+  <div id="g3d-mount" class="absolute inset-0"></div>
+</div>
+
+<script id="g3d-data" type="application/json" set:html={JSON.stringify(graphPayload)}></script>
+
+<script>
+  import ForceGraph3D from '3d-force-graph';
+
+  type GraphNode = {
+    id: string;
+    name: string;
+    category: string;
+    tier: string;
+    color: string;
+    val?: number;
+  };
+  type GraphLink = {
+    source: string | GraphNode;
+    target: string | GraphNode;
+    color: string;
+    width: number;
+    severity: string;
+    verdict_id: string;
+    composite: number;
+    headline: string;
+    tier: string;
+  };
+
+  const mount = document.getElementById('g3d-mount');
+  const dataEl = document.getElementById('g3d-data');
+  const hud = document.getElementById('g3d-hover');
+  if (mount && dataEl) {
+    const payload = JSON.parse(dataEl.textContent || '{"nodes":[],"links":[]}') as {
+      nodes: GraphNode[];
+      links: GraphLink[];
+    };
+
+    // Size nodes by their degree so heavily-paired agents (aider, autogen,
+    // claude-code) read as hubs.
+    const degree: Record<string, number> = {};
+    for (const l of payload.links) {
+      const s = typeof l.source === 'string' ? l.source : l.source.id;
+      const t = typeof l.target === 'string' ? l.target : l.target.id;
+      degree[s] = (degree[s] || 0) + 1;
+      degree[t] = (degree[t] || 0) + 1;
+    }
+    for (const n of payload.nodes) n.val = 1 + Math.log(1 + (degree[n.id] || 0)) * 4;
+
+    const rect = mount.getBoundingClientRect();
+
+    const Graph = new (ForceGraph3D as unknown as new (
+      mount: HTMLElement,
+    ) => any)(mount)
+      .backgroundColor('#0b0712')
+      .width(rect.width)
+      .height(rect.height)
+      .graphData(payload)
+      .nodeId('id')
+      .nodeLabel((n: GraphNode) => `${n.name}<br/><span style="color:#A78BFA">${n.tier}</span>`)
+      .nodeColor((n: GraphNode) => n.color)
+      .nodeVal((n: GraphNode) => n.val ?? 1)
+      .nodeResolution(12)
+      .nodeOpacity(0.9)
+      .linkColor((l: GraphLink) => l.color)
+      .linkWidth((l: GraphLink) => l.width)
+      .linkOpacity(0.55)
+      .linkDirectionalParticles(2)
+      .linkDirectionalParticleWidth(1.2)
+      .linkDirectionalParticleSpeed(0.004)
+      .linkLabel(
+        (l: GraphLink) =>
+          `${l.headline}<br/>` +
+          `<span style="color:${l.color}">severity: ${l.severity}</span> · ` +
+          `composite ${l.composite.toFixed(2)} · ${l.tier}`,
+      )
+      .onNodeHover((n: GraphNode | null) => {
+        if (hud) hud.textContent = n ? `${n.name} · ${n.category} · ${n.tier}` : '';
+      })
+      .onLinkHover((l: GraphLink | null) => {
+        if (hud)
+          hud.textContent = l
+            ? `${(typeof l.source === 'string' ? l.source : l.source.id)} × ${(typeof l.target === 'string' ? l.target : l.target.id)} · ${l.severity} · ${l.headline.slice(0, 80)}`
+            : '';
+      })
+      .onNodeClick((n: GraphNode) => {
+        // Click a node to jump to its agent page. The graph stays running in
+        // the background tab if the user opens with cmd-click.
+        const base = (window as { __SMADP_BASE__?: string }).__SMADP_BASE__ || '';
+        window.location.href = `${base}/agents/${n.id}/`;
+      });
+
+    // Forces: a bit of repulsion + longer links so the graph fans out instead
+    // of clumping. 3d-force-graph exposes d3's force simulation via .d3Force.
+    Graph.d3Force('charge')?.strength(-110);
+    Graph.d3Force('link')?.distance(80);
+
+    // Keep the graph sized to the mount on resize.
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        Graph.width(e.contentRect.width);
+        Graph.height(e.contentRect.height);
+      }
+    });
+    ro.observe(mount);
+  }
+</script>

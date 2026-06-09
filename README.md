@@ -25,11 +25,11 @@
 <p>
   <a href="https://allstreets.github.io/SMADP/"><strong>Live site →</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/risk-atlas"><strong>Risk Atlas →</strong></a>
+  <a href="https://allstreets.github.io/SMADP/risk-atlas/"><strong>Risk Atlas →</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/methodology"><strong>Methodology →</strong></a>
+  <a href="https://allstreets.github.io/SMADP/methodology/"><strong>Methodology →</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/submit"><strong>Submit an agent →</strong></a>
+  <a href="https://allstreets.github.io/SMADP/submit/"><strong>Submit an agent →</strong></a>
 </p>
 
 </div>
@@ -50,6 +50,8 @@ You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent.
 Every verdict is **evidence-cited** (every claim points to a verbatim quote or a transcript line), **risk-typed** (five risk categories evaluated independently), and **reproducible** (deterministic temperature=0 LLM calls, content-addressed evidence under `catalog/_evidence/`).
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
+
+> **No setup required to browse.** The whole catalog is publicly readable at **[allstreets.github.io/SMADP](https://allstreets.github.io/SMADP/)** — drop in there for a [3-D interactive agent graph](https://allstreets.github.io/SMADP/risk-atlas/), thousands of agent profiles, every published pairwise verdict, the full chronicle audit log, and the operator review queue. No clone, no install.
 
 ---
 
