@@ -93,32 +93,65 @@ for (const edge of chain.edges) {
 }
 
 // ----- Topology SVG geometry -----
+// Positions are laid out in an arbitrary "design" coordinate space and the
+// viewBox is then fitted around the actual node bounds + label space — so
+// no matter how many participants are added or which topology is chosen,
+// every node and its slug label stays inside the rendered SVG.
 const nodeCount = chain.participants.length;
-const W = 760;
-const H = chain.topology === 'star'
-  ? 320
-  : chain.topology === 'loop'
-    ? 260
-    : 180;
 const nodeR = 30;
+const LABEL_OFFSET = 18; // y-offset of the slug text below each node
+const LABEL_HEIGHT = 14; // approx height of one line of slug text
+const PADDING = 18;      // breathing room inside the viewBox
+
+// Radius for radial layouts scales gently with participant count so 8-node
+// stars/loops don't bunch up at the centre.
+const radialR = Math.max(110, 90 + nodeCount * 6);
+const DESIGN_CX = 0;
+const DESIGN_CY = 0;
 
 function pos(i: number): { x: number; y: number } {
   if (chain.topology === 'star') {
-    if (i === 0) return { x: W / 2, y: H / 2 };
-    const others = nodeCount - 1;
+    // Centre node is the hub; the rest fan out evenly around it.
+    if (i === 0) return { x: DESIGN_CX, y: DESIGN_CY };
+    const others = Math.max(1, nodeCount - 1);
     const angle = ((i - 1) / others) * 2 * Math.PI - Math.PI / 2;
-    return { x: W / 2 + Math.cos(angle) * 120, y: H / 2 + Math.sin(angle) * 120 };
+    return {
+      x: DESIGN_CX + Math.cos(angle) * radialR,
+      y: DESIGN_CY + Math.sin(angle) * radialR,
+    };
   }
   if (chain.topology === 'loop') {
     const angle = (i / nodeCount) * 2 * Math.PI - Math.PI / 2;
-    return { x: W / 2 + Math.cos(angle) * 110, y: H / 2 + Math.sin(angle) * 90 };
+    // Slightly squashed ellipse so loops read landscape-orientated.
+    return {
+      x: DESIGN_CX + Math.cos(angle) * radialR,
+      y: DESIGN_CY + Math.sin(angle) * (radialR * 0.78),
+    };
   }
-  // linear / tree / dag fallback: even spacing along a row
-  const span = W - 100;
-  const x = 50 + (nodeCount === 1 ? span / 2 : (i / (nodeCount - 1)) * span);
-  return { x, y: H / 2 };
+  // linear / tree / dag: even spacing along a row
+  const stride = 130;
+  const totalSpan = (nodeCount - 1) * stride;
+  return { x: DESIGN_CX - totalSpan / 2 + i * stride, y: DESIGN_CY };
 }
 const positions = chain.participants.map((_, i) => pos(i));
+
+// Fit viewBox around every node + its label so nothing clips, regardless of
+// how many participants the user wires in.
+let vbMinX = positions[0]!.x;
+let vbMaxX = positions[0]!.x;
+let vbMinY = positions[0]!.y;
+let vbMaxY = positions[0]!.y;
+for (const p of positions) {
+  if (p.x < vbMinX) vbMinX = p.x;
+  if (p.x > vbMaxX) vbMaxX = p.x;
+  if (p.y < vbMinY) vbMinY = p.y;
+  if (p.y > vbMaxY) vbMaxY = p.y;
+}
+const VB_X = vbMinX - nodeR - PADDING;
+const VB_Y = vbMinY - nodeR - PADDING;
+const VB_W = (vbMaxX - vbMinX) + 2 * (nodeR + PADDING);
+const VB_H = (vbMaxY - vbMinY) + 2 * nodeR + LABEL_OFFSET + LABEL_HEIGHT + PADDING;
+
 function indexFor(slug: string, after = -1): number {
   for (let i = after + 1; i < chain.participants.length; i++) {
     if (chain.participants[i].slug === slug) return i;
@@ -199,8 +232,8 @@ function indexFor(slug: string, after = -1): number {
         </div>
       </div>
 
-      <div class="mt-5 overflow-x-auto rounded-xl border border-white/5 bg-ink-950/40 p-4">
-        <svg viewBox={`0 0 ${W} ${H}`} class="h-auto w-full max-w-[760px]" aria-label={`${chain.topology} chain topology`} shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
+      <div class="mt-5 overflow-hidden rounded-xl border border-white/5 bg-ink-950/40 p-4">
+        <svg viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`} preserveAspectRatio="xMidYMid meet" class="mx-auto block h-auto w-full max-w-[760px]" aria-label={`${chain.topology} chain topology`} shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
           <defs>
             <marker id={`arrow-${chain.chain_id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#A78BFA"/>
