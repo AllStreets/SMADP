@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-09_langgraph__windsurf_9b9c91",
+  "generated_at": "2026-06-09T05:19:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: shared filesystem and broad write/network defaults make prompt injection, data leakage, and cascading errors plausible between LangGraph and Windsurf.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can read/write application files and uses developer-defined tools, while Windsurf exposes workspace files, clipboard, and MCP servers. That creates a plausible content-to-instructions bridge if one agent writes attacker-controlled text that the other later parses. The interaction is documented only at the profile level, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph writes untrusted content into shared workspace files that Windsurf later opens",
+        "IF Windsurf ingests file or clipboard content as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable clipboard-based handoff",
+        "Require provenance tags on inter-agent files",
+        "Review any shared MCP server allowlist",
+        "requires-engineering: add content-sanitizing wrappers before cross-agent file reads"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LangGraph handles model provider API keys and broad network egress, while Windsurf reads workspace files and also has broad egress plus MCP access. If they share files or a workspace, sensitive code or secrets touched by LangGraph can flow into Windsurf outputs or remote calls. The shared-workspace path is plausible from the profiles, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or checkpointer-backed state",
+        "IF LangGraph stores secrets or sensitive graph state in files that Windsurf can read"
+      ],
+      "mitigations": [
+        "Store secrets outside shared files",
+        "Use separate OS users or containers",
+        "Restrict Windsurf to read-only on shared paths",
+        "Rotate any exposed API keys",
+        "requires-engineering: encrypt shared state at rest with per-agent keys"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "LangGraph can write filesystem state and persists shared state via a checkpointer store, while Windsurf can write files, modify git state, and supports multiple instances via the local filesystem. Both therefore have overlapping write authority over mutable resources, and the profiles do not show locking or coordination. That makes destructive conflicts and lost updates likely in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or repository",
+        "IF LangGraph checkpointer state and Windsurf workspace state are stored on the same filesystem without locks"
+      ],
+      "mitigations": [
+        "Use separate repos or directories",
+        "Turn on file locking for shared state",
+        "Disable Windsurf auto-commit or auto-edit on shared paths",
+        "Serialize writes through one orchestrator",
+        "requires-engineering: add transactional coordination around the checkpointer and workspace"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is an orchestration framework that can emit node outputs, and Windsurf is a coding agent that can act on workspace context and modify files or git state. If Windsurf treats LangGraph output as authoritative, a mistaken or injected intermediate result can cascade into code changes or commits. No verification mechanism is shown in either profile, so the default pathway is dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes LangGraph-produced text or artifacts as trusted task input",
+        "IF Windsurf applies edits or commits without an independent verification step"
+      ],
+      "mitigations": [
+        "Insert a human review gate before edits",
+        "Require schema validation on LangGraph outputs",
+        "Keep LangGraph outputs read-only until checked",
+        "Disable auto-apply for generated patches",
+        "requires-engineering: add deterministic verification between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only and do not declare regulated-data certifications or residency constraints, so a concrete compliance breach cannot be proven. The only clear issue is that LangGraph handles model provider API keys and Windsurf handles workspace code/files, which could matter if regulated data is placed there. Because the missing compliance metadata is on both agents, the risk remains low and uncertain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace",
+        "IF one agent is later configured with a residency or retention policy not matched by the other"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared files",
+        "Document retention settings for both tools",
+        "Use separate tenants or accounts",
+        "Review vendor compliance docs before deployment",
+        "requires-engineering: enforce policy-based routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

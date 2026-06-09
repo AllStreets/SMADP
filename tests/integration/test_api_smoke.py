@@ -75,10 +75,14 @@ def test_get_verdict_first(client: TestClient) -> None:
 
 
 def test_search_returns_results(client: TestClient) -> None:
-    r = client.get("/api/search", params={"q": "claude"})
+    # Exact-slug query — the catalog now has hundreds of look-alike
+    # `claude-*` profiles, so a bare "claude" query no longer fits in the
+    # default top-50 even with the slug-prefix boost. Querying the exact
+    # slug still demonstrates the search returns a known profile.
+    r = client.get("/api/search", params={"q": "claude-code"})
     assert r.status_code == 200
     body = r.json()
-    assert body["query"] == "claude"
+    assert body["query"] == "claude-code"
     refs = {(i["kind"], i["ref"]) for i in body["items"]}
     assert ("profile", "claude-code") in refs
 

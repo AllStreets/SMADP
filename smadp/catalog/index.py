@@ -176,24 +176,30 @@ class CatalogIndex:
             with closing(conn.cursor()) as cur:
                 if fts5:
                     try:
-                        # Exact-ref boost: rows whose `ref` matches the bare
-                        # query string (the slug, e.g. "claude-code") rank
-                        # FIRST regardless of bm25. Substring/partial bm25
-                        # matches follow. Without this, a query for a known
-                        # slug gets out-ranked by dozens of look-alike slugs
-                        # in the long-tail ONEXUS catalog.
+                        # Tiered ranking — without these boosts, a query for a
+                        # known slug like "claude" gets swamped by dozens of
+                        # look-alike slugs in the 6k+ ONEXUS long-tail.
+                        #   exact_rank=0   — ref equals the bare query
+                        #   prefix_rank=0  — ref starts with the query + '-'
+                        #                    (so "claude" surfaces
+                        #                    "claude-code" above
+                        #                    "ai-agency-claude")
+                        #   bm25(docs)     — FTS relevance fallback
+                        q_bare = query.strip().lower()
+                        prefix_glob = f"{q_bare}-%"
                         cur.execute(
                             """
                             SELECT kind, ref, title,
                                    snippet(docs, 3, '<mark>', '</mark>', '...', 16) AS snip,
                                    bm25(docs) AS rank,
-                                   CASE WHEN ref = ? THEN 0 ELSE 1 END AS exact_rank
+                                   CASE WHEN ref = ? THEN 0 ELSE 1 END AS exact_rank,
+                                   CASE WHEN ref LIKE ? THEN 0 ELSE 1 END AS prefix_rank
                             FROM docs
                             WHERE docs MATCH ?
-                            ORDER BY exact_rank, rank
+                            ORDER BY exact_rank, prefix_rank, rank
                             LIMIT ?;
                             """,
-                            (query.strip(), _sanitize_fts5(query), limit),
+                            (q_bare, prefix_glob, _sanitize_fts5(query), limit),
                         )
                     except sqlite3.OperationalError:
                         # malformed FTS5 query — fall back to LIKE
