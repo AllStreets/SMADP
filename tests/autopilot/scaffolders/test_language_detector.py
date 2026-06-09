@@ -96,10 +96,7 @@ def test_detects_python_from_monorepo_classic_subdir() -> None:
         if url.endswith("/repos/Significant-Gravitas/AutoGPT"):
             return _fake_response(200, {"default_branch": "master"})
         params = kwargs.get("params") or {}
-        if (
-            "/contents/classic/pyproject.toml" in url
-            and params.get("ref") == "master"
-        ):
+        if "/contents/classic/pyproject.toml" in url and params.get("ref") == "master":
             return _fake_response(200, {"name": "pyproject.toml"})
         return _fake_response(404, None)
 
@@ -107,10 +104,7 @@ def test_detects_python_from_monorepo_classic_subdir() -> None:
         "smadp.autopilot.scaffolders.language_detector.httpx.get",
         side_effect=_side_effect,
     ):
-        assert (
-            det.detect(github_source="Significant-Gravitas/AutoGPT")
-            == Language.PYTHON
-        )
+        assert det.detect(github_source="Significant-Gravitas/AutoGPT") == Language.PYTHON
 
 
 def test_detects_python_from_monorepo_libs_subdir() -> None:
@@ -128,9 +122,7 @@ def test_detects_python_from_monorepo_libs_subdir() -> None:
         "smadp.autopilot.scaffolders.language_detector.httpx.get",
         side_effect=_side_effect,
     ):
-        assert (
-            det.detect(github_source="langchain-ai/langgraph") == Language.PYTHON
-        )
+        assert det.detect(github_source="langchain-ai/langgraph") == Language.PYTHON
 
 
 def test_invalid_github_source_raises() -> None:

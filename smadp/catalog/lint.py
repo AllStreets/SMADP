@@ -82,9 +82,7 @@ def lint_catalog(config: Config | None = None) -> LintReport:
     # ``unverified-profile`` and don't yet have the full Safety Profile shape.
     # They validate against a minimal schema until enrichment lifts them to
     # docs-only (or higher).
-    unverified_profile_validator = _load_schema(
-        cfg.schema_dir / "profile.unverified.schema.json"
-    )
+    unverified_profile_validator = _load_schema(cfg.schema_dir / "profile.unverified.schema.json")
     verdict_validator = _load_schema(cfg.schema_dir / "verdict.schema.json")
     evidence_validator = _load_schema(cfg.schema_dir / "evidence.schema.json")
 
@@ -144,9 +142,7 @@ def lint_catalog(config: Config | None = None) -> LintReport:
                 # source of truth for whether reciprocation holds.
                 pairings = data.get("pairings") or []
                 if isinstance(pairings, list):
-                    profile_pairings[slug] = [
-                        p for p in pairings if isinstance(p, str)
-                    ]
+                    profile_pairings[slug] = [p for p in pairings if isinstance(p, str)]
                 refs = data.get("evidence_refs") or []
                 if isinstance(refs, list):
                     for ref in refs:
