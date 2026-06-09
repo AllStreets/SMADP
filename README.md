@@ -74,8 +74,8 @@ flowchart LR
     direction TB
     ENRICH[enrich stubs to docs-only<br/>via README + LLM]:::llm
     SCAFFOLD[scaffold MCP adapter<br/>Dockerfile + entrypoint]:::llm
-    RUN[sandbox · Docker scenarios<br/>calendar / notes / spreadsheet]:::judge
-    GRADE[sandbox judge<br/>LLM grades transcript]:::judge
+    RUN[sandbox · Docker scenarios<br/>calendar / notes / spreadsheet]:::llm
+    GRADE[sandbox judge<br/>LLM grades transcript]:::llm
   end
 
   subgraph G["operator gate"]
