@@ -1,0 +1,77 @@
+name: Guard catalog/verdicts/
+
+# Any commit on `main` that adds or modifies a file under `catalog/verdicts/`
+# is fine — that's the operator (you) approving via CLI and pushing. But on
+# PRs from forks or other authors, files landing in `catalog/verdicts/` would
+# bypass the `smadp pending approve` operator gate entirely.
+#
+# This job fails the PR when it touches `catalog/verdicts/`, instructing the
+# author to put their proposed verdict under `catalog/pending/` or
+# `catalog/profiles/_unverified/` instead. The operator then runs
+# `smadp pending approve` after review, which produces an authored-by-the-
+# operator commit on main.
+#
+# The autopilot loop is unaffected — it runs locally on the operator's
+# machine and writes to `catalog/pending/` by design (auto_publish all-False
+# in docs_only_tick.run_docs_only_tick).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'catalog/verdicts/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  block-verdict-writes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Identify added/modified files under catalog/verdicts/
+        id: scan
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          files=$(git diff --name-only "$base" "$head" -- 'catalog/verdicts/' | tr '\n' ',' | sed 's/,$//')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -n "$files" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail PR if catalog/verdicts/ was touched
+        if: steps.scan.outputs.found == 'true'
+        run: |
+          {
+            echo "## ❌ This PR cannot land catalog/verdicts/ changes directly"
+            echo ""
+            echo "Files touched in this PR that live under \`catalog/verdicts/\`:"
+            echo ""
+            for f in $(echo "${{ steps.scan.outputs.files }}" | tr ',' '\n'); do
+              echo "- \`$f\`"
+            done
+            echo ""
+            echo "**Why this is blocked:** \`catalog/verdicts/\` is the public catalog"
+            echo "the site renders. Files there must pass through the operator review"
+            echo "gate (\`smadp pending approve\`). External PRs that add or modify"
+            echo "files there would bypass the gate."
+            echo ""
+            echo "**What to do instead:**"
+            echo ""
+            echo "1. Move your proposed verdict file to \`catalog/pending/\` (same"
+            echo "   filename, same schema)."
+            echo "2. (Or, for a brand-new agent profile, put it under"
+            echo "   \`catalog/profiles/_unverified/\`.)"
+            echo ""
+            echo "The maintainer will run \`smadp pending approve <key>\` after"
+            echo "review, which lands the verdict on main as an operator-authored"
+            echo "commit."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
