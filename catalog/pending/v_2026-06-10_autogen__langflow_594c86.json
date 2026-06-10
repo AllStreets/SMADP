@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-10_autogen__langflow_594c86",
+  "generated_at": "2026-06-10T02:42:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk shared-write orchestration pair: default filesystem and network access create prompt-injection, leakage, and cascading-action hazards.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen and Langflow both expose file-based I/O and can pass outputs between agents. AutoGen reads/writes configured working directories and uses tool calls/code execution; Langflow reads server filesystem and uploaded files. If one agent writes attacker-controlled content that the other later ingests as trusted instructions, prompt injection is plausible in default-ish setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF AutoGen writes content into a directory that Langflow later reads as flow input, injection is possible.",
+        "IF Langflow uploads or stores content that AutoGen later parses as instructions, injection is possible."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories with no shared writable path.",
+        "Treat all file contents as untrusted text in both agents.",
+        "Add a manual review step before any agent consumes another agent's output.",
+        "Disable automatic ingestion of generated files where possible.",
+        "requires-engineering: add provenance tagging for inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch files and have broad network egress, so sensitive application data can flow from one workspace into the other and then out to model providers or HTTP services. AutoGen handles model provider API keys; Langflow stores per-flow credentials and can call arbitrary HTTP services. The shared-data path is plausible, though not proven by the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or uploaded-file store, leakage risk increases.",
+        "IF either agent is configured to send file contents to external model providers or HTTP services, sensitive data may leave the environment."
+      ],
+      "mitigations": [
+        "Use separate workspaces and separate credentials for each agent.",
+        "Redact secrets before handing artifacts from one agent to the other.",
+        "Restrict outbound domains for both agents to approved endpoints.",
+        "Turn off file upload ingestion unless needed for the task.",
+        "requires-engineering: enforce DLP or content filtering on outbound requests."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "AutoGen and Langflow both have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Langflow explicitly shares state via server-side stores, while AutoGen supports multiple instances with developer-defined shared state. If they target the same mutable resources, concurrent writes and state corruption are likely and can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, database, or server-side store, conflicts can occur.",
+        "IF either agent modifies shared runtime state without locking, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate writable directory.",
+        "Disable concurrent writes to shared stores during paired runs.",
+        "Use file locks or transactional updates for shared artifacts.",
+        "Run one agent at a time when mutating the same resource.",
+        "requires-engineering: add orchestrator-level locking and conflict detection."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow graph flows can chain multiple agents and tools, and AutoGen produces tool-call/code-execution outputs that another agent may treat as authoritative. Because both are orchestration frameworks, one agent's output can become the other's input without a built-in verification boundary, creating a strong cascading-error pathway in default configurations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow routes AutoGen-generated text into downstream actions, errors can cascade.",
+        "IF AutoGen consumes Langflow-produced outputs without verification, false assumptions can propagate."
+      ],
+      "mitigations": [
+        "Insert a human approval step before downstream actions.",
+        "Require schema validation on all inter-agent messages.",
+        "Mark generated facts as untrusted until independently checked.",
+        "Limit downstream agents to read-only analysis for the first pass.",
+        "requires-engineering: add automated verification against source data."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare a residency or regulated-data mismatch. The main compliance concern is operational: AutoGen handles model-provider API keys and Langflow stores per-flow credentials, but the profiles do not show a specific residency or certification conflict. I therefore keep this low rather than infer a stronger violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through a non-compliant deployment of either agent, compliance risk increases.",
+        "IF the deployment stores credentials or logs in a jurisdiction that conflicts with policy, a violation may occur."
+      ],
+      "mitigations": [
+        "Review retention settings for both deployments.",
+        "Keep regulated data out of paired runs unless controls are documented.",
+        "Store credentials in approved secret managers only.",
+        "Confirm deployment region and logging policy before use.",
+        "requires-engineering: map data flows to formal compliance controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
