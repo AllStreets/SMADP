@@ -72,15 +72,25 @@ class ProfileEnrichmentJudge:
         )
         result = asyncio.run(self.client.extract_profile(payload))
         enriched = dict(result.tool_input)
-        # OpenAI function-calling sometimes emits {"capabilities": {"network_egress": null}}
-        # for fields the README doesn't clarify. null bypasses the enum check
-        # in the tool schema but then fails Pydantic's Literal validation on
-        # load. Drop None-valued keys so the schema's defaults (network_egress
-        # = "none", boolean caps = False) apply instead.
+        # First-pass scrub: drop None-valued keys inside nested blocks so
+        # Pydantic's defaults apply.
         for sub in ("capabilities", "io_surfaces", "permissions_requested", "sandboxing"):
             block = enriched.get(sub)
             if isinstance(block, dict):
                 enriched[sub] = {k: v for k, v in block.items() if v is not None}
+        # Coerce common type mismatches the LLM emits when the README is
+        # ambiguous: list where the schema expects a dict, empty string where
+        # it expects a URL, source_type='github' (a clearly wrong vocabulary).
+        if isinstance(enriched.get("io_surfaces"), list):
+            enriched["io_surfaces"] = {}
+        if isinstance(enriched.get("permissions_requested"), list):
+            enriched["permissions_requested"] = {}
+        if isinstance(enriched.get("sandboxing"), list):
+            enriched["sandboxing"] = {}
+        if enriched.get("homepage") == "":
+            enriched["homepage"] = None
+        if enriched.get("source_type") in {"github", "git", "gitlab"}:
+            enriched["source_type"] = "open-source"
         enriched["evidence_level"] = "docs-only"
         if "onexus" in stub:
             enriched["onexus"] = stub["onexus"]
