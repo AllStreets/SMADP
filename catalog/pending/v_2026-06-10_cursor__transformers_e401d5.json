@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-10_cursor__transformers_e401d5",
+  "generated_at": "2026-06-10T04:56:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High prompt-injection, data-leakage, and capability-conflict risk from Cursor\u2019s filesystem/MCP/browser access paired with transformers\u2019 broad file and network processing.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor can read workspace files, clipboard, and use MCP; transformers can process files and example scripts. A shared local filesystem and permissive file parsing create a plausible injection bridge if Cursor writes attacker-controlled content that transformers later consumes as instructions. This is not provably blocked, but it is not a default direct channel either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Cursor writes untrusted content into a shared workspace file that transformers later parses as instructions, injection is possible.",
+        "IF transformers treats repository or example-script text as authoritative prompts, attacker-controlled content can steer behavior."
+      ],
+      "mitigations": [
+        "Disable shared-workspace handoff for untrusted files.",
+        "Keep agent outputs in separate directories.",
+        "Require explicit human review before transformers consumes Cursor-generated text.",
+        "Strip instruction-like text from files before reuse.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cursor touches source code, open files, and clipboard contents, while transformers reads files and has broad network egress. If they share a workspace, sensitive local data can flow from Cursor into transformers and then out via network calls. The pair does not prove exfiltration by default, but the leakage pathway exists in common setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace directory, files opened in Cursor can be read by transformers.",
+        "IF transformers sends processed file contents to the Hugging Face Hub or another network endpoint, local secrets may leave the machine."
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive workspaces.",
+        "Turn off network access for transformers when handling private files.",
+        "Avoid copying secrets through the clipboard.",
+        "Review files before opening them in transformers.",
+        "requires-engineering: enforce per-agent workspace ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, install packages, and spawn subprocesses; Cursor also modifies git state. In a shared directory, concurrent writes and git mutations can corrupt state or overwrite each other. The profiles show no locking or coordination primitive, so the conflict is dangerous in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, simultaneous edits can race.",
+        "IF Cursor runs Yolo-mode commands while transformers writes files, one agent can overwrite the other's outputs."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Pause one agent before the other edits shared files.",
+        "Commit or stash changes before switching agents.",
+        "Avoid concurrent package installs in the same environment.",
+        "requires-engineering: add file locks and git coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cursor\u2019s agent loop can generate code or instructions, and transformers can consume files or scripts without a documented verification step. If transformers treats Cursor output as authoritative, mistakes can cascade into incorrect code, model configs, or downstream actions. The pathway is plausible in default workflows, though not guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF transformers ingests Cursor-generated files without validation, errors can propagate.",
+        "IF Cursor writes a malformed script that transformers executes or packages, the mistake can cascade."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Validate generated files with tests before reuse.",
+        "Use checksums or diffs to confirm expected changes.",
+        "Restrict transformers to read-only mode for Cursor outputs.",
+        "requires-engineering: add schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Cursor handles source code, open files, and clipboard contents, while transformers processes text, audio, images, video, and multimodal data. The profiles do not specify residency, retention, or regulated-data certifications, so a concrete compliance breach is not established. The main issue is a documented-policy gap rather than a proven mismatch.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into either agent, policy review is required.",
+        "IF the two agents are assigned different retention rules for the same dataset, compliance mismatch emerges."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both tools.",
+        "Document retention and deletion rules for each agent.",
+        "Review vendor terms before processing sensitive data.",
+        "Use separate projects for regulated and non-regulated work.",
+        "requires-engineering: formalize residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
