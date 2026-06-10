@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "gpt-researcher"
+  ],
+  "verdict_id": "v_2026-06-10_aider__gpt-researcher_f75794",
+  "generated_at": "2026-06-10T04:00:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.605,
+  "headline": "High risk of shared-repo write conflicts and downstream trust errors; prompt-injection and compliance risks are lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Aider reads and edits repo files, and gpt-researcher can ingest local documents and browser-derived content, so a manual copy/paste or file handoff could carry malicious instructions. However, no shared clipboard or MCP bridge is documented between them, so the pathway is not default. The risk is lower than medium because the bridge is indirect and user-mediated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies gpt-researcher output into Aider prompts or repo files",
+        "IF gpt-researcher writes untrusted text into a file that Aider later treats as instructions"
+      ],
+      "mitigations": [
+        "Keep research outputs in a separate folder from code prompts",
+        "Prefix imported text with 'untrusted content'",
+        "Review any pasted instructions before sending to Aider",
+        "Disable automatic ingestion of generated reports into coding prompts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read filesystem content and both use broad network egress, so a shared workspace can expose source code, git history, local documents, and citations to either agent's outbound API calls. Aider explicitly handles model-provider API keys via env vars, while gpt-researcher handles multiple API keys and can call external services. This exists in common setups and can leak sensitive repo or document contents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or repo checkout",
+        "IF either agent sends file contents to its configured model or search APIs"
+      ],
+      "mitigations": [
+        "Use separate working directories for code and research",
+        "Exclude secrets and private docs with .gitignore and path filters",
+        "Run both agents with least-privilege API keys",
+        "Manually redact sensitive files before handing them to either agent"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem and modify git state, and its shared state is via a shared git repo; gpt-researcher can also read files and spawn subprocesses, and its docs indicate planner/execution agents. Concurrent writes to the same repo or mutable workspace can overwrite each other or corrupt git state. Because Aider's default workflow auto-commits and gpt-researcher may operate in parallel, the conflict is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git repository or shared directory",
+        "IF gpt-researcher writes artifacts while Aider is committing or reverting changes"
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout",
+        "Serialize write access with a simple lock file",
+        "Have only one agent modify git state at a time",
+        "Review diffs before any auto-commit or publish step",
+        "requires-engineering: add orchestrator-level workspace locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-researcher is a planner/execution/publisher workflow that can turn inputs into reports, while Aider can act on repo files and commits. If Aider's generated code or notes are fed into gpt-researcher without verification, the second agent may publish or summarize incorrect facts as authoritative. The pair therefore creates a strong unverified-output-to-action chain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Aider output is used as source material for gpt-researcher reports",
+        "IF gpt-researcher publishes or summarizes Aider output without a verification step"
+      ],
+      "mitigations": [
+        "Insert a human review step between agents",
+        "Require source citations for every claim before publishing",
+        "Mark Aider output as draft-only",
+        "Compare generated claims against original files before action",
+        "requires-engineering: add provenance tracking between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history, while gpt-researcher handles local documents, citations, and images and can send them to third-party APIs. If regulated or residency-bound data is placed in the shared workflow, the pair can create retention or jurisdiction mismatches. The profiles do not prove a specific violation, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or personal data are included in the research workspace",
+        "IF the configured APIs store prompts or outputs outside the required jurisdiction"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use region-appropriate API endpoints",
+        "Review retention settings for each configured provider",
+        "Separate sensitive and non-sensitive projects",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:05dfd3fdafbdb03d8f74a7d18a0fd3873b8320ac2b3b0cb120f971e05a2a7b8c",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
