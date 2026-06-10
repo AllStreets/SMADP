@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://allstreets.github.io/SMADP/">
-  <img src=".github/assets/smadp-banner.svg" alt="SMADP — Safe Multi-Agent Deployment Platform" width="100%"/>
+  <img src=".github/assets/smadp-banner.svg" alt="SMADP: Safe Multi-Agent Deployment Platform" width="100%"/>
 </a>
 
 &nbsp;
@@ -38,12 +38,12 @@
 
 ## What this is
 
-You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent. Then an email-drafter. Then a research agent. They share your filesystem, your clipboard, your OAuth scopes, your MCP servers, your wallet. Nobody has systematically studied what happens when they interact — and the casual composition is becoming dangerous.
+You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent. Then an email-drafter. Then a research agent. They share your filesystem, your clipboard, your OAuth scopes, your MCP servers, your wallet. Nobody has systematically studied what happens when they interact, and the casual composition is becoming dangerous.
 
-**SMADP — the *Safe Multi-Agent Deployment Platform* — publishes the matrix.** For every pair of autonomous agents — open-source, closed-source, IDE extensions, browser agents, research agents, code agents — we publish:
+**SMADP, the *Safe Multi-Agent Deployment Platform*, publishes the matrix.** For every pair of autonomous agents (open-source, closed-source, IDE extensions, browser agents, research agents, code agents), we publish:
 
 - A **safety profile** (capabilities, IO surfaces, network egress, OAuth scopes, sandboxing model, citations to source).
-- A **pairwise verdict** for every two agents that share a runtime — can they run together, and if not, why not?
+- A **pairwise verdict** for every two agents that share a runtime: can they run together, and if not, why not?
 - A **multi-agent chain analysis** for 3+-agent compositions (linear, star, loop).
 - A **transcript-grounded sandbox grading** when the pair has been run end-to-end in a Docker sandbox under our five-scenario suite.
 
@@ -51,17 +51,17 @@ Every verdict is **evidence-cited** (every claim points to a verbatim quote or a
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
 
-> **No setup required to browse.** The whole catalog is publicly readable at **[allstreets.github.io/SMADP](https://allstreets.github.io/SMADP/)** — drop in there for a [3-D interactive agent graph](https://allstreets.github.io/SMADP/risk-atlas/), thousands of agent profiles, every published pairwise verdict, the full chronicle audit log, and the operator review queue. No clone, no install.
+> **No setup required to browse.** The whole catalog is publicly readable at **[allstreets.github.io/SMADP](https://allstreets.github.io/SMADP/)**. Drop in for a [3-D interactive agent graph](https://allstreets.github.io/SMADP/risk-atlas/), thousands of agent profiles, every published pairwise verdict, the full chronicle audit log, and the operator review queue. No clone, no install.
 
 ---
 
 ## How it runs
 
 <p align="center">
-  <img src=".github/assets/architecture-flow.svg" alt="SMADP architecture — ONEXUS source → autopilot (enrich · scaffold · sandbox · judge) → operator gate (pending review queue + approve/reject) → public catalog (verdicts/ + Astro site)" width="100%"/>
+  <img src=".github/assets/architecture-flow.svg" alt="SMADP architecture: ONEXUS source → autopilot (enrich · scaffold · sandbox · judge) → operator gate (pending review queue + approve/reject) → public catalog (verdicts/ + Astro site)" width="100%"/>
 </p>
 
-Two halves. The **autopilot** runs unattended on a 5-minute launchd loop: it drains a queue of enrichment work, scaffolds MCP adapters from GitHub repos, queues sandbox runs, and lets a fresh LLM judge grade each transcript. Every artifact lands in `catalog/pending/`. The **operator** decides what graduates to `catalog/verdicts/` (the public site) by approving from the CLI — singly, by filter, or in bulk:
+Two halves. The **autopilot** runs unattended on a 5-minute launchd loop: it drains a queue of enrichment work, scaffolds MCP adapters from GitHub repos, queues sandbox runs, and lets a fresh LLM judge grade each transcript. Every artifact lands in `catalog/pending/`. The **operator** decides what graduates to `catalog/verdicts/` (the public site) by approving from the CLI, singly, by filter, or in bulk:
 
 ```bash
 # survey what's queued
@@ -72,14 +72,14 @@ smadp pending approve --tier docs-only --min-confidence 0.85 --limit 500 --yes
 
 # reject with audit trail (preserved under catalog/_rejected/)
 smadp pending reject v_2026-06-09_aider__autogen_4ef089 \
-  --reason "Hallucinated capability — schedule re-run on fixed profile"
+  --reason "Hallucinated capability; schedule re-run on fixed profile"
 ```
 
 ---
 
 ## The five risks
 
-Every verdict is scored independently against the five-category SMADP rubric (v1.0). Severities are `none / low / medium / high / critical`; the composite score is a weighted blend computed by `smadp.analyzer.scoring` (not the LLM — the LLM only emits severities + rationales).
+Every verdict is scored independently against the five-category SMADP rubric (v1.0). Severities are `none / low / medium / high / critical`; the composite score is a weighted blend computed by `smadp.analyzer.scoring` (not the LLM; the LLM only emits severities + rationales).
 
 | | Risk | What it covers |
 |---|---|---|
@@ -89,7 +89,7 @@ Every verdict is scored independently against the five-category SMADP rubric (v1
 | **D** | Cascading error | One agent acts on a malformed or hallucinated input from the other. Compounding mistakes across the chain. |
 | **E** | Compliance | Residency, retention, or framework-control violations. Mapped to NIST AI RMF / ISO 42001 / EU AI Act in `framework_mappings`. |
 
-The full rubric — severity definitions, per-risk indicators, output contract — lives in [`catalog/_meta/rubric/1.0.json`](catalog/_meta/rubric/1.0.json).
+The full rubric (severity definitions, per-risk indicators, output contract) lives in [`catalog/_meta/rubric/1.0.json`](catalog/_meta/rubric/1.0.json).
 
 ---
 
@@ -129,13 +129,13 @@ For the autopilot loop (launchd plist + 5-min ticks), see [`docs/autopilot.md`](
 | **`adapters/<slug>/`** | MCP adapter definition: `Dockerfile`, `entrypoint.sh`, `mcp.json`. |
 | **`smadp/sandbox/scenarios/*.yaml`** | The five-scenario test suite (calendar/email, notes/email, coding/browser, spreadsheet/powerpoint, code-review chain). |
 
-The catalog is the product. The site, the API, the CLI, the sandbox validator — all surfaces on top of these files. Every file is plain JSON or YAML, schema-validated, git-tracked.
+The catalog is the product. The site, the API, the CLI, and the sandbox validator are all surfaces on top of these files. Every file is plain JSON or YAML, schema-validated, git-tracked.
 
 ---
 
 ## Verdict shape
 
-Every verdict file is a single JSON object with this shape (truncated for clarity — see [`smadp/schemas/verdict.py`](smadp/schemas/verdict.py) for the full Pydantic model):
+Every verdict file is a single JSON object with this shape (truncated for clarity; see [`smadp/schemas/verdict.py`](smadp/schemas/verdict.py) for the full Pydantic model):
 
 ```jsonc
 {
@@ -185,7 +185,7 @@ Stubs live at the bottom of the ladder and don't make claims about safety; sandb
 
 ## Sandbox + judge
 
-A sandbox-validated verdict isn't generated from documentation — it's generated from a real Docker run.
+A sandbox-validated verdict isn't generated from documentation; it's generated from a real Docker run.
 
 ```mermaid
 sequenceDiagram
@@ -209,38 +209,38 @@ sequenceDiagram
   W->>Q: mark completed
 ```
 
-Sandbox containers run with strict isolation — `--cap-drop ALL`, `--read-only`, tmpfs `/work`, `--pids-limit`, `--memory`/`--cpus` limits, an egress allowlist enforced via recording proxy. If [gVisor](https://gvisor.dev/) is installed the runner uses `runsc`; otherwise the runtime warns and falls back to the native OCI runtime.
+Sandbox containers run with strict isolation: `--cap-drop ALL`, `--read-only`, tmpfs `/work`, `--pids-limit`, `--memory`/`--cpus` limits, an egress allowlist enforced via recording proxy. If [gVisor](https://gvisor.dev/) is installed the runner uses `runsc`; otherwise the runtime warns and falls back to the native OCI runtime.
 
 The LLM judge sees:
 - The rubric (the same one applied to docs-only judging).
 - Both Safety Profiles (declared capabilities are ground truth).
 - The scenario spec (required capabilities per role, allow-egress list, assertions).
-- A bounded transcript excerpt — first/last 30 lines per agent role.
+- A bounded transcript excerpt (first and last 30 lines per agent role).
 - The run summary (exit codes, scenario-grader failures).
 
-It emits five sub-verdicts with severities + rationales + citations. The composite score is computed deterministically downstream from the severities — never by the LLM.
+It emits five sub-verdicts with severities, rationales, and citations. The composite score is computed deterministically downstream from the severities, never by the LLM.
 
 ---
 
 ## Compose chains
 
-A **chain** is 3+ agents arranged in a topology — linear, star, or loop. SMADP applies the same five-risk rubric to the chain end-to-end, plus the topology-specific concerns each shape carries: propagation depth on linear chains, fan-out blast radius and merge-step trust on star chains, cycle convergence and feedback-loop drift on loops.
+A **chain** is 3+ agents arranged in a topology: linear, star, or loop. SMADP applies the same five-risk rubric to the chain end-to-end, plus the topology-specific concerns each shape carries: propagation depth on linear chains, fan-out blast radius and merge-step trust on star chains, cycle convergence and feedback-loop drift on loops.
 
 <p align="center">
-  <img src=".github/assets/chain-topologies.svg" alt="SMADP chain topologies — three panels showing the Linear (plan → fix → verify), Star (orchestrator fan-out + merge), and Loop (plan → execute → critic, revise back to plan) compositions" width="100%"/>
+  <img src=".github/assets/chain-topologies.svg" alt="SMADP chain topologies: three panels showing the Linear (plan → fix → verify), Star (orchestrator fan-out + merge), and Loop (plan → execute → critic, revise back to plan) compositions" width="100%"/>
 </p>
 
 Chains live under `catalog/chains/`. Three richly-authored examples ship today, one per topology, each carrying a full set of sub-verdicts (rationale, profile-field citations, safe-under conditions, mitigations) plus framework mappings against NIST AI RMF, ISO 42001, and OWASP LLM Top 10:
 
 | Chain | Topology | Composite | Headline risk |
 |---|---|---|---|
-| [Research → Write → Cite](catalog/chains/c_research-write-cite.json) | linear | 0.32 | **A** — retrieved web content is a prompt-injection vector if the writer doesn't fence it |
-| [Plan → Edit → Review](catalog/chains/c_code-review-loop.json) | loop | 0.49 | **C** — all three nodes hold filesystem + git write; no second pair of eyes |
-| [Orchestrator · fan-out · merge](catalog/chains/c_orchestrator-fanout-merge.json) | star | 0.55 | **D** — fan-out errors compound at the merge step; three confident-wrong workers beat one careful-right one |
+| [Research → Write → Cite](catalog/chains/c_research-write-cite.json) | linear | 0.32 | **A**: retrieved web content is a prompt-injection vector if the writer doesn't fence it |
+| [Plan → Edit → Review](catalog/chains/c_code-review-loop.json) | loop | 0.49 | **C**: all three nodes hold filesystem + git write; no second pair of eyes |
+| [Orchestrator · fan-out · merge](catalog/chains/c_orchestrator-fanout-merge.json) | star | 0.55 | **D**: fan-out errors compound at the merge step; three confident-wrong workers beat one careful-right one |
 
-New chains can be authored from [`/chains`](https://allstreets.github.io/SMADP/chains/) in the UI — three required fields (name, your username, agents), a topology pill, and one submit. Agent picker is a search box over the live catalog (matches name, slug, vendor, category, or capability keyword like `shell` or `browser`); edges, channels, and roles are derived from topology + participant order. Submissions land in `catalog/pending/` for operator review before they appear in the [library](https://allstreets.github.io/SMADP/chains/library/).
+New chains can be authored from [`/chains`](https://allstreets.github.io/SMADP/chains/) in the UI. Three required fields (name, your username, agents), a topology pill, and one submit. Agent picker is a search box over the live catalog (matches name, slug, vendor, category, or capability keyword like `shell` or `browser`); edges, channels, and roles are derived from topology + participant order. Submissions land in `catalog/pending/` for operator review before they appear in the [library](https://allstreets.github.io/SMADP/chains/library/).
 
-Each chain detail page mirrors the structure of a pair verdict — composite score, worst-risk callout, per-risk sub-verdicts with rationale + profile-field citations + safe-under conditions + mitigations, framework mappings, and a reproducibility block. Two chain-specific additions: an **interactive topology graph** (trackpad scroll or pinch to zoom, click `revert` to reset) and, for every connection in the chain that has a corresponding pair verdict in the catalog, a **direct link into that pair analysis** — so the chain composes from the pairwise evidence rather than restating it.
+Each chain detail page mirrors the structure of a pair verdict: composite score, worst-risk callout, per-risk sub-verdicts with rationale + profile-field citations + safe-under conditions + mitigations, framework mappings, and a reproducibility block. Two chain-specific additions: an **interactive topology graph** (trackpad scroll or pinch to zoom, click `revert` to reset) and, for every connection in the chain that has a corresponding pair verdict in the catalog, a **direct link into that pair analysis**, so the chain composes from the pairwise evidence rather than restating it.
 
 ---
 
@@ -251,15 +251,15 @@ SMADP is designed to run unattended. Three launchd jobs do the work:
 | Job | Cadence | What it does |
 |---|---|---|
 | **`com.smadp.autopilot.loop`** | every 300s | sandbox tick · docs-only-tick (LLM enrich + pair judge) · scaffold-tick (10 adapters per fire) |
-| **`com.smadp.api`** | KeepAlive | FastAPI backend at `localhost:8000` — site reads queue state, refresh tickets, and live submissions from here |
+| **`com.smadp.api`** | KeepAlive | FastAPI backend at `localhost:8000`; the site reads queue state, refresh tickets, and live submissions from here |
 | *(planned)* `com.smadp.rebuild` | on `.rebuild-requested` | re-build the Astro site when an approved verdict touches the sentinel |
 
 Hard caps in [`config/autopilot.yaml`](config/autopilot.yaml):
 
-- **200 runs/day** — drains LLM-dependent queues before pausing
-- **$20/day** — soft cap; a dollar-cost estimator increments per call
+- **200 runs/day**: drains LLM-dependent queues before pausing
+- **$20/day**: soft cap; a dollar-cost estimator increments per call
 
-Everything autopilot produces lands in `catalog/pending/`. Nothing crosses to `catalog/verdicts/` (the public site) without `smadp pending approve` — see the [operator gate](#how-it-runs) above.
+Everything autopilot produces lands in `catalog/pending/`. Nothing crosses to `catalog/verdicts/` (the public site) without `smadp pending approve`. See the [operator gate](#how-it-runs) above.
 
 ---
 
@@ -269,7 +269,7 @@ Got an agent we should know about? Two paths:
 
 1. **The autopilot will find it.** The autopilot reads from [`ONEXUS-Agents`](https://github.com/AllStreets/ONEXUS-Agents); if your agent is in that catalog and has a parseable README, it'll appear as a `docs-only` profile within a few hours of being added there.
 
-2. **Submit a profile directly** via the [`/submit`](https://allstreets.github.io/SMADP/submit) page or by opening a PR that adds `catalog/profiles/<slug>.json`. The submission lands at `unverified-profile` tier until an evidence-cited Safety Profile is produced — see [`docs/submit.md`](docs/submit.md) for the contract.
+2. **Submit a profile directly** via the [`/submit`](https://allstreets.github.io/SMADP/submit) page or by opening a PR that adds `catalog/profiles/<slug>.json`. The submission lands at `unverified-profile` tier until an evidence-cited Safety Profile is produced. See [`docs/submit.md`](docs/submit.md) for the contract.
 
 ---
 
@@ -298,7 +298,7 @@ SMADP/
 │   └── cli.py                   #   smadp <subcmd>
 │
 ├── adapters/<slug>/             # MCP adapter definitions (Dockerfile + mcp.json)
-├── site/                        # Astro 4 — 12,800+ static pages
+├── site/                        # Astro 4, 12,800+ static pages
 └── scripts/autopilot-loop.sh    # invoked every 300s by launchd
 ```
 
@@ -318,7 +318,7 @@ SMADP/
 
 ## Acknowledgements
 
-SMADP would not exist without [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents) — the nightly-refreshed catalog of 7,500+ open-source autonomous agents that gives SMADP its discovery surface. Where ONEXUS-Agents answers *"which agents exist?"*, SMADP answers *"which of them can run together?"*.
+SMADP would not exist without [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents), the nightly-refreshed catalog of 7,500+ open-source autonomous agents that gives SMADP its discovery surface. Where ONEXUS-Agents answers *"which agents exist?"*, SMADP answers *"which of them can run together?"*.
 
 ---
 
@@ -326,11 +326,11 @@ SMADP would not exist without [ONEXUS-Agents](https://github.com/AllStreets/ONEX
 
 **Apache-2.0.** Copyright 2026 Connor Evans.
 
-The catalog (profiles, verdicts, chains, evidence) and every output of the autopilot pipeline are publicly redistributable under [Apache 2.0](LICENSE) — including its explicit patent grant covering the five-risk rubric, the sandbox judge prompts, and the adapter scaffolder. Each catalogued agent's own upstream code retains its own license (see the `license` field on every profile). Use commercially or non-commercially under the Apache 2.0 terms. Apache (not MIT) because the patent grant matters for a project that encodes safety/compliance methodology; consistent with [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents), the sibling project SMADP reads from.
+The catalog (profiles, verdicts, chains, evidence) and every output of the autopilot pipeline are publicly redistributable under [Apache 2.0](LICENSE), including its explicit patent grant covering the five-risk rubric, the sandbox judge prompts, and the adapter scaffolder. Each catalogued agent's own upstream code retains its own license (see the `license` field on every profile). Use commercially or non-commercially under the Apache 2.0 terms. Apache (not MIT) because the patent grant matters for a project that encodes safety/compliance methodology, consistent with [ONEXUS-Agents](https://github.com/AllStreets/ONEXUS-Agents), the sibling project SMADP reads from.
 
 <div align="center">
 <br/>
-<strong>SMADP</strong> — auditable, evidence-cited verdicts on whether autonomous agents can safely run together.
+<strong>SMADP</strong>: auditable, evidence-cited verdicts on whether autonomous agents can safely run together.
 <br/><br/>
 <a href="https://allstreets.github.io/SMADP/">live site</a> · <a href="https://github.com/AllStreets/ONEXUS-Agents">upstream catalog</a> · <a href="https://github.com/AllStreets/SMADP/issues">issues</a>
 <br/><br/>

@@ -1,7 +1,7 @@
-# Security notes — known gaps and operator gates
+# Security notes: known gaps and operator gates
 
-Living doc for operator-relevant security state. Not a marketing page —
-honest record of what's defended today and what still needs work.
+Living doc for operator-relevant security state. Not a marketing page,
+just an honest record of what's defended today and what still needs work.
 
 ---
 
@@ -12,13 +12,13 @@ lands there must pass through the operator.
 
 | Source of new content | Where it writes | Gate |
 |---|---|---|
-| Autopilot loop (`smadp.autopilot.docs_only_tick.run_docs_only_tick`) | `catalog/pending/` (always — `auto_publish` is all-False) | Operator runs `smadp pending approve` to promote |
+| Autopilot loop (`smadp.autopilot.docs_only_tick.run_docs_only_tick`) | `catalog/pending/` (always; `auto_publish` is all-False) | Operator runs `smadp pending approve` to promote |
 | Sandbox worker (`smadp.sandbox.promote.promote_from_run`) | Mutates existing verdicts in place; net-new sandbox-validated verdicts land in `catalog/pending/` until approved | Same |
 | Operator's local CLI (`smadp verdict <a> <b>`, `smadp profile …`) | `catalog/verdicts/` and `catalog/profiles/` directly | The operator IS the gate by running it |
-| **External PR contributions** | Anywhere the PR diff touches | **`.github/workflows/guard-catalog.yml`** — PRs that touch `catalog/verdicts/` fail with a clear message telling the contributor to put their file under `catalog/pending/` instead |
+| **External PR contributions** | Anywhere the PR diff touches | **`.github/workflows/guard-catalog.yml`**: PRs that touch `catalog/verdicts/` fail with a clear message telling the contributor to put their file under `catalog/pending/` instead |
 
 So the only path to the public catalog without operator approval is a PR
-the operator merges without inspecting — and that PR will fail the
+the operator merges without inspecting, and that PR will fail the
 `Guard catalog/verdicts/` check, surfacing the issue at review time.
 
 ---
@@ -40,7 +40,8 @@ write endpoints with only rate-limiting:
 **Today this is OK because:**
 
 - The launchd plist at `~/Library/LaunchAgents/com.smadp.api.plist` binds
-  the server to `127.0.0.1:8000` — loopback only, not reachable from off-host.
+  the server to `127.0.0.1:8000`, which is loopback only and not reachable
+  from off-host.
 - Rate limiting (`smadp.api.server.TokenBucket`, 60 req/min/IP) caps abuse
   even on loopback.
 
@@ -51,7 +52,7 @@ write endpoints with only rate-limiting:
   or simply binding to `0.0.0.0`), all those endpoints become world-writable
   without any further code change.
 - In particular, `POST /api/evaluate` writes a verdict directly to
-  `catalog/verdicts/` — bypassing the operator gate.
+  `catalog/verdicts/`, bypassing the operator gate.
 
 **The fix (deferred):**
 
