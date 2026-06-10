@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-10_goose__semantic-kernel_fc9609",
+  "generated_at": "2026-06-10T02:47:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad write/network defaults make Goose\u2194Semantic Kernel pair prone to prompt injection, data leakage, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP; Semantic Kernel can read/write application-defined files and call MCP servers. That creates a default shared-content bridge where one agent can ingest the other\u2019s outputs as trusted text. The interaction is documented only at profile level, so I avoid assuming stronger isolation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes instructions or tool output into a shared file that Semantic Kernel later reads",
+        "IF Semantic Kernel forwards file content into an MCP/plugin prompt without provenance checks"
+      ],
+      "mitigations": [
+        "Separate their working directories immediately",
+        "Disable MCP on the handoff path for one agent",
+        "Add a manual review step before either agent consumes the other's files",
+        "Prefix shared files with provenance labels and ignore unlabeled instructions",
+        "requires-engineering: add content provenance filtering between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd, while Semantic Kernel touches application context and can read/write files. Both have broad network egress and handle provider/plugin secrets, so a shared workspace can leak sensitive material into either agent\u2019s outbound calls. The profiles do not prove automatic exfiltration, so medium is the highest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory containing secrets or source code",
+        "IF either agent sends file contents to its configured model provider or MCP/OpenAPI backend"
+      ],
+      "mitigations": [
+        "Move secrets out of the shared workspace now",
+        "Use separate API keys for each agent",
+        "Restrict network egress for one agent during shared-file processing",
+        "Review and redact sensitive files before either agent reads them",
+        "requires-engineering: enforce per-agent workspace isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose can execute shell, modify git state, install packages, and write the filesystem; Semantic Kernel can also write files and use MCP. Goose\u2019s concurrency model explicitly shares state via filesystem, so simultaneous writes to the same repo or workspace can corrupt git state or overwrite files. This is a default-dangerous overlap with potentially irreversible work loss.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout or writable directory",
+        "IF Goose and Semantic Kernel write overlapping files or branches without external locking"
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout or workspace",
+        "Pause one agent before the other writes git state",
+        "Use branch-per-agent workflows",
+        "Take a quick backup or commit before concurrent edits",
+        "requires-engineering: add file and git locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Semantic Kernel is an orchestration layer that can route plugin/tool actions, while Goose can generate shell commands and file edits. If Semantic Kernel treats Goose\u2019s outputs as authoritative, Goose\u2019s mistakes can cascade into downstream actions or commits. The pair\u2019s default tool-rich setup makes this pathway plausible without extra assumptions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel uses Goose-generated text as an instruction or plan without verification",
+        "IF Goose outputs commands or facts that Semantic Kernel then executes through plugins or MCP"
+      ],
+      "mitigations": [
+        "Require a human approval step before execution",
+        "Have Semantic Kernel validate Goose outputs against source files",
+        "Limit Goose to drafting only, not acting",
+        "Log and diff all proposed actions before running them",
+        "requires-engineering: add schema validation for inter-agent handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Goose explicitly handles model provider keys and extension tokens, and Semantic Kernel handles model provider API keys and plugin credentials. Both can touch files and send data to external model providers, so a shared workspace can create retention or residency mismatches if regulated data is present. The profiles do not specify HIPAA/GDPR boundaries, so medium is the supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace",
+        "IF either agent forwards that data to a third-party model provider or plugin endpoint"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use region-locked endpoints for both agents",
+        "Rotate any exposed credentials now",
+        "Review retention settings on both providers",
+        "requires-engineering: add policy enforcement for data residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
