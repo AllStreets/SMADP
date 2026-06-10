@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "n8n",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-10_n8n__transformers_8814cf",
+  "generated_at": "2026-06-10T05:01:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of shared-workspace prompt injection and data leakage; n8n\u2019s server-side execution plus transformers\u2019 file/API processing create dangerous default pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "n8n can write/read the server filesystem and orchestrate tools, while transformers processes files and example scripts. If n8n outputs are fed into transformers via shared files or stdin/stdout, attacker-controlled content can be treated as instructions. The pair lacks documented provenance controls, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF n8n writes workflow output into files that transformers later reads",
+        "IF transformers consumes text from shared stdin/stdout or example scripts without provenance checks"
+      ],
+      "mitigations": [
+        "Add a strict delimiter and schema check between n8n output and transformers input",
+        "Use separate directories with read-only mounts for transformers inputs",
+        "Require manual review of any text that crosses from n8n to transformers",
+        "Disable automatic execution of generated scripts",
+        "requires-engineering: add provenance tagging across the workflow"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "n8n handles per-credential secrets and broad network egress, while transformers reads and writes files and can call the Hugging Face Hub or serve APIs. If both touch the same workspace, sensitive workflow data can flow into model files, scripts, or outbound requests. This is a default-configuration concern because neither profile shows isolation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a filesystem or workspace",
+        "IF n8n workflow data includes secrets or regulated content",
+        "IF transformers uploads or serves artifacts derived from that shared data"
+      ],
+      "mitigations": [
+        "Store secrets in a separate credential vault from shared files",
+        "Use per-agent directories with least-privilege permissions",
+        "Block outbound requests from transformers except to approved endpoints",
+        "Redact sensitive fields before handing data to transformers",
+        "requires-engineering: enforce workspace isolation at the orchestrator level"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and broad network egress, so they can race on the same mutable resources if co-located. n8n explicitly supports shared state via datastore and connected systems, while transformers supports multiple instances and writes model/example files. Without locking, concurrent writes can corrupt artifacts or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or datastore",
+        "IF the orchestrator does not provide file or record locking",
+        "IF either agent updates shared artifacts concurrently"
+      ],
+      "mitigations": [
+        "Assign separate writable directories to each agent",
+        "Serialize writes through a single queue",
+        "Enable locking on shared datastore records",
+        "Make shared artifacts append-only where possible",
+        "requires-engineering: add transactional coordination for concurrent jobs"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n\u2019s AI Agent node can orchestrate tools, and transformers can process text, images, and scripts. If n8n passes generated content into transformers without verification, errors or hallucinations can cascade into downstream files, API calls, or model artifacts. The pair therefore creates an authoritative-output chain with potentially broad blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF n8n treats upstream generated text as authoritative",
+        "IF transformers consumes that text to create files, scripts, or API payloads",
+        "IF no human or programmatic verification step exists between them"
+      ],
+      "mitigations": [
+        "Insert a validation step before transformers acts on n8n output",
+        "Require citations or structured schemas for generated content",
+        "Limit transformers to read-only analysis until outputs are reviewed",
+        "Log and diff all generated artifacts before execution",
+        "requires-engineering: add automated verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "n8n explicitly handles per-credential secrets and arbitrary workflow data, while transformers touches text, audio, images, video, and multimodal data. If regulated data is routed from n8n into transformers, retention and residency obligations can diverge because neither profile documents matching compliance controls. The uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as EU PII, PHI, or secrets enters the shared workflow",
+        "IF transformers stores or transmits that data outside the required residency boundary",
+        "IF retention or deletion policies differ between the two systems"
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents",
+        "Block regulated data from reaching transformers unless approved",
+        "Document retention and deletion rules for both systems",
+        "Restrict outbound API destinations to compliant regions",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:7f94d0e3395a93cd0a7d122c140010a04220111f867e391d1c239387184f2fab",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

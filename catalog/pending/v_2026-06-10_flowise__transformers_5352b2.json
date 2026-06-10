@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-10_flowise__transformers_5352b2",
+  "generated_at": "2026-06-10T05:01:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-workspace prompt injection and cascading errors; data leakage and capability conflicts are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write server filesystem and uses tools as nodes, while transformers reads files and can run browsers/subprocesses. A shared filesystem or copied outputs create a plausible injection bridge, but no direct shared channel is documented. Uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes attacker-controlled content into a shared file that agent_b later reads as instructions",
+        "IF agent_b ingests Flowise-generated text without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable automatic file ingestion in agent_b",
+        "Add provenance tags to all inter-agent files",
+        "Require manual review before tool execution",
+        "requires-engineering: add content-sanitization and instruction/data separation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and uploaded files, and has broad network egress; transformers reads files and also has broad egress. If they share a workspace, sensitive chatflow data can flow into model or hub requests. The profiles do not prove default sharing, so medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or uploaded-file store",
+        "IF either agent sends file contents to an external API during normal operation"
+      ],
+      "mitigations": [
+        "Use separate storage roots",
+        "Restrict outbound network destinations",
+        "Redact secrets before handoff",
+        "Turn off shared uploads",
+        "requires-engineering: enforce per-agent access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and read, and both support multiple instances. Flowise explicitly shares state via server datastore, while transformers can spawn subprocesses and install packages. Concurrent writes to the same directory or datastore can corrupt state or overwrite artifacts; uncertainty about locking warrants high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or datastore",
+        "IF either agent mutates shared model, cache, or workflow files without locking"
+      ],
+      "mitigations": [
+        "Assign disjoint write paths",
+        "Serialize writes with a lock",
+        "Make shared artifacts read-only",
+        "Snapshot before each run",
+        "requires-engineering: add transactional coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is an orchestration layer whose outputs can become downstream inputs, and transformers can execute scripts or pipelines from files. If Flowise-generated text or tool outputs are treated as authoritative by transformers, errors can cascade into incorrect actions or code execution. The pair lacks a documented verification barrier, so high is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a output without validation",
+        "IF agent_a routes untrusted content into a transformer pipeline or example script"
+      ],
+      "mitigations": [
+        "Insert a verification step between agents",
+        "Require schema validation on handoff",
+        "Block shell execution on untrusted inputs",
+        "Log and diff all intermediate artifacts",
+        "requires-engineering: add typed contracts between stages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. The only concrete compliance concern is that Flowise handles model provider keys and tool credentials while transformers handles files and model artifacts; without a documented mismatch, the risk is limited and not provably present.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through a deployment with stricter retention than the other agent",
+        "IF one agent logs secrets or regulated content while the other does not"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Review logging settings",
+        "Separate credential stores",
+        "Document retention policy per agent",
+        "requires-engineering: align compliance controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
