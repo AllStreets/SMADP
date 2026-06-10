@@ -26,6 +26,20 @@ def count_glob(rel: str) -> int:
     return len(list(REPO.glob(rel)))
 
 
+def count_profiles() -> int:
+    """Total agents profiled: verified top-level + unverified seeds.
+
+    Matches the homepage's "AGENTS PROFILED" tile, which renders
+    getProfiles() in site/src/data/catalog.ts and walks both
+    catalog/profiles/*.json and catalog/profiles/_unverified/*.json.
+    Keeping the two counts in lockstep is the whole point of this
+    script.
+    """
+    verified = count_glob("catalog/profiles/*.json")
+    unverified = count_glob("catalog/profiles/_unverified/*.json")
+    return verified + unverified
+
+
 def count_sandbox_validated() -> int:
     needle = '"sandbox-validated"'
     n = 0
@@ -139,7 +153,7 @@ def update_banner(verdicts: int) -> bool:
 
 
 def main() -> int:
-    profiles = count_glob("catalog/profiles/*.json")
+    profiles = count_profiles()
     verdicts = count_glob("catalog/verdicts/*.json")
     sandbox = count_sandbox_validated()
     adapters = count_adapters()
