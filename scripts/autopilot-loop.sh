@@ -62,7 +62,22 @@ python3 "$REPO_ROOT/scripts/update-stats.py" \
 # ----------------------------------------------------------------------------
 git_sync() {
   local log="$REPO_ROOT/state/autopilot.loop.stdout.log"
-  local sync_paths=(catalog/pending catalog/verdicts catalog/_rejected report)
+  # Sync every path the autopilot writes to so the live site mirrors the
+  # operator's machine: pending/verdicts/rejected (operator gate), profiles
+  # and _evidence (enrichment writes), adapters (scaffold writes), and
+  # report (daily briefing). Notably absent: site/ and smadp/ — those are
+  # operator-authored code edits and never get bot-committed.
+  local sync_paths=(
+    catalog/pending
+    catalog/verdicts
+    catalog/_rejected
+    catalog/profiles
+    catalog/_evidence
+    adapters
+    report
+    README.md
+    .github/assets/smadp-banner.svg
+  )
 
   # The .env load earlier in this script sets GITHUB_TOKEN, which today is
   # malformed (a double-prefixed ghp_github_pat_… value) and causes git to
