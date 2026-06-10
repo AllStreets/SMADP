@@ -57,6 +57,15 @@ git_sync() {
   local log="$REPO_ROOT/state/autopilot.loop.stdout.log"
   local sync_paths=(catalog/pending catalog/verdicts catalog/_rejected report)
 
+  # The .env load earlier in this script sets GITHUB_TOKEN, which today is
+  # malformed (a double-prefixed ghp_github_pat_… value) and causes git to
+  # present a bad credential and get 403'd on push. Unset it within this
+  # function so git falls through to the macOS keychain credentials the
+  # operator's interactive shell uses. The enrich + scaffold steps above
+  # still see whatever .env provided (they tolerate failure and fall back to
+  # the 60 req/hr anonymous rate limit), so this scoping is intentional.
+  unset GITHUB_TOKEN
+
   # Anything to push?
   local dirty
   dirty=$(git status --porcelain -- "${sync_paths[@]}" 2>/dev/null | head -1 || true)
