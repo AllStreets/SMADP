@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-10_open-interpreter__plandex_1c3457",
+  "generated_at": "2026-06-10T02:04:23Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and shell overlap: default shared-file workflows can leak data and cascade errors between Open Interpreter and Plandex.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the user filesystem and clipboard, and Plandex reads/writes a project directory plus plan-local sandbox. That creates a plausible content-to-instructions bridge if either agent consumes the other's files or copied output as trusted text. The pair is not documented as isolated, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF either agent ingests files or clipboard text from the other as instructions, injection is possible.",
+        "IF the two agents are pointed at the same workspace, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Keep the agents on separate directories.",
+        "Disable clipboard-based handoff between them.",
+        "Review any file before the other agent reads it.",
+        "Use read-only exports for inter-agent transfer.",
+        "requires-engineering: add provenance tagging on shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter touches anything reachable on the local machine, while Plandex touches source code in a project directory and can call external model providers. If they share a workspace, sensitive local files can flow into Plandex outputs or upstream APIs. The profiles do not show hard isolation by default, so this is a default-path risk rather than a rare edge case.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory, local secrets can be exposed to Plandex.",
+        "IF Plandex sends context to a model provider, copied file contents may leave the machine."
+      ],
+      "mitigations": [
+        "Use separate workspaces for each agent.",
+        "Exclude secrets files with .gitignore or equivalent.",
+        "Turn off auto-upload of sensitive files.",
+        "Paste only minimal excerpts, not whole files.",
+        "requires-engineering: route sensitive runs through a local-only model."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have filesystem write, shell execution, and git-state modification. Open Interpreter explicitly shares state via filesystem across instances, and Plandex shares state via its server backend. If they operate on the same repo or directory without locking, concurrent writes and git mutations can overwrite each other or corrupt state. This matches the high-severity overlap indicator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents modify the same git repository, commit or patch conflicts can occur.",
+        "IF both agents write to the same directory concurrently, one agent can overwrite the other's changes."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Pause one agent before the other writes.",
+        "Use git branches per agent.",
+        "Run a quick diff before applying changes.",
+        "requires-engineering: add file-level locking or orchestration locks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Plandex is a review-then-apply planner, but Open Interpreter can emit arbitrary shell/code actions and filesystem edits. If Plandex treats Open Interpreter's output as authoritative without verification, mistakes or fabricated facts can cascade into applied code changes. The profiles show a plausible handoff path, but not an automatic action chain, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Plandex imports Open Interpreter output without review, errors can propagate into applied changes.",
+        "IF Open Interpreter generates commands that Plandex later executes or stages, the chain becomes authoritative."
+      ],
+      "mitigations": [
+        "Require human review before apply.",
+        "Compare outputs against source files.",
+        "Ask Plandex to restate assumptions before acting.",
+        "Keep Open Interpreter outputs as suggestions only.",
+        "requires-engineering: add verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source desktop coding tools with no explicit residency, HIPAA, or GDPR mismatch documented. The main compliance concern is that Open Interpreter can touch anything on the local machine while Plandex can send context to model providers, but the profiles do not establish a specific regulated-data violation. With no documented mismatch, this remains low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace and Plandex forwards it to a model provider, policy issues may arise.",
+        "IF the deployment has a residency or retention requirement not met by the configured provider, compliance risk increases."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workspaces.",
+        "Use a provider approved for the data class.",
+        "Check retention settings before running.",
+        "Separate sensitive and non-sensitive projects.",
+        "requires-engineering: document a data-processing agreement and residency controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

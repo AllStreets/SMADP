@@ -44,3 +44,60 @@ smadp autopilot scaffold-tick --batch-size 10
 # Daily briefing: regenerate report/YYYY-MM-DD.md so it reflects the catalog
 # state after this tick's writes. Single-file rewrite, ~50ms, no LLM cost.
 smadp autopilot daily-report
+
+# ----------------------------------------------------------------------------
+# GitHub sync. Push any new pending verdicts, operator approvals (pending →
+# verdicts moves), rejections, and the regenerated daily report so the live
+# site at allstreets.github.io/SMADP/ reflects today's state. We sync only
+# the catalog dirs the operator-gate cares about (plus report/) so we don't
+# accidentally commit unrelated working-tree changes. Failures are tolerated:
+# the next tick retries; never crash the loop just because git is unhappy.
+# ----------------------------------------------------------------------------
+git_sync() {
+  local log="$REPO_ROOT/state/autopilot.loop.stdout.log"
+  local sync_paths=(catalog/pending catalog/verdicts catalog/_rejected report)
+
+  # Anything to push?
+  local dirty
+  dirty=$(git status --porcelain -- "${sync_paths[@]}" 2>/dev/null | head -1 || true)
+  if [ -z "$dirty" ]; then
+    echo "[git-sync] no catalog changes to push" >>"$log"
+    return 0
+  fi
+
+  # Stage just the gated catalog dirs and report/.
+  if ! git add -- "${sync_paths[@]}" >>"$log" 2>&1; then
+    echo "[git-sync] git add failed; skipping push this tick" >>"$log"
+    return 0
+  fi
+
+  # Count what we're actually committing for the message body.
+  local stats
+  stats=$(git diff --cached --shortstat -- "${sync_paths[@]}" 2>/dev/null | tr -d '\n')
+
+  local subject="autopilot: catalog sync $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local body
+  body=$(printf 'Automated catalog sync from %s.\n\n%s' "$(hostname -s)" "$stats")
+
+  GIT_AUTHOR_NAME="smadp-autopilot" \
+  GIT_AUTHOR_EMAIL="autopilot@smadp.local" \
+  GIT_COMMITTER_NAME="smadp-autopilot" \
+  GIT_COMMITTER_EMAIL="autopilot@smadp.local" \
+    git commit -m "$subject" -m "$body" >>"$log" 2>&1 \
+      || { echo "[git-sync] commit failed" >>"$log"; return 0; }
+
+  # Rebase any operator pushes that happened during this tick, then push.
+  # --autostash protects against an in-progress edit by the operator on
+  # unrelated files. On any failure we just leave the local commit in place
+  # for the next tick to re-attempt.
+  if ! git pull --rebase --autostash origin main >>"$log" 2>&1; then
+    echo "[git-sync] rebase failed; will retry next tick" >>"$log"
+    return 0
+  fi
+  if ! git push origin main >>"$log" 2>&1; then
+    echo "[git-sync] push failed; will retry next tick" >>"$log"
+    return 0
+  fi
+  echo "[git-sync] pushed catalog changes to GitHub" >>"$log"
+}
+git_sync

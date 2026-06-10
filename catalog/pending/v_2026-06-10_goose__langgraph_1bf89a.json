@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-10_goose__langgraph_1bf89a",
+  "generated_at": "2026-06-10T00:03:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-workspace prompt injection and data leakage; both agents can write/read the same filesystem and use broad network egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP; LangGraph can read/write application-defined files and its nodes may be agents. Because both share state via filesystem/checkpointer patterns, content from one can be treated as trusted input by the other. This is not provably blocked, but it is not a direct raw-web-to-parser path either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes instructions or prompts into shared files that LangGraph later reads as task state, injection is possible.",
+        "IF LangGraph nodes ingest Goose-produced files without provenance checks, attacker-controlled content can steer execution."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories with no shared writable path.",
+        "Add provenance tags to every shared file and reject untrusted instruction-like content.",
+        "Require a human review step before LangGraph consumes Goose outputs.",
+        "Use read-only mounts for any handoff artifacts.",
+        "requires-engineering: add content-sanitization and schema validation at the handoff boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read files and write outputs, and Goose explicitly touches source code/files in cwd while LangGraph handles application-defined graph state. Shared filesystem or checkpointer storage can expose sensitive workspace data across the pair. The profiles do not show a hard isolation boundary, so leakage is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or checkpointer store, files/state can be exposed across agents.",
+        "IF Goose or LangGraph logs or forwards shared artifacts to model providers, sensitive contents can leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate workspaces and separate checkpointer stores.",
+        "Restrict shared artifacts to minimal redacted summaries.",
+        "Disable unnecessary logging of file contents and state.",
+        "Rotate or scope provider keys per agent.",
+        "requires-engineering: enforce per-agent access controls on shared storage."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have write_filesystem and broad network egress, and Goose also modifies git state while LangGraph can coordinate multiple nodes over shared state. If they operate on the same repo or mutable workspace, concurrent writes and git mutations can collide and corrupt state. The profiles show no locking or coordination primitive, so the unsafe default is strong.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Goose and LangGraph target the same git repository, concurrent commits or file edits can conflict.",
+        "IF LangGraph writes to the same application state Goose reads, stale or overwritten state can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working tree.",
+        "Serialize writes with a simple lock file.",
+        "Disable git mutation in one agent during shared runs.",
+        "Use branch-per-agent workflows.",
+        "requires-engineering: add transactional coordination around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LangGraph is an orchestration framework whose nodes may consume Goose outputs as state, and Goose can produce tool outputs and file edits that LangGraph may treat as authoritative. That creates a plausible no-verification cascade from one agent into the other. The profiles do not prove downstream action-taking, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph routes Goose output directly into downstream nodes without validation, errors can cascade.",
+        "IF Goose-generated text is used as facts or instructions inside the graph, later actions may amplify mistakes."
+      ],
+      "mitigations": [
+        "Insert a validation node between Goose and downstream LangGraph steps.",
+        "Require structured outputs with schema checks.",
+        "Add a human approval gate before irreversible actions.",
+        "Log source provenance for each graph edge.",
+        "requires-engineering: implement confidence/verification scoring on handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not specify regulated-data certifications or residency constraints. Goose handles model provider keys and extension tokens, while LangGraph handles model provider API keys, but no profile field shows a compliance mismatch. With only docs-level evidence, the pairwise compliance risk is limited to documented gaps rather than a clear violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into shared workspace files, compliance obligations may arise outside the profiles.",
+        "IF an operator routes EU PII or PHI through external model providers, additional controls are required."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared agent workspaces.",
+        "Use redaction before sending prompts to model providers.",
+        "Review provider and storage terms before deployment.",
+        "Document retention and deletion settings.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "7.5",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

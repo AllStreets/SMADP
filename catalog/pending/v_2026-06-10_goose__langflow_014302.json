@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-10_goose__langflow_014302",
+  "generated_at": "2026-06-10T02:37:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of shared-workspace data leakage and cascading errors; prompt injection is possible via file-based handoff.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose reads and writes the user filesystem and shares state via filesystem, while Langflow consumes uploaded files and server-side flow inputs. That creates a plausible file-based handoff where attacker-controlled content from one can be treated as instructions by the other. This is not proven by docs alone, so I choose medium over low because the shared workspace is explicit.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes untrusted content into a shared directory that Langflow later ingests as flow input",
+        "IF Langflow renders or parses Goose-produced text as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces so Goose and Langflow never share writable directories",
+        "Require manual review of any file passed from Goose to Langflow",
+        "Add a provenance prefix to all inter-agent artifacts",
+        "Disable automatic ingestion of shared folders in Langflow",
+        "requires-engineering: add content-sanitization and instruction-stripping before flow import"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch files and broad network egress is enabled, so sensitive source code or cwd contents handled by Goose can flow into Langflow\u2019s server-side inputs or external API calls. The profiles do not prove automatic exfiltration, but the shared filesystem and uploaded-file surfaces make leakage plausible in default deployments, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Goose processes secrets or source code in a directory that Langflow can read or upload",
+        "IF Langflow flow nodes send uploaded file contents to configured model providers or HTTP services"
+      ],
+      "mitigations": [
+        "Keep secrets out of any shared directory",
+        "Use separate OS users or containers for each agent",
+        "Disable file uploads in Langflow for shared projects",
+        "Restrict Goose to a non-sensitive working tree",
+        "requires-engineering: enforce per-agent network egress allowlists"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose and Langflow both have unrestricted filesystem write, read filesystem access, and broad network egress. Goose also modifies git state, while Langflow runs server-side Python and stores shared state in server-side stores. Concurrent writes to the same repo or workspace can corrupt files or git history, and the profiles show no locking mechanism, so high is justified.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or repository in the same run",
+        "IF Langflow flow steps and Goose sessions operate on shared mutable files without external locking"
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory",
+        "Pause one agent before the other writes to shared state",
+        "Avoid git operations from Goose when Langflow is active",
+        "Use file locks around any shared artifact",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is a graph-based orchestrator that chains multiple agents, and Goose can emit tool outputs, code, or facts that Langflow may treat as flow inputs. Without a documented verification step between them, Goose\u2019s output can be propagated and acted on by Langflow, creating a classic cascading-error path with potentially broad downstream effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uses Goose output as an upstream node result without validation",
+        "IF a downstream Langflow node triggers actions based on Goose-generated facts or code"
+      ],
+      "mitigations": [
+        "Insert a human approval step between Goose and Langflow",
+        "Validate Goose outputs against a schema before reuse",
+        "Mark Goose outputs as untrusted in Langflow prompts",
+        "Limit downstream nodes to read-only actions",
+        "requires-engineering: add automated verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles are docs-only and do not specify residency, retention, or certification boundaries, but Langflow stores per-flow credentials and server-side state while Goose handles model-provider keys and extension tokens. That mismatch can create compliance exposure if regulated data or secrets are routed through the pair. Uncertainty pushes this above low because the deployment controls are not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are stored in Langflow flows or Goose extensions",
+        "IF deployment residency or retention requirements differ between the two systems"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either agent\u2019s shared stores",
+        "Review retention settings before enabling the pair",
+        "Keep secrets in an external vault instead of flow storage",
+        "Document data residency for both deployments",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

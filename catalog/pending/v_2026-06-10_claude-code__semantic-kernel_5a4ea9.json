@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-10_claude-code__semantic-kernel_5a4ea9",
+  "generated_at": "2026-06-10T02:26:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High: shared filesystem/MCP and broad egress create default prompt-injection, leakage, and cascading-error risks; compliance risk is medium.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code can read/write repo files and use MCP; Semantic Kernel can also use MCP and write application-defined files. That creates a plausible shared-content bridge where one agent\u2019s outputs can be ingested by the other as trusted instructions. The pathway is not proven by docs, but it exists in default pairings via filesystem/MCP.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or MCP-backed store, injected instructions in one agent\u2019s output can reach the other.",
+        "IF either agent parses file or MCP content as instructions without provenance checks, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP on one side for the shared task.",
+        "Add provenance tags and reject untrusted instructions in parsed content.",
+        "Use read-only handoff files between agents.",
+        "requires-engineering: add content sanitization and instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read files and use broad network egress, and Claude Code explicitly handles git credentials while Semantic Kernel handles plugin credentials and model-provider keys. If they share a workspace or memory store, sensitive code or secrets can flow from one agent into the other\u2019s context and then out over network calls. The pairwise leakage path is plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same repository, environment, or memory store, secrets and source code can be exposed across the pair.",
+        "IF either agent forwards retrieved file contents to its backend or plugins, leakage can extend beyond the local host."
+      ],
+      "mitigations": [
+        "Remove secrets from shared directories.",
+        "Use separate credentials per agent.",
+        "Restrict network egress for the agent handling sensitive files.",
+        "Mount only the minimum required files into each agent.",
+        "requires-engineering: enforce per-agent secret scoping and audit logging."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Claude Code can modify git state and write the filesystem; Semantic Kernel can also write files, though it cannot modify git directly. In a shared repo, concurrent writes and file edits can conflict, especially because Claude Code\u2019s shared state is via filesystem and git while Semantic Kernel\u2019s shared state is via memory store. The overlap is real, but not the highest-risk high-severity git-lock case.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same files or generated artifacts in the same repo, last-writer-wins conflicts can corrupt work.",
+        "IF Claude Code commits while Semantic Kernel is simultaneously updating files, repository state can diverge."
+      ],
+      "mitigations": [
+        "Assign disjoint file paths per agent.",
+        "Serialize write access with a simple lock file.",
+        "Have only one agent perform git operations.",
+        "Review diffs before commit.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel is an orchestration layer that can consume outputs from Claude Code, and Claude Code can produce code, facts, or patches that the other agent may treat as authoritative. Because the pair\u2019s interaction is undocumented and both can act on tool outputs, a mistaken Claude Code output can cascade into downstream actions or generated artifacts without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tagline"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel feeds Claude Code output into plugins or actions without validation, errors can propagate downstream.",
+        "IF Claude Code emits an incorrect patch or fact and Semantic Kernel uses it as authoritative context, the mistake can be amplified."
+      ],
+      "mitigations": [
+        "Require explicit verification before acting on Claude Code output.",
+        "Insert a human review step for patches and facts.",
+        "Use schema validation on exchanged messages.",
+        "Limit Semantic Kernel to read-only consumption of Claude Code outputs.",
+        "requires-engineering: add automated consistency checks between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Claude Code touches source code, git history, shell environment, and files in cwd, while Semantic Kernel touches application context and may send data to Azure OpenAI, OpenAI, Hugging Face, MCP servers, or OpenAPI tools. If regulated data or EU PII enters the shared workflow, the pair can route it to different vendors with different residency and retention terms. The profiles do not prove a violation, but the mismatch is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.vendor.url"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared repo or application context, it may be transmitted to third-party APIs.",
+        "IF the deployment requires a specific residency or retention policy, the pair can violate it unless both vendors are approved."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces.",
+        "Route sensitive workloads to approved endpoints only.",
+        "Disable external API calls for regulated tasks.",
+        "Document retention and residency for each agent.",
+        "requires-engineering: implement policy-based routing and data-class filtering."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-3.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-10_autogen__plandex_7380b8",
+  "generated_at": "2026-06-10T02:04:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.53,
+  "headline": "Medium prompt-injection, leakage, and capability-conflict risks arise from shared filesystem and broad shell/network defaults; no critical compliance issue is evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read and write working directories and uses stdin/stdout plus tool calls; Plandex also reads/writes the project directory and plan-local sandbox. That creates a plausible file-based bridge where one agent can ingest the other's outputs as trusted content. This is not merely manual copy-paste, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or exchanged files are auto-read, prompt injection becomes reachable.",
+        "IF either agent treats file contents as instructions without provenance checks, attacker-controlled text can steer tool use."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Disable auto-ingest of newly written files.",
+        "Add a human review step before one agent consumes the other's output.",
+        "Prefix exchanged files with explicit provenance metadata.",
+        "requires-engineering: add content-sanitization or instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch filesystem data and both have broad network egress to model providers or cloud services. AutoGen handles application data and model provider API keys; Plandex touches source code and can call Plandex Cloud or a self-hosted server. If sensitive files are shared, either agent can transmit them outward in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive source or application data is placed in the shared workspace, both agents can read it.",
+        "IF either agent is configured with external model providers or cloud backends, file contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Keep secrets and regulated data out of the shared workspace.",
+        "Use local-only model endpoints for both agents.",
+        "Restrict network egress at the host or container level.",
+        "Mount read-only copies of inputs where possible.",
+        "requires-engineering: add DLP or redaction before any outbound API call."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Plandex additionally can modify git state, while AutoGen can install packages. In a shared project tree, concurrent writes and git mutations can race or overwrite each other, making the default interaction dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or working directory, write conflicts are reachable.",
+        "IF Plandex auto-applies changes while AutoGen is also editing files, git and filesystem state can diverge."
+      ],
+      "mitigations": [
+        "Assign disjoint working directories.",
+        "Disable auto-apply in Plandex.",
+        "Serialize write phases with a lock file or scheduler.",
+        "Pause package installation during shared runs.",
+        "requires-engineering: add transactional coordination around git and filesystem writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen produces tool calls and code-execution outputs that Plandex can plausibly consume as plan inputs, and Plandex is designed for review-then-apply workflows. That makes unverified downstream action possible if Plandex treats AutoGen output as authoritative. The pair is not proven to verify each other, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF AutoGen output is piped into Plandex without a verification step, errors can cascade into applied changes.",
+        "IF Plandex auto-apply is enabled, unverified suggestions can become filesystem mutations."
+      ],
+      "mitigations": [
+        "Require explicit verification before apply.",
+        "Keep AutoGen and Plandex outputs in separate review queues.",
+        "Disable auto-apply.",
+        "Add a checksum or diff review gate between agents.",
+        "requires-engineering: implement structured provenance and validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. The only concrete compliance-relevant fact is that both handle model provider API keys and may send data to configured providers, but the pairwise residency breach is not evidenced. One-agent citations suffice because no cross-agent compliance mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed to a noncompliant external provider, compliance risk increases.",
+        "IF the operator configures different retention policies for the two agents on the same data class, policy mismatch becomes material."
+      ],
+      "mitigations": [
+        "Avoid regulated data in prompts and files.",
+        "Use providers with matching compliance attestations.",
+        "Align retention settings across both tools.",
+        "Document data flows before deployment.",
+        "requires-engineering: perform a formal residency and DPA review."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

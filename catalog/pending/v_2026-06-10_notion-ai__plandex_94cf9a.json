@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "notion-ai",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-10_notion-ai__plandex_94cf9a",
+  "generated_at": "2026-06-10T01:59:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of workspace-to-code data leakage and cascading errors; prompt-injection risk is moderate due to shared workspace inputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Notion AI ingests workspace pages and team knowledge base content, while Plandex reads project files and stdin/stdout. If Notion content is copied into Plandex plans or files, attacker-controlled text can steer downstream actions. The pair lacks a documented provenance filter, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Notion page content is copied into Plandex prompts or plan files",
+        "IF Plandex treats pasted workspace text as instructions without provenance tagging"
+      ],
+      "mitigations": [
+        "Use a manual copy/paste review step for any Notion-derived text before feeding Plandex",
+        "Prefix imported text with a fixed delimiter and instruction to treat it as data only",
+        "Disable auto-apply in Plandex for tasks sourced from workspace notes",
+        "Keep a separate scratch page for untrusted content in Notion",
+        "requires-engineering: add provenance labels between Notion exports and Plandex inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Notion AI touches workspace pages and team knowledge base content, and Plandex reads/writes a project directory plus plan-local sandbox. If the same workspace material is mirrored into code files or the project tree, sensitive content can flow from Notion into Plandex outputs. The profiles show shared workspace state on A and filesystem access on B, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF workspace pages contain secrets or confidential notes",
+        "IF those pages are exported or copied into the project directory used by Plandex"
+      ],
+      "mitigations": [
+        "Restrict Plandex projects to non-sensitive repos",
+        "Remove secrets from Notion pages before copying them into code tasks",
+        "Use separate workspaces for docs and code",
+        "Review Plandex outputs before sharing them back into Notion",
+        "requires-engineering: enforce DLP scanning on Notion-to-code transfers"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Plandex can execute shell, write the filesystem, and modify git state, while Notion AI shares workspace state across instances and can access workspace pages. If both operate on the same directory or synced workspace, concurrent writes can overwrite each other and corrupt state. Because B has unrestricted local mutation and A has shared state, the conflict is dangerous by default once paired on the same artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same project directory or synced workspace",
+        "IF Plandex auto-applies changes while Notion content is being edited or exported"
+      ],
+      "mitigations": [
+        "Assign separate directories for docs and code",
+        "Turn off Plandex auto-apply during collaborative edits",
+        "Use git branches and require manual merge review",
+        "Freeze Notion pages before exporting them to code tasks",
+        "requires-engineering: add locking around shared artifacts"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Notion AI produces workspace-grounded summaries and Q&A, and Plandex is a planner that can apply code changes from its inputs. If Plandex consumes Notion-generated summaries as authoritative, any hallucination or omission can cascade into incorrect code edits or commits. The pair therefore creates a default path from generated text to action-taking with no built-in verification shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Plandex uses Notion summaries as the source of truth for implementation tasks",
+        "IF no human verification step occurs before apply or commit"
+      ],
+      "mitigations": [
+        "Require source links from Notion before any code change",
+        "Compare Notion summaries against original pages manually",
+        "Keep Plandex in review-only mode for Notion-derived tasks",
+        "Ask a second reviewer to validate generated plans",
+        "requires-engineering: add citation-aware verification between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Notion AI processes workspace pages and team knowledge base content under Notion workspace permissions, while Plandex handles source code and model-provider API keys with broad network egress. If regulated data is copied from Notion into code tasks, the pair can create retention and residency mismatches across two vendors. The profiles do not prove a specific violation, so medium is the prudent choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data or secrets are stored in Notion pages",
+        "IF those pages are transferred into Plandex projects or prompts"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Notion pages used for coding tasks",
+        "Strip secrets before sending tasks to Plandex",
+        "Document retention expectations for both tools",
+        "Use separate tenants or workspaces for regulated content",
+        "requires-engineering: perform a formal residency and retention review"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "GOVERN-1.2",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:29ca17a60afbba03ad725738b6cdb0dc6f0ff67694157bd8d97a897c71e71f66",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

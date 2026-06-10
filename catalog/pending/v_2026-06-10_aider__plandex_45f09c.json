@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-10_aider__plandex_45f09c",
+  "generated_at": "2026-06-10T00:15:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.56,
+  "headline": "High risk of shared-repo write conflicts and cascading bad edits; prompt-injection and compliance risks are lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Aider and Plandex have no documented shared clipboard/MCP channel, so direct injection is not the default path. However, both can read and write repo files, and Aider explicitly treats git-tracked files as inputs while Plandex stages project changes, so malicious content in shared files could influence the other agent if operators bridge them through the repo.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF operators use the shared repository as a handoff channel between Aider and Plandex, injected instructions in files can be re-read by the other agent.",
+        "IF either agent is asked to summarize or act on untrusted repo text, prompt-like content may be followed as instructions."
+      ],
+      "mitigations": [
+        "Keep handoff files separate from task files.",
+        "Prefix untrusted text with explicit non-instruction markers.",
+        "Require human review before one agent consumes the other's output.",
+        "Use a dedicated scratch branch for inter-agent exchange.",
+        "requires-engineering: add provenance tagging for file-originated content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read the filesystem and have broad network egress, so sensitive repo contents can flow into model-provider APIs in default coding workflows. Aider explicitly handles model provider API keys and git-tracked files; Plandex also sends project context to a model provider or Plandex Cloud/self-hosted server. Shared workspace plus outbound inference creates a realistic leakage path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent is pointed at a repository containing secrets or regulated data, that content may be transmitted to external model services.",
+        "IF both agents operate on the same workspace, data touched by one can be exposed to the other's outbound requests."
+      ],
+      "mitigations": [
+        "Remove secrets from the shared repo before use.",
+        "Use local-only or self-hosted model endpoints.",
+        "Restrict both agents to a sanitized subdirectory.",
+        "Rotate any credentials present in the workspace.",
+        "requires-engineering: enforce DLP/redaction before outbound calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, write files, and modify git state, and Aider shares state via a shared git repo while Plandex shares state via a server backend. In a shared repository, concurrent edits and git mutations can collide without locking, making destructive overwrite or merge-conflict loss plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are allowed to write the same git working tree, concurrent edits can overwrite each other.",
+        "IF either agent auto-applies changes while the other is mid-plan, git state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Disable auto-apply for one agent during overlap.",
+        "Serialize write access with a simple operator checklist.",
+        "Commit after each agent finishes a turn.",
+        "requires-engineering: add file-level locking or orchestrator arbitration."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider produces code edits directly and Plandex can stage and apply multi-step plans, so one agent's output can become the other's input and then be acted on without strong verification. That creates a clear cascade path where an incorrect patch or plan is amplified into further edits or commits, especially when both are operating on the same repo.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Plandex consumes Aider-generated diffs or summaries as authoritative, errors can propagate into staged changes.",
+        "IF Aider is asked to implement Plandex-produced plans without independent review, incorrect assumptions can be committed."
+      ],
+      "mitigations": [
+        "Require a human diff review between agents.",
+        "Ask each agent to restate assumptions before acting.",
+        "Limit each turn to one small change set.",
+        "Run tests after every handoff.",
+        "requires-engineering: add automated verification gates before apply."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding tools with no explicit residency, certification, or retention mismatch documented, so compliance risk is limited to generic handling of source code and git history. Aider additionally handles model-provider API keys and broad egress, but the profiles do not show a specific regulated-data mismatch against Plandex.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into the shared repo, compliance review is required before use.",
+        "IF either agent is connected to a provider with stricter retention than the other, policy mismatch may arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the repo.",
+        "Use a documented data-handling policy.",
+        "Prefer self-hosted inference for sensitive projects.",
+        "Review provider retention settings.",
+        "requires-engineering: formalize residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

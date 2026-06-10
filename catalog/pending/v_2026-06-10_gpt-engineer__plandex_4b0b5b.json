@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-10_gpt-engineer__plandex_4b0b5b",
+  "generated_at": "2026-06-10T00:53:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.92,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors from shared project-directory workflows and broad egress in both coding agents.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the shared project directory, so one agent can place attacker-controlled content where the other may ingest it as trusted instructions. gpt-engineer explicitly \u201cwrites files then offers to run,\u201d while Plandex uses a \u201creview-then-apply\u201d flow, which reduces but does not eliminate the shared-file injection path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF either agent reads instructions from files created by the other without provenance checks, injection is possible.",
+        "IF the shared project directory contains untrusted text that is later treated as prompts or commands, the pathway activates."
+      ],
+      "mitigations": [
+        "Keep the two agents in separate project directories.",
+        "Require a human review step before either agent consumes files written by the other.",
+        "Prefix all inter-agent handoffs with a fixed machine-readable format.",
+        "Disable auto-apply or any equivalent unattended execution mode.",
+        "requires-engineering: add provenance tagging for files and prompt inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch source code in a shared project directory, and both have broad network egress to model providers. That creates a default path for code or secrets in the workspace to be sent off-box by either agent during normal operation, even though neither profile shows clipboard or browser sharing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive source code or secrets are present in the shared project directory, either agent may transmit them to its backend.",
+        "IF the operator uses the same workspace for confidential and non-confidential work, leakage risk increases."
+      ],
+      "mitigations": [
+        "Use separate workspaces for sensitive and non-sensitive projects.",
+        "Remove secrets from the project directory before running either agent.",
+        "Restrict outbound network access at the host or container level.",
+        "Use local/self-hosted model endpoints where possible.",
+        "requires-engineering: enforce file allowlists for model uploads."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the same project directory, and Plandex can also modify git state while gpt-engineer can execute shell commands and spawn subprocesses. In a shared workspace, concurrent edits and git operations can race or overwrite each other, and the profiles do not show locking or coordination primitives.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository at the same time, write conflicts can occur.",
+        "IF Plandex applies staged changes while gpt-engineer is rewriting files, repository state can become inconsistent."
+      ],
+      "mitigations": [
+        "Run only one agent per repository at a time.",
+        "Use separate branches or clones for each agent.",
+        "Pause one agent before the other applies changes.",
+        "Check git status before and after each agent run.",
+        "requires-engineering: add file-level locking or orchestrator coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer can write files and offer to run generated code, while Plandex\u2019s review-then-apply flow can still treat upstream outputs as actionable plan material. If one agent\u2019s generated code or plan is accepted by the other without independent verification, errors can cascade into incorrect code changes or unsafe execution.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Plandex imports gpt-engineer output as authoritative plan text, downstream mistakes can propagate.",
+        "IF gpt-engineer executes code produced from Plandex output without review, the cascade can reach runtime."
+      ],
+      "mitigations": [
+        "Require independent human review of all generated code before execution.",
+        "Compare outputs against tests or lint results before applying.",
+        "Limit each agent to drafting, not executing, for the same task.",
+        "Keep a changelog of accepted outputs and rejected diffs.",
+        "requires-engineering: add automated verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source coding tools with no explicit residency, certification, or retention mismatch documented. The main compliance concern is generic source-code handling, but the profiles do not show a specific regulated-data divergence between gpt-engineer and Plandex.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into the shared workspace, a separate compliance review is needed.",
+        "IF one deployment uses a different retention policy than the other, the mismatch becomes material."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Document retention settings for both tools.",
+        "Use separate environments for regulated and non-regulated projects.",
+        "Review vendor terms before processing sensitive data.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "claude-code"
+  ],
+  "verdict_id": "v_2026-06-10_autogen__claude-code_53501c",
+  "generated_at": "2026-06-10T02:31:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High risk of shared-workspace data leakage and capability conflict; prompt-injection and cascading-error risks are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read and write configured working directories and uses tool calls/code execution; Claude Code also reads repo files and user-provided directories. With no documented provenance tracking between them, content passed through shared files can be treated as instructions by either side. The pathway is plausible in default pairings, though not proven to be raw web-content parsing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, injected instructions in files can influence downstream tool use.",
+        "IF either agent treats file contents as trusted prompts, attacker-controlled text can steer actions."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Add a manual review step before either agent consumes the other's output files.",
+        "Prefix exchanged files with a fixed schema and reject free-form instructions.",
+        "Disable automatic ingestion of newly written files.",
+        "requires-engineering: add provenance tagging and content filtering between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Both agents can read and write filesystem content, and Claude Code runs as the invoking user with broad network egress while handling git credentials and API keys. AutoGen also handles model-provider API keys and can access configured working directories. In a shared workspace, sensitive files can flow from one agent into the other and then out over networked model/API calls, creating a realistic exfiltration path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace containing secrets or regulated data, either agent can read them.",
+        "IF Claude Code sends context to api.anthropic.com, workspace contents may leave the host.",
+        "IF AutoGen is configured with a model provider API key, file contents can be forwarded to that provider."
+      ],
+      "mitigations": [
+        "Use separate, non-overlapping working directories.",
+        "Remove secrets from shared repos before running either agent.",
+        "Restrict network egress for the session.",
+        "Rotate any credentials exposed in the workspace.",
+        "requires-engineering: enforce per-agent data-loss-prevention and redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Claude Code additionally modifies git state, while AutoGen can also write files in developer-defined shared state. That combination creates a direct race on the same mutable resources, and the rubric flags same-dir filesystem and git mutation without locks as high risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, concurrent edits can overwrite each other.",
+        "IF AutoGen is configured with shared state, it can race with Claude Code on files and subprocess side effects.",
+        "IF Claude Code commits while AutoGen is still writing, repository state can become inconsistent."
+      ],
+      "mitigations": [
+        "Run each agent in its own clone or branch.",
+        "Serialize write access with a lock file.",
+        "Disable git writes for one agent during the other's run.",
+        "Use read-only mounts for shared inputs.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen is a multi-agent orchestration framework that can emit tool-driven outputs, and Claude Code is a coding agent that can act on repo files and git state. If Claude Code consumes AutoGen-produced artifacts as authoritative, errors can cascade into code changes or commits without a verification step. The interaction is documented only at the profile level, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Claude Code uses AutoGen output as a source of truth, incorrect facts can propagate into actions.",
+        "IF AutoGen emits malformed instructions or code, Claude Code may apply them to the repository.",
+        "IF no human verification step exists between the agents, errors can reach git history."
+      ],
+      "mitigations": [
+        "Require human review before any commit or deployment.",
+        "Add a validation script between agents.",
+        "Mark AutoGen outputs as untrusted by default.",
+        "Limit Claude Code to read-only mode until outputs are checked.",
+        "requires-engineering: add schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles touch files and secrets, but only Claude Code explicitly handles git credentials and runs as the invoking user on host, while AutoGen handles model-provider API keys and configurable working directories. The profiles do not document residency or certification mismatches, so the main compliance concern is retention and secret handling differences on shared data classes rather than a specific regulatory breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, both agents may retain it in logs or outputs.",
+        "IF git credentials or API keys are present in files, they can be exposed during processing.",
+        "IF organizational policy requires strict host isolation, Claude Code's host execution can violate it."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Purge logs and transcripts after each run.",
+        "Store credentials outside the repo.",
+        "Run only one agent on regulated projects.",
+        "requires-engineering: align retention and residency controls across both tools."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:13ecd999903ab2eef6e546737c4bd42926360d042878016be6666f96c49b395b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
