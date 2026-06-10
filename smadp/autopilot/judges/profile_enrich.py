@@ -72,6 +72,15 @@ class ProfileEnrichmentJudge:
         )
         result = asyncio.run(self.client.extract_profile(payload))
         enriched = dict(result.tool_input)
+        # OpenAI function-calling sometimes emits {"capabilities": {"network_egress": null}}
+        # for fields the README doesn't clarify. null bypasses the enum check
+        # in the tool schema but then fails Pydantic's Literal validation on
+        # load. Drop None-valued keys so the schema's defaults (network_egress
+        # = "none", boolean caps = False) apply instead.
+        for sub in ("capabilities", "io_surfaces", "permissions_requested", "sandboxing"):
+            block = enriched.get(sub)
+            if isinstance(block, dict):
+                enriched[sub] = {k: v for k, v in block.items() if v is not None}
         enriched["evidence_level"] = "docs-only"
         if "onexus" in stub:
             enriched["onexus"] = stub["onexus"]
