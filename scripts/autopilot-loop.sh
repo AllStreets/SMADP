@@ -45,6 +45,13 @@ smadp autopilot scaffold-tick --batch-size 10
 # state after this tick's writes. Single-file rewrite, ~50ms, no LLM cost.
 smadp autopilot daily-report
 
+# Stats sync: keep the hardcoded counts in README.md and the banner SVG in
+# sync with actual catalog/ contents (profile / verdict / sandbox-validated /
+# adapter counts). Idempotent — only rewrites a file when its number changed,
+# so the git_sync step below has nothing to commit on quiet ticks.
+python3 "$REPO_ROOT/scripts/update-stats.py" \
+  >>"$REPO_ROOT/state/autopilot.loop.stdout.log" 2>&1 || true
+
 # ----------------------------------------------------------------------------
 # GitHub sync. Push any new pending verdicts, operator approvals (pending →
 # verdicts moves), rejections, and the regenerated daily report so the live
