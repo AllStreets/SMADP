@@ -238,7 +238,9 @@ Chains live under `catalog/chains/`. Three richly-authored examples ship today, 
 | [Plan → Edit → Review](catalog/chains/c_code-review-loop.json) | loop | 0.49 | **C** — all three nodes hold filesystem + git write; no second pair of eyes |
 | [Orchestrator · fan-out · merge](catalog/chains/c_orchestrator-fanout-merge.json) | star | 0.55 | **D** — fan-out errors compound at the merge step; three confident-wrong workers beat one careful-right one |
 
-New chains can be authored from [`/chains`](https://allstreets.github.io/SMADP/chains/) in the UI — three required fields (name, your username, agents), a topology pill, and one submit. Edges, channels, and roles are derived from topology + participant order. Submissions land in `catalog/pending/` for operator review before they appear in the [library](https://allstreets.github.io/SMADP/chains/library/).
+New chains can be authored from [`/chains`](https://allstreets.github.io/SMADP/chains/) in the UI — three required fields (name, your username, agents), a topology pill, and one submit. Agent picker is a search box over the live catalog (matches name, slug, vendor, category, or capability keyword like `shell` or `browser`); edges, channels, and roles are derived from topology + participant order. Submissions land in `catalog/pending/` for operator review before they appear in the [library](https://allstreets.github.io/SMADP/chains/library/).
+
+Each chain detail page mirrors the structure of a pair verdict — composite score, worst-risk callout, per-risk sub-verdicts with rationale + profile-field citations + safe-under conditions + mitigations, framework mappings, and a reproducibility block. Two chain-specific additions: an **interactive topology graph** (trackpad scroll or pinch to zoom, click `revert` to reset) and, for every connection in the chain that has a corresponding pair verdict in the catalog, a **direct link into that pair analysis** — so the chain composes from the pairwise evidence rather than restating it.
 
 ---
 
@@ -249,7 +251,7 @@ SMADP is designed to run unattended. Three launchd jobs do the work:
 | Job | Cadence | What it does |
 |---|---|---|
 | **`com.smadp.autopilot.loop`** | every 300s | sandbox tick · docs-only-tick (LLM enrich + pair judge) · scaffold-tick (10 adapters per fire) |
-| **`com.smadp.api`** | KeepAlive | FastAPI backend at `localhost:8000` — site reads workspaces, queue state, refresh tickets from here |
+| **`com.smadp.api`** | KeepAlive | FastAPI backend at `localhost:8000` — site reads queue state, refresh tickets, and live submissions from here |
 | *(planned)* `com.smadp.rebuild` | on `.rebuild-requested` | re-build the Astro site when an approved verdict touches the sentinel |
 
 Hard caps in [`config/autopilot.yaml`](config/autopilot.yaml):
