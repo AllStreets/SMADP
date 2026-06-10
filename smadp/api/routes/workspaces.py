@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict
 
+from smadp.api.auth import require_operator_token
 from smadp.schemas.tenancy import Member, Plan, Role, Workspace
 from smadp.tenancy import store
 
@@ -25,7 +26,12 @@ class AddMemberBody(BaseModel):
     role: Role
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=Workspace)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Workspace,
+    dependencies=[Depends(require_operator_token)],
+)
 def create_workspace(body: CreateWorkspaceBody) -> Workspace:
     return store.create_workspace(name=body.name, plan=body.plan)
 
@@ -43,7 +49,11 @@ def get_workspace(workspace_id: str) -> Workspace:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
-@router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{workspace_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_operator_token)],
+)
 def delete_workspace(workspace_id: str) -> Response:
     try:
         store.delete_workspace(workspace_id)
@@ -56,6 +66,7 @@ def delete_workspace(workspace_id: str) -> Response:
     "/{workspace_id}/members",
     status_code=status.HTTP_201_CREATED,
     response_model=Member,
+    dependencies=[Depends(require_operator_token)],
 )
 def add_member(workspace_id: str, body: AddMemberBody) -> Member:
     # Validate workspace exists first.

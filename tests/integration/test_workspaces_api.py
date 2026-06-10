@@ -15,7 +15,11 @@ from smadp.config import Config
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("SMADP_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)
-    return TestClient(create_app(Config()))
+    # Write endpoints now require an operator token; configure one and send it.
+    monkeypatch.setenv("SMADP_API_TOKEN", "test-operator-token")
+    c = TestClient(create_app(Config()))
+    c.headers.update({"Authorization": "Bearer test-operator-token"})
+    return c
 
 
 def test_create_workspace(client: TestClient):

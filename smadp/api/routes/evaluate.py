@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from itertools import combinations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from smadp.api.auth import require_operator_token
 from smadp.api.models import EvaluatePairResult, EvaluateRequest, EvaluateResponse
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo, NotFoundError
@@ -25,6 +26,7 @@ def _rate_limit(request: Request) -> None:
     "/evaluate",
     response_model=EvaluateResponse,
     summary="Evaluate every pair from a list of agents",
+    dependencies=[Depends(require_operator_token)],
 )
 async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateResponse:
     _rate_limit(request)
@@ -72,13 +74,18 @@ async def evaluate(request: Request, payload: EvaluateRequest) -> EvaluateRespon
                     evidence={},
                     config=cfg,
                 )
-                repo.save_verdict(verdict)
+                # Write to the pending queue, not catalog/verdicts/. API
+                # callers never publish directly to the public catalog; an
+                # operator promotes pending verdicts via `smadp pending
+                # approve`. This keeps the operator gate intact even for an
+                # authenticated (or leaked-token) caller.
+                repo.save_pending_verdict(verdict)
                 chronicle.record(
                     "verdict.generated",
                     by="api",
                     pair=(a, b),
                     verdict_id=verdict.verdict_id,
-                    details={"scenario": payload.scenario},
+                    details={"scenario": payload.scenario, "queue": "pending"},
                 )
             except Exception as exc:
                 results.append(

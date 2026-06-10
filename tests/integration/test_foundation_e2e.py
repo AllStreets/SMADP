@@ -27,11 +27,14 @@ from smadp.transparency import journal
 def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
     monkeypatch.setenv("SMADP_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)
+    # Write endpoints now require an operator token.
+    monkeypatch.setenv("SMADP_API_TOKEN", "test-operator-token")
     return Config()
 
 
 def test_foundation_end_to_end(cfg: Config, tmp_path: Path):
     client = TestClient(create_app(cfg))
+    client.headers.update({"Authorization": "Bearer test-operator-token"})
 
     # 1. Create workspace.
     ws = client.post("/api/workspaces", json={"name": "Acme", "plan": "private"}).json()

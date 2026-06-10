@@ -19,9 +19,13 @@ from smadp.config import Config
 @pytest.fixture()
 def client(tmp_catalog: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("SMADP_CATALOG", str(tmp_catalog))
+    # Write endpoints require an operator token; configure one and send it so
+    # the rate-limit smoke test reaches the handler (GET tests ignore it).
+    monkeypatch.setenv("SMADP_API_TOKEN", "test-operator-token")
     cfg = Config(repo_root=tmp_catalog.parent)
     app = create_app(cfg)
     with TestClient(app) as c:
+        c.headers.update({"Authorization": "Bearer test-operator-token"})
         yield c
 
 
