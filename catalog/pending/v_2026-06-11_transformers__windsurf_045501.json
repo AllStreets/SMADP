@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "transformers",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-11_transformers__windsurf_045501",
+  "generated_at": "2026-06-11T01:58:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.53,
+  "headline": "High risk: shared filesystem and broad egress create dangerous prompt-injection, leakage, and write-conflict pathways between Transformers and Windsurf.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Transformers can read/write files and run browsers, while Windsurf shares state via the local filesystem and can consume workspace files and MCP outputs. That creates a plausible default bridge where attacker-controlled content from one side can be parsed by the other as instructions. The pathway is not provably isolated, but it is not clearly high because no shared MCP provenance gap is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf reads a file produced by Transformers without provenance checks, prompt injection is possible.",
+        "IF either agent treats workspace content as trusted instructions, malicious content can steer tool use."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces.",
+        "Disable auto-execute in Windsurf.",
+        "Use read-only mounts for files passed from Transformers to Windsurf.",
+        "Require manual review of any generated prompts or markdown before reuse.",
+        "requires-engineering: add provenance tagging for inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem read access, and Windsurf explicitly shares state via the local filesystem. Transformers touches multimodal data, so sensitive content can flow into a workspace that Windsurf can read and potentially send through its model proxy or MCP servers. This is a default-configuration leakage path, though not enough evidence for critical because no PHI/financial data class is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the shared workspace, Windsurf can access them.",
+        "IF Windsurf forwards workspace content to its model proxy or MCP servers, data leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive files outside the shared workspace.",
+        "Use separate OS users or containers.",
+        "Disable MCP servers for sessions handling sensitive data.",
+        "Review and redact files before opening them in Windsurf.",
+        "requires-engineering: enforce workspace-level access controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, spawn subprocesses, and use broad network egress; Windsurf also modifies git state. With shared local filesystem state and no locking mechanism described, concurrent edits can corrupt files or git history in default use. The overlap is substantial and can cause irreversible repository damage, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository directory, write conflicts can occur.",
+        "IF both agents modify git state without external locking, history corruption or lost work can occur."
+      ],
+      "mitigations": [
+        "Run each agent in a separate clone.",
+        "Pause one agent before the other writes.",
+        "Use git worktrees for parallel work.",
+        "Commit frequently to reduce conflict windows.",
+        "requires-engineering: add file-locking or transaction coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Windsurf can treat workspace files and MCP outputs as inputs, while Transformers can generate text and code-like artifacts from documents. If Windsurf accepts Transformers\u2019 output as authoritative without verification, errors can cascade into edits or commands. The pair is not documented as having a verification boundary, but there is no evidence of fully autonomous downstream action from Transformers alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf uses Transformers-generated text as facts or instructions without checking sources, errors propagate.",
+        "IF Transformers outputs are pasted into Windsurf for execution, mistaken content can become actions."
+      ],
+      "mitigations": [
+        "Require source links for any factual claims.",
+        "Review generated commands before execution.",
+        "Use a human approval step for file edits.",
+        "Keep Transformers outputs in a separate notes file.",
+        "requires-engineering: add automated verification against original sources."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Transformers is open-source and Windsurf is closed-source, but the profiles do not specify a concrete residency, certification, or retention mismatch for a regulated data class. The only clear compliance-relevant issue is that Windsurf handles model provider keys and runs as a user process, which is not enough by itself to establish a breach. The other agent is cited because the pairwise deployment context matters, but the evidence remains limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed in Windsurf without an approved DPA or residency setting, compliance risk increases.",
+        "IF secrets are stored in workspace files, retention and access controls may be violated."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Store provider keys in a secret manager.",
+        "Review retention settings before use.",
+        "Separate regulated workloads from general coding sessions.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.7.4",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:2162a725617a6729a53c554d7e3850994b9c486d3ab649f41b28d36003606671",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
