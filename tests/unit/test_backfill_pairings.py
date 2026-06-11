@@ -47,9 +47,17 @@ def test_every_curated_slug_is_covered() -> None:
             continue
         if data.get("manual") is True:
             curated_slugs.add(path.stem)
-    # Legacy _unverified seeds still count as catalog members PAIRS authored
-    # against (this dir predates the autopilot pivot and is curated by hand).
+    # Hand-curated _unverified seeds count as catalog members PAIRS authored
+    # against. Auto-synced seeds from the ONEXUS-Agents bridge also land here
+    # but are NOT editorial — they carry an `onexus` provenance block and are
+    # paired by the autopilot's PairGatePlanner once promoted, never by PAIRS.
     for path in (PROFILES / "_unverified").glob("*.json"):
+        try:
+            data = json.loads(path.read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (data.get("onexus") or {}).get("sourced_from") == "ONEXUS-Agents":
+            continue
         curated_slugs.add(path.stem)
 
     pair_slugs = {s for ab in PAIRS for s in ab}
