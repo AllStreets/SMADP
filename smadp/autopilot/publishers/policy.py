@@ -8,16 +8,35 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-# Capability/IO blocks the Profile schema expects to be objects (never null).
-# An LLM extraction sometimes emits them as null or the wrong type; left as-is
-# they fail `smadp lint` and redden CI on every autopilot push.
-_OBJECT_BLOCKS = (
-    "capabilities",
-    "io_surfaces",
-    "permissions_requested",
-    "sandboxing",
-    "concurrency_model",
-)
+# Allowed keys for each capability/IO block the Profile schema expects to be
+# an object. The schema uses extra="forbid", so an off-vocabulary key (e.g.
+# calls_apis under capabilities) is rejected. An LLM extraction emits these
+# blocks as null, the wrong type, or with off-schema keys; left as-is they
+# fail `smadp lint` and redden CI on every autopilot push. Mirrors the
+# sub-models in smadp/schemas/profile.py.
+_BLOCK_FIELDS: dict[str, frozenset[str]] = {
+    "capabilities": frozenset(
+        {
+            "execute_shell",
+            "read_filesystem",
+            "write_filesystem",
+            "network_egress",
+            "spawn_subprocesses",
+            "use_mcp",
+            "modify_git_state",
+            "install_packages",
+            "run_browsers",
+        }
+    ),
+    "io_surfaces": frozenset(
+        {"stdin_stdout", "files", "clipboard", "screen_capture", "audio", "calls_apis"}
+    ),
+    "permissions_requested": frozenset({"oauth_scopes", "secrets_handled", "elevated_privileges"}),
+    "sandboxing": frozenset({"self_isolation", "subagent_model", "tool_use_pattern"}),
+    "concurrency_model": frozenset(
+        {"session_scope", "shared_state_with_other_instances", "supports_multiple_instances"}
+    ),
+}
 _NETWORK_EGRESS_ENUM = {"none", "allowlisted", "vendor-only", "broad"}
 
 
@@ -25,26 +44,36 @@ def normalize_profile_blocks(profile: dict[str, Any]) -> dict[str, Any]:
     """Coerce the capability/IO blocks of an enriched profile to schema-valid
     shapes in place.
 
-    - Any of the required object blocks that is null / missing / not a dict
-      becomes ``{}`` so the schema defaults apply.
-    - ``capabilities.network_egress`` emitted as a bool (a stale shape the LLM
-      occasionally returns) maps to the enum: True -> "broad", False -> "none";
-      any other off-vocabulary value falls back to "none".
+    - Any required object block that is null / missing / not a dict becomes
+      ``{}`` so the schema defaults apply.
+    - Within each block, drop keys the schema doesn't define (the schema uses
+      ``extra="forbid"``, so an off-vocabulary key like ``calls_apis`` under
+      ``capabilities`` is rejected). Known keys — including null-valued ones the
+      lint tolerates — are preserved, so valid profiles aren't churned.
+    - ``capabilities.network_egress`` emitted as a bool maps to the enum
+      (True -> "broad", False -> "none"); any other off-vocabulary value falls
+      back to "none".
 
-    Deliberately does NOT strip null sub-values inside otherwise-valid blocks —
-    the lint tolerates those, so touching them would only churn the catalog.
     Only enriched profiles routed through the publisher are affected; the
     partial ``unverified-profile`` stubs use a different path and are untouched.
     """
-    for block in _OBJECT_BLOCKS:
-        if not isinstance(profile.get(block), dict):
+    for block, allowed in _BLOCK_FIELDS.items():
+        value = profile.get(block)
+        if isinstance(value, dict):
+            profile[block] = {k: v for k, v in value.items() if k in allowed}
+        elif block == "io_surfaces":
+            # The only block the schema marks required-present; null/missing
+            # would fail lint. Others may stay null (the lint tolerates it),
+            # so we leave them to avoid churning valid profiles.
             profile[block] = {}
 
-    egress = profile["capabilities"].get("network_egress")
-    if isinstance(egress, bool):
-        profile["capabilities"]["network_egress"] = "broad" if egress else "none"
-    elif egress is not None and egress not in _NETWORK_EGRESS_ENUM:
-        profile["capabilities"]["network_egress"] = "none"
+    caps = profile.get("capabilities")
+    if isinstance(caps, dict):
+        egress = caps.get("network_egress")
+        if isinstance(egress, bool):
+            caps["network_egress"] = "broad" if egress else "none"
+        elif egress is not None and egress not in _NETWORK_EGRESS_ENUM:
+            caps["network_egress"] = "none"
 
     return profile
 

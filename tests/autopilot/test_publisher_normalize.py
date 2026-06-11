@@ -8,7 +8,9 @@ from pathlib import Path
 from smadp.autopilot.publishers.policy import PolicyPublisher, normalize_profile_blocks
 
 
-def test_null_blocks_become_empty_objects():
+def test_required_io_surfaces_filled_others_left_null():
+    # io_surfaces is schema-required -> null becomes {}. The other blocks may
+    # stay null (the lint tolerates them) so valid profiles aren't churned.
     p = {
         "slug": "x",
         "capabilities": {"network_egress": "none"},
@@ -18,8 +20,24 @@ def test_null_blocks_become_empty_objects():
         "concurrency_model": None,
     }
     normalize_profile_blocks(p)
-    for block in ("io_surfaces", "permissions_requested", "sandboxing", "concurrency_model"):
-        assert p[block] == {}, block
+    assert p["io_surfaces"] == {}
+    for block in ("permissions_requested", "sandboxing", "concurrency_model"):
+        assert p[block] is None, block
+
+
+def test_unknown_keys_are_stripped():
+    # An off-schema key under a block (e.g. calls_apis belongs to io_surfaces,
+    # not capabilities) is rejected by the schema's extra="forbid".
+    p = {
+        "slug": "x",
+        "capabilities": {"network_egress": "none", "use_mcp": True, "calls_apis": ["x"]},
+        "io_surfaces": {"files": ["a"], "bogus": 1},
+    }
+    normalize_profile_blocks(p)
+    assert "calls_apis" not in p["capabilities"]
+    assert p["capabilities"]["use_mcp"] is True
+    assert "bogus" not in p["io_surfaces"]
+    assert p["io_surfaces"]["files"] == ["a"]
 
 
 def test_boolean_network_egress_maps_to_enum():
