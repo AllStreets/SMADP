@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_cline__transformers_68e303",
+  "generated_at": "2026-06-11T01:25:30Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.56,
+  "headline": "High prompt-injection and data-leakage risk from shared VS Code filesystem and broad network/tool access; Cline can feed untrusted workspace content into transformers pipelines.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Cline runs in a VS Code workspace with shared state via filesystem and can use MCP, while transformers reads files and processes Python/model/example inputs. That creates a direct path for attacker-controlled workspace content from agent_a to influence agent_b as instructions or code. The pair lacks provenance tracking or isolation in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes workspace files produced by agent_a without provenance checks",
+        "IF agent_a writes prompt-like content into shared workspace files",
+        "IF MCP content is bridged into the same workspace"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable MCP for untrusted content paths",
+        "Add provenance tags to files before B reads them",
+        "Require manual review of any agent_a-generated instructions",
+        "requires-engineering: enforce filesystem isolation or sandbox mounts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the same workspace files, and both have broad network egress. Cline touches source code and browser screenshots; transformers touches text, audio, images, video, and multimodal data. Shared workspace plus file-reading means sensitive content can flow from one agent into the other\u2019s outputs, though the profiles do not show automatic third-party exfiltration beyond configured APIs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the shared workspace",
+        "IF either agent serializes file contents into prompts or outputs",
+        "IF browser screenshots or multimodal inputs contain secrets"
+      ],
+      "mitigations": [
+        "Use separate least-privilege workspaces",
+        "Redact secrets before either agent reads files",
+        "Restrict network egress to approved endpoints",
+        "Review outputs before sharing externally",
+        "requires-engineering: add DLP scanning on workspace reads"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Cline also modifies git state, while transformers can operate on Python/model files; concurrent writes to the same workspace or repo can corrupt state or overwrite each other. The shared filesystem concurrency model makes this conflict plausible by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or git repo",
+        "IF either agent edits files without external locking",
+        "IF concurrent package installs or subprocesses touch shared state"
+      ],
+      "mitigations": [
+        "Assign disjoint directories per agent",
+        "Pause one agent during the other's write phase",
+        "Use git locks or serialized commits",
+        "Limit one agent to read-only mode during analysis",
+        "requires-engineering: add workspace-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cline can generate code, browser-derived content, and tool outputs that transformers may ingest through files or pipelines. The profiles do not show a verification gate between them, so B may treat A\u2019s output as authoritative. However, B is a document-processing framework rather than an autonomous action agent, so the blast radius is lower than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a-generated files as ground truth",
+        "IF agent_a writes unverified facts into shared artifacts",
+        "IF downstream scripts act on B's processed outputs"
+      ],
+      "mitigations": [
+        "Insert a verification step before B consumes A outputs",
+        "Mark A-generated files as untrusted",
+        "Require citations or source links for factual claims",
+        "Keep A and B outputs in separate folders",
+        "requires-engineering: add schema validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented in either profile, so a compliance breach is not established. The only concrete compliance-relevant fact is that Cline handles model provider API keys and browser screenshots, while transformers is a general open-source framework with no stated compliance controls. Uncertainty stays low because the mismatch is not evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through either agent without a separate policy",
+        "IF screenshots or secrets are stored in a jurisdictionally restricted workspace"
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workspace",
+        "Document retention and deletion rules",
+        "Store secrets outside agent-accessible files",
+        "Review vendor compliance claims before deployment",
+        "requires-engineering: add residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
