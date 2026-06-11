@@ -105,7 +105,15 @@ class ProfileEnrichmentJudge:
             enriched["vendor"] = {"type": "org", "handle": owner, "url": None}
         enriched.setdefault("first_seen_at", now_iso)
         enriched["last_refreshed_at"] = now_iso
-        enriched.setdefault("pairings", [])
+        # Preserve the stub's editorial pairings through enrichment. The LLM
+        # extraction has no knowledge of the catalog's pairing graph, so taking
+        # its (usually empty) pairings would silently drop curated pairings and
+        # break the catalog's pairing-symmetry invariant.
+        stub_pairings = stub.get("pairings")
+        if stub_pairings:
+            enriched["pairings"] = stub_pairings
+        else:
+            enriched.setdefault("pairings", [])
         return JudgeResult(
             verdict=enriched,
             cost_usd=self.cost_per_call_usd,

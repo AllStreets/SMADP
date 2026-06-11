@@ -96,6 +96,18 @@ git_sync() {
     return 0
   fi
 
+  # Lint gate: never push a catalog that fails `smadp lint`. The enrichment
+  # and pairing logic can intermittently emit schema- or symmetry-invalid
+  # entries; pushing them reddens CI on every sync. If this tick produced an
+  # invalid catalog, revert ITS writes (the gated paths) and skip the push —
+  # the next tick retries from a clean, green tree. This keeps main CI green
+  # regardless of which data-quality bug surfaces upstream.
+  if ! "$REPO_ROOT/.venv/bin/smadp" lint --catalog catalog >/dev/null 2>&1; then
+    echo "[git-sync] catalog fails lint; reverting this tick's writes, skipping push" >>"$log"
+    git checkout -- "${sync_paths[@]}" >>"$log" 2>&1 || true
+    return 0
+  fi
+
   # Stage just the gated catalog dirs and report/.
   if ! git add -- "${sync_paths[@]}" >>"$log" 2>&1; then
     echo "[git-sync] git add failed; skipping push this tick" >>"$log"
