@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_langgraph__transformers_985878",
+  "generated_at": "2026-06-11T02:04:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.665,
+  "headline": "High-risk shared filesystem and broad egress create default data-leak and cascading-error exposure; prompt-injection risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can read/write application-defined files and has no self-isolation; transformers also reads/writes files and processes model/example inputs. If A passes untrusted content into B through shared files or stdout, B may treat it as trusted instructions. The pathway is plausible in default orchestration, though not inherently automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes attacker-controlled text into a file that agent_b later parses as instructions",
+        "IF the two agents share a workspace or stdout/stderr bridge without provenance tagging"
+      ],
+      "mitigations": [
+        "Separate workspaces for A and B",
+        "Prefix all inter-agent payloads with a strict schema marker",
+        "Reject instruction-like text from B unless signed by A",
+        "Disable automatic parsing of free-form file contents",
+        "requires-engineering: add provenance tracking to the handoff layer"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Both agents have broad network egress and filesystem access, and A explicitly handles model provider API keys while B touches multimodal data. In a shared workspace, either can read the other's files and exfiltrate sensitive contents to external services by default. The blast radius includes secrets and user data, so this is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b share any writable directory",
+        "IF either agent is allowed to send file contents to external APIs or hubs"
+      ],
+      "mitigations": [
+        "Use separate OS users and directories",
+        "Mount sensitive inputs read-only",
+        "Block outbound network for the agent that should not exfiltrate",
+        "Store secrets outside shared workspaces",
+        "requires-engineering: add DLP filtering on inter-agent file transfers"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, spawn subprocesses, and use broad network egress. LangGraph also supports multiple instances via a shared checkpointer store, while transformers can run multiple instances too. Without explicit locking, concurrent writes to shared files or state can corrupt outputs or overwrite each other's work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or checkpointer-backed state",
+        "IF no external lock or transaction boundary serializes writes"
+      ],
+      "mitigations": [
+        "Assign disjoint output directories",
+        "Use file locks around shared artifacts",
+        "Serialize write phases in the orchestrator",
+        "Make one agent read-only",
+        "requires-engineering: add transactional state coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LangGraph is an orchestration framework that can emit state or tool outputs, and transformers commonly consumes files or scripts as pipeline inputs. If B treats A's output as authoritative without verification, errors or hallucinated facts can propagate into downstream processing. The pair does not inherently force this, but the default handoff pattern makes it plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a outputs without validation",
+        "IF A-generated state is used as input to B's pipeline or scripts"
+      ],
+      "mitigations": [
+        "Insert a validation step between A and B",
+        "Require schema checks on A's outputs",
+        "Have B re-derive critical facts from source data",
+        "Log and diff A outputs before downstream use",
+        "requires-engineering: add automated consistency checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A touches graph state and model provider API keys, while B processes multimodal data and can call Hugging Face Hub or transformers serve. The profiles do not specify residency or retention controls, so a compliance mismatch is plausible if regulated data flows through the pair. Uncertainty pushes this above low because the data classes and external calls are broad.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is processed through either agent",
+        "IF retention or residency requirements differ between the two deployment environments"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair",
+        "Document retention settings for both agents",
+        "Disable external API calls for regulated workloads",
+        "Review data residency before deployment",
+        "requires-engineering: implement policy-based routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
