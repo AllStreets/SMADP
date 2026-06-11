@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_crewai__transformers_8377b1",
+  "generated_at": "2026-06-11T01:36:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk shared filesystem and broad egress create default data-leak and cascading-error exposure; prompt-injection risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses stdin/stdout, while transformers can read files and process example scripts/model files. That creates a plausible file-based injection bridge if CrewAI writes attacker-controlled content that transformers later treats as trusted input. No MCP or clipboard bridge is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted text into a shared working directory and transformers later parses it as instructions or prompts, injection is possible.",
+        "IF the operator routes stdout/stderr from CrewAI into transformers input without sanitization, the bridge becomes exploitable."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Treat all file and stdout content as untrusted.",
+        "Add a strict parser/allowlist for any text passed from CrewAI to transformers.",
+        "Disable automatic ingestion of generated files.",
+        "requires-engineering: add provenance tagging between producer and consumer."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "CrewAI touches developer-passed crew data and has broad network egress; transformers can read and write files and also has broad egress. In a shared workspace, sensitive inputs can flow from CrewAI into files that transformers reads or uploads, and either agent can exfiltrate via network by default. The blast radius includes secrets and work products, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents run in the same workspace, files written by one can be read by the other.",
+        "IF either agent is configured to send file contents to a remote model or hub, sensitive data can leave the host."
+      ],
+      "mitigations": [
+        "Use separate workspaces with OS permissions.",
+        "Block outbound network for one or both agents during sensitive runs.",
+        "Store secrets outside the shared directory.",
+        "Review and redact files before either agent reads them.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. CrewAI explicitly has no default self-isolation, so concurrent writes to the same directory can race and corrupt files or state. Transformers also writes model/example files. The overlap is broad enough that default coordination is unsafe.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, concurrent writes can overwrite each other.",
+        "IF either agent mutates shared model, cache, or script files without locking, state corruption can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer at a time.",
+        "Use file locks for shared artifacts.",
+        "Make shared paths read-only where possible.",
+        "requires-engineering: add transactional coordination for mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI is a multi-agent orchestration framework with shared memory, and transformers is a document-processing framework that can consume files and scripts. If CrewAI-generated outputs are fed into transformers without verification, transformers may render or act on incorrect facts at scale. Because both can execute tools or scripts, a bad upstream output can cascade into downstream actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI output is treated as authoritative input by transformers, errors propagate downstream.",
+        "IF transformers uses CrewAI-produced files or text to drive scripts or pipelines, the cascade can affect multiple work products."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Validate CrewAI outputs against schemas.",
+        "Require transformers to cross-check critical claims.",
+        "Limit downstream actions to dry-run mode.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, while transformers touches text, audio, images, video, and multimodal data. The profiles do not specify residency or certifications, so a concrete jurisdictional breach cannot be proven. However, the shared handling of potentially sensitive data with broad egress and unspecified retention makes a compliance mismatch plausible, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent without a documented DPA or retention policy, compliance obligations may be violated.",
+        "IF EU or PHI data is routed through remote inference or hub calls, residency or sector rules may be breached."
+      ],
+      "mitigations": [
+        "Classify data before use.",
+        "Keep regulated data out of both agents.",
+        "Document retention and deletion handling.",
+        "Disable remote calls for regulated runs.",
+        "requires-engineering: obtain and verify vendor compliance attestations."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
