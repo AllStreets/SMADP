@@ -23,51 +23,61 @@ the operator merges without inspecting, and that PR will fail the
 
 ---
 
-## ⚠️ Known gap: API write endpoints have no auth
+## Resolved 2026-06-10: API write endpoints now require an operator token
 
-**Status: flagged, fix deferred.**
+**Status: fixed** (commit on `chore/security-hardening`).
 
-The FastAPI backend at `smadp serve` (default `127.0.0.1:8000`) exposes
-write endpoints with only rate-limiting:
+Every write endpoint on the FastAPI backend (`smadp serve`) now depends on
+`smadp.api.auth.require_operator_token`. Read endpoints (the public catalog,
+search, chronicle, etc.) stay open.
 
-| Endpoint | What it can write |
-|---|---|
-| `POST /api/submissions` | Creates a profile under `catalog/profiles/_unverified/` |
-| `POST /api/evaluate` | Calls `smadp.analyzer` and persists verdicts via `repo.save_verdict()` directly to `catalog/verdicts/` |
-| `POST /api/chains` | Creates a chain definition under `catalog/chains/` |
-| `POST /api/workspaces` | Creates a workspace (per-tenant state, not public catalog) |
+| Endpoint | Guard | Write target |
+|---|---|---|
+| `POST /api/agents` | operator token | `catalog/profiles/_unverified/` |
+| `POST /api/evaluate` | operator token | **`catalog/pending/`** (was `catalog/verdicts/`) via `save_pending_verdict` |
+| `POST /api/chains`, `DELETE /api/chains/{id}` | operator token | `catalog/chains/` |
+| `POST /api/sandbox/runs` | operator token | sandbox queue |
+| `POST /api/workspaces`, `DELETE /api/workspaces/{id}`, `POST /api/workspaces/{id}/members` | operator token | per-tenant state |
 
-**Today this is OK because:**
+Two-layer defense now holds even if the token leaks: `POST /api/evaluate`
+writes to `catalog/pending/`, so a verdict still cannot reach the public
+catalog without the operator running `smadp pending approve`.
 
-- The launchd plist at `~/Library/LaunchAgents/com.smadp.api.plist` binds
-  the server to `127.0.0.1:8000`, which is loopback only and not reachable
-  from off-host.
-- Rate limiting (`smadp.api.server.TokenBucket`, 60 req/min/IP) caps abuse
-  even on loopback.
+**Behaviour:**
 
-**Today this is fragile because:**
+- `SMADP_API_TOKEN` unset → write endpoints return **503** (fail-safe: the
+  server refuses writes it cannot authenticate). Reads are unaffected.
+- Token set, request missing/incorrect `Authorization: Bearer <token>` →
+  **401** (constant-time compared).
 
-- Anyone with shell access to the host can call the endpoints.
-- If the API is ever proxied publicly (e.g. via Cloudflare Tunnel, nginx,
-  or simply binding to `0.0.0.0`), all those endpoints become world-writable
-  without any further code change.
-- In particular, `POST /api/evaluate` writes a verdict directly to
-  `catalog/verdicts/`, bypassing the operator gate.
+The autopilot loop does **not** use the HTTP API (it calls the CLI/Python
+directly), so this gate does not affect unattended research.
 
-**The fix (deferred):**
+Follow-up (not yet done): `POST /api/chains` still writes to
+`catalog/chains/` rather than a pending-chain queue; there is no pending
+infrastructure for chains today, so it relies on the token gate alone.
 
-1. Add a bearer-token check on every non-read endpoint
-   (`require_operator_token(request)` dependency, secret loaded from
-   `~/.smadp/api-token` or a launchd `EnvironmentVariables` entry).
-2. Re-route `POST /api/evaluate` and similar to write into
-   `catalog/pending/` (same path autopilot uses) instead of
-   `catalog/verdicts/`. So even if the auth token leaks, the operator
-   gate still applies.
-3. Document the token-rotation flow.
+### Token rotation
 
-Until then: **do not expose the API publicly**. Keep the launchd plist's
-`127.0.0.1` binding. If you need the API reachable from a LAN device for
-testing, prefer SSH port-forwarding over re-binding.
+The operator token lives at `~/.smadp/api-token` (mode 600), never in the
+repo or in `.env`.
+
+```bash
+# generate
+umask 077
+python -c "import secrets; print(secrets.token_urlsafe(32))" > ~/.smadp/api-token
+chmod 600 ~/.smadp/api-token
+
+# the launchd plist injects it (see scripts/launchd/com.smadp.api.plist:
+# EnvironmentVariables loads SMADP_API_TOKEN from the file via the wrapper).
+# rotate: regenerate the file, then reload the service:
+launchctl unload ~/Library/LaunchAgents/com.smadp.api.plist
+launchctl load   ~/Library/LaunchAgents/com.smadp.api.plist
+```
+
+Clients (curl, scripts) send `Authorization: Bearer $(cat ~/.smadp/api-token)`.
+Never commit the token; never put it in `.env` (which is sourced into the
+autopilot loop's environment).
 
 ---
 

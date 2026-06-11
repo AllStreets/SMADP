@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
+from smadp.api.auth import require_operator_token
 from smadp.api.models import JobStatus, SubmitAgentRequest
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo
@@ -76,6 +77,7 @@ def _run_profile_job(
     response_model=JobStatus,
     summary="Submit an agent for unverified profiling",
     status_code=202,
+    dependencies=[Depends(require_operator_token)],
 )
 async def submit_agent(
     request: Request,

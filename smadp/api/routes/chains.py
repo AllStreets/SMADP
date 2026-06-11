@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from smadp.api.auth import require_operator_token
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo, NotFoundError
 from smadp.schemas.chain import Chain
@@ -45,7 +46,12 @@ async def get_chain(request: Request, chain_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, summary="Create a new chain")
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new chain",
+    dependencies=[Depends(require_operator_token)],
+)
 async def create_chain(request: Request, body: Chain) -> dict[str, Any]:
     _rate_limit(request)
     cfg = request.app.state.config
@@ -75,7 +81,11 @@ async def create_chain(request: Request, body: Chain) -> dict[str, Any]:
     return _to_dump(chain)
 
 
-@router.delete("/{chain_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{chain_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_operator_token)],
+)
 async def delete_chain(request: Request, chain_id: str) -> Response:
     _rate_limit(request)
     cfg = request.app.state.config

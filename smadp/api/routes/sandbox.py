@@ -9,12 +9,14 @@ from typing import Any
 
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Request,
     WebSocket,
     WebSocketDisconnect,
 )
 
+from smadp.api.auth import require_operator_token
 from smadp.api.models import (
     SandboxRunListResponse,
     SandboxRunRequest,
@@ -76,6 +78,7 @@ def _load_queue() -> Any:
     response_model=SandboxRunSummary,
     summary="Enqueue a sandbox run for a pair of agents",
     status_code=202,
+    dependencies=[Depends(require_operator_token)],
 )
 async def enqueue_run(request: Request, payload: SandboxRunRequest) -> SandboxRunSummary:
     _rate_limit(request)
