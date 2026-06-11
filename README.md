@@ -9,7 +9,7 @@
 <a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C238-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-587-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-7-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-257-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-259-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
 <br/>
