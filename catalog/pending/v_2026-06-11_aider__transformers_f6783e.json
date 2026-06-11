@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_aider__transformers_f6783e",
+  "generated_at": "2026-06-11T02:09:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk shared git/workspace interaction: Aider can overwrite repo state while transformers can read/write files and run code, creating medium prompt-injection, leakage, and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files and has no self-isolation, while transformers can read/write files and run subprocesses. If Aider ingests content produced by transformers from the shared repo, attacker-controlled text can be treated as instructions. This is not proven by docs, so uncertainty pushes to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF agent_b writes instruction-like content into files that agent_a later reads from the shared repo, prompt injection is plausible.",
+        "IF either agent treats repository text as trusted instructions, the attack path is active."
+      ],
+      "mitigations": [
+        "Restrict both agents to separate branches or repos.",
+        "Add a manual review step before Aider applies file-derived instructions.",
+        "Use file allowlists for inputs consumed by either agent.",
+        "Disable automatic ingestion of generated text as prompts where possible.",
+        "requires-engineering: add provenance tagging for repo content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history and can egress broadly; transformers reads/writes files and can call Hugging Face Hub or transformers serve. In a shared workspace, sensitive code or history can flow from Aider into transformers outputs or external API calls. The profiles do not prove default exfiltration, so medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace, file contents can be exposed to both.",
+        "IF agent_b sends processed text to a remote API, repository data may leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive repos off shared workspaces.",
+        "Run transformers with network disabled for sensitive jobs.",
+        "Limit Aider to non-sensitive branches.",
+        "Review outbound destinations for both agents.",
+        "requires-engineering: enforce workspace-level access controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider has write_filesystem, modify_git_state, and shared_state_with_other_instances via a shared git repo; transformers also has write_filesystem and read_filesystem. That creates a direct write-write conflict on the same mutable resources, and git-state races can corrupt work or overwrite changes. The overlap is explicit in both profiles, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository path, concurrent edits can conflict.",
+        "IF either agent commits or rewrites files without coordination, git state can be corrupted or lost."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working tree.",
+        "Serialize writes with a lock or queue.",
+        "Require manual merge review before commits.",
+        "Pause one agent while the other is editing shared files.",
+        "requires-engineering: add optimistic concurrency control around git operations."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider produces git edits and transformers can consume files or generated text; if transformers treats Aider output as authoritative, errors can cascade into downstream processing or actions. There is no documented verification barrier in either profile, but no direct autonomous action chain is proven, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF transformers uses Aider-generated files or stdout as authoritative input, errors can propagate.",
+        "IF Aider emits incorrect code or metadata that transformers later processes, downstream outputs may be wrong."
+      ],
+      "mitigations": [
+        "Insert a human verification step between agents.",
+        "Require schema validation on Aider outputs before transformers consumes them.",
+        "Compare outputs against source-of-truth files.",
+        "Limit transformers to read-only analysis of Aider artifacts.",
+        "requires-engineering: add automated consistency checks between stages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider explicitly handles source code, git history, and model provider API keys via env vars; transformers touches text, audio, images, video, and multimodal data. No residency or regulated-data mismatch is documented, so only a low compliance concern is supportable. The other agent is cited because the risk is about cross-agent handling of the same data classes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace, both agents may process it without documented controls.",
+        "IF secrets are stored in files that transformers reads, retention and access policies may be violated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo.",
+        "Store secrets only in environment variables.",
+        "Review retention settings for any remote API calls.",
+        "Use separate workspaces for sensitive and non-sensitive data.",
+        "requires-engineering: document data-handling and residency controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

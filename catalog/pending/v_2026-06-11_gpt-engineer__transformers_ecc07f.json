@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_gpt-engineer__transformers_ecc07f",
+  "generated_at": "2026-06-11T02:09:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-workspace prompt injection and cascading errors; data leakage and capability conflicts are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a writes and reads the project directory by default, and agent_b also reads/writes files and runs browsers. Because the pair shares a workspace via the project directory, content from one can be ingested by the other as trusted input. This is not provably blocked, but it is not a shared MCP channel, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory, injected instructions in files can influence the other agent.",
+        "IF agent_b parses generated files or web content as instructions, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Use separate project directories for each agent.",
+        "Add a manual review step before either agent consumes the other's files.",
+        "Prefix untrusted file content with explicit non-instruction markers.",
+        "Disable browser-driven ingestion for agent_b during handoff.",
+        "requires-engineering: add provenance tagging to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a handles generated source code and has broad network egress; agent_b touches text, images, audio, video, and multimodal data and also has broad egress. The shared project directory creates a plausible path for sensitive artifacts to move between them, and either agent can upload file contents to external model services. This is a default-path concern, not merely unusual configuration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the shared project directory, both agents can read them.",
+        "IF either agent forwards file contents to its configured backend, those contents may leave the workspace."
+      ],
+      "mitigations": [
+        "Keep sensitive files out of the shared project directory.",
+        "Use separate credentials and model endpoints for each agent.",
+        "Review outbound requests before execution.",
+        "Restrict network egress during sensitive tasks.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, spawn subprocesses, and install packages. agent_a explicitly shares state via the project directory, so concurrent writes can collide and corrupt code or dependencies. Because neither profile shows locking or coordination primitives, the conflict is dangerous in default use and can cause irreversible workspace damage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        }
+      ],
+      "conditions": [
+        "IF both agents modify the same files or dependency state concurrently, last-writer-wins corruption can occur.",
+        "IF package installation happens in the shared environment, one agent can break the other's runtime."
+      ],
+      "mitigations": [
+        "Run the agents in separate working directories.",
+        "Serialize write access with a simple manual turn-taking rule.",
+        "Freeze dependencies before parallel work starts.",
+        "Back up the project directory before concurrent edits.",
+        "requires-engineering: add file locks or transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a is a code generator that writes files then offers to run, while agent_b processes documents and can act on file inputs. That makes A's output a likely upstream input to B without a verification barrier. If B treats generated code, docs, or extracted facts as authoritative, errors can cascade into incorrect outputs or actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a's generated files without independent validation, errors propagate downstream.",
+        "IF agent_a's generated code or text is used as source material for B's outputs, hallucinations can be amplified."
+      ],
+      "mitigations": [
+        "Require a human review between A's output and B's input.",
+        "Add a validation checklist for any generated file before reuse.",
+        "Compare B's extracted claims against original sources.",
+        "Limit B to summarization, not action-taking, on A's outputs.",
+        "requires-engineering: add automated verification of A-to-B handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the provided metadata does not show a residency, certification, or retention mismatch. The only concrete compliance-relevant issue is that agent_a handles OPENAI_API_KEY and agent_b has broad network egress, but no specific regulated data class or jurisdictional constraint is documented. With insufficient evidence, this remains low rather than none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into the shared workspace, compliance obligations may change.",
+        "IF either agent is deployed under a residency or retention policy not shown in the profiles, a mismatch could arise."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Confirm retention settings for both agents before use.",
+        "Keep API keys out of files processed by either agent.",
+        "Document the data classes allowed for each agent.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
