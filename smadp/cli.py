@@ -793,7 +793,7 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
 @autopilot.command("bootstrap-onexus")
 @click.option(
     "--onexus-root",
-    default=str(Path.home() / "Downloads" / "ONEXUS-Agents" / "catalog"),
+    default=str(Path.home() / "Downloads" / "Integration" / "ONEXUS-Agents" / "catalog"),
     help="Path to the ONEXUS-Agents catalog directory.",
 )
 @click.option("--top-n", default=100, type=int, help="Number of top-scored agents to include.")
@@ -819,6 +819,33 @@ def autopilot_bootstrap_onexus(
         f"profiles_written={summary.profiles_written} "
         f"profiles_skipped={summary.profiles_skipped} "
         f"pairs_queued={summary.pairs_queued}"
+    )
+
+
+@autopilot.command("sync-onexus")
+@click.option(
+    "--max-promote",
+    default=25,
+    type=int,
+    help="Max staged _unverified seeds to promote into research this run (volume cap).",
+)
+@click.pass_context
+def autopilot_sync_onexus(ctx: click.Context, max_promote: int) -> None:
+    """Promote staged ONEXUS seeds from _unverified/ into the research queue.
+
+    Honours the state/AGENTS_SYNC_DISABLED kill switch. Independent of the
+    NEXUS catalog pipeline.
+    """
+    from smadp.autopilot.agents_sync import sync_onexus
+
+    config = ctx.obj["config"]
+    summary = sync_onexus(repo_root=config.repo_root, max_promote=max_promote)
+    if summary.disabled:
+        click.echo("sync-onexus disabled (state/AGENTS_SYNC_DISABLED present)")
+        return
+    click.echo(
+        f"promoted={summary.promoted} queued={summary.queued} "
+        f"staged_remaining={summary.staged_remaining}"
     )
 
 
