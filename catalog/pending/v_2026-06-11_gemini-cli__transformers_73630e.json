@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-11_gemini-cli__transformers_73630e",
+  "generated_at": "2026-06-11T01:47:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk shared filesystem and git state create prompt-injection, data-leakage, and cascading-error exposure between Gemini CLI and transformers.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Gemini CLI can read/write the filesystem and use MCP, while transformers can read/write files and run browsers. Their shared-state path is via filesystem and git, so attacker-controlled content in one can be consumed by the other as trusted input. This is not provably blocked, but it is not a direct default instruction channel either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same working directory or git checkout",
+        "IF one agent parses files from the shared workspace as instructions or prompts"
+      ],
+      "mitigations": [
+        "Use separate directories and git remotes for each agent",
+        "Disable MCP servers for the Gemini CLI session",
+        "Review any file content before feeding it to the other agent",
+        "Run one agent at a time when exchanging artifacts",
+        "requires-engineering: add provenance tags to shared files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read files in the cwd and write files, and Gemini CLI also has broad network egress plus API calls. If sensitive files are present in the shared workspace, either agent can expose them through outputs or upstream calls. The pair is not documented as isolated, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are placed in the shared workspace",
+        "IF Gemini CLI sends workspace-derived content to external APIs"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared directory",
+        "Use a redacted staging folder for handoffs",
+        "Turn off network access for the Gemini CLI session when handling sensitive files",
+        "Restrict file permissions on the workspace",
+        "requires-engineering: enforce per-agent workspace isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Gemini CLI explicitly shares state with other instances via filesystem and git. Concurrent edits to the same repo can overwrite each other or corrupt git state without locks. The overlap is direct and default-dangerous, so this is high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or repository",
+        "IF either agent commits or rebases without external locking"
+      ],
+      "mitigations": [
+        "Assign separate branches per agent",
+        "Pause one agent before the other writes",
+        "Use git worktrees for isolation",
+        "Check `git status` before each write step",
+        "requires-engineering: add file-locking or transaction coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Gemini CLI can produce tool-using outputs and transformers can run pipelines or scripts that may act on those outputs. If B treats A's generated text, code, or citations as authoritative, errors can cascade into incorrect documents or executed actions. The pair lacks a built-in verification boundary in the profiles, so the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF transformers consumes Gemini CLI output without a verification step",
+        "IF A-generated code or facts are used by B in a downstream pipeline"
+      ],
+      "mitigations": [
+        "Require human review between agents",
+        "Add a validation step before B consumes A's output",
+        "Limit A to drafting only, not final instructions",
+        "Use schema checks on exchanged artifacts",
+        "requires-engineering: implement provenance-aware verification"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented in either profile, so a compliance breach is not established. Gemini CLI handles Google account login optionally and API keys, while transformers is open-source and locally runnable; the main concern is only if regulated data is routed through Gemini's external APIs. The other agent is not cited for a specific compliance gap because none is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is sent through Gemini CLI's external API calls",
+        "IF the deployment requires residency or retention guarantees not documented here"
+      ],
+      "mitigations": [
+        "Avoid regulated data in Gemini API prompts",
+        "Keep transformers local-only for sensitive workloads",
+        "Review vendor data-processing terms before use",
+        "Log what data leaves the workstation",
+        "requires-engineering: add policy enforcement for data residency"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
