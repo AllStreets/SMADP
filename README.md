@@ -6,10 +6,10 @@
 
 &nbsp;
 
-<a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C238-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C249-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-587-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-7-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-365-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-368-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
 <br/>
@@ -120,7 +120,7 @@ For the autopilot loop (launchd plist + 5-min ticks), see [`docs/autopilot.md`](
 
 | Path | What it is |
 |---|---|
-| **`catalog/profiles/<slug>.json`** | One Safety Profile per agent. ~6,238 today. |
+| **`catalog/profiles/<slug>.json`** | One Safety Profile per agent. ~6,249 today. |
 | **`catalog/verdicts/<...>.json`** | Public catalog. Pairwise + N-ary verdicts that an operator has approved. ~587 today. |
 | **`catalog/pending/<...>.json`** | Operator review queue. Autopilot writes here first; nothing is posted to the public site until approved. |
 | **`catalog/_rejected/<...>.json`** | Verdicts the operator rejected, preserved with `<key>.reason.json` sidecar. Never deleted. |
@@ -278,7 +278,7 @@ Got an agent we should know about? Two paths:
 ```
 SMADP/
 ├── catalog/                     # the product
-│   ├── profiles/                #   6,238 Safety Profiles
+│   ├── profiles/                #   6,249 Safety Profiles
 │   ├── verdicts/                #     587 approved verdicts
 │   ├── pending/                 #         operator review queue
 │   ├── _rejected/               #         preserved with reasons
