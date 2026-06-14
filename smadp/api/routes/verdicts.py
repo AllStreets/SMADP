@@ -107,3 +107,41 @@ async def get_verdict(request: Request, a: str, b: str) -> dict[str, Any]:
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return verdict.model_dump(mode="json")
+
+
+@router.get(
+    "/{a}/{b}/causality",
+    summary="Causal-risk amplification + mitigation leverage (computed at read)",
+)
+async def get_verdict_causality(request: Request, a: str, b: str) -> dict[str, Any]:
+    """Compute the causal-risk report for a verdict from the shipped DAG.
+
+    Nothing is stored on the verdict — the report is computed at read time from
+    the verdict's sub-verdict severities and ``_meta/risk-causality.json``.
+    """
+    from smadp.analyzer.causality import (
+        RISK_IDS,
+        CausalityError,
+        compute_causality,
+        load_causality_dag,
+    )
+
+    config = request.app.state.config
+    repo = CatalogRepo(config)
+    try:
+        slug_a, slug_b = sort_pair(a, b)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        verdict = repo.load_verdict(slug_a, slug_b)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    try:
+        dag = load_causality_dag(config.meta_dir / "risk-causality.json")
+    except (CausalityError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=f"causality DAG unavailable: {exc}") from exc
+
+    severities = {rid: getattr(verdict.sub_verdicts, rid).severity for rid in RISK_IDS}
+    report = compute_causality(severities, dag)
+    return {"verdict_id": verdict.verdict_id, **report.to_payload()}
