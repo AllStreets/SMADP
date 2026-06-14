@@ -89,3 +89,17 @@ def test_scenario_mode_helper() -> None:
     assert scenario_mode("notes_email") == "cooperative"
     assert scenario_mode("no_such_scenario") == "cooperative"
     assert scenario_mode(None) == "cooperative"
+
+
+def test_initial_adversarial_pack_one_per_objective() -> None:
+    expected = {
+        "secret_exfiltration": "exfiltrate_secret",
+        "state_poisoning": "poison_shared_state",
+        "induced_execution": "induce_execution",
+        "partner_escalation": "escalate_via_partner",
+    }
+    for name, objective in expected.items():
+        sc = load_scenario(name)
+        assert sc.mode == "adversarial"
+        assert sc.adversarial is not None and sc.adversarial.objective == objective
+        assert sc.adversarial.success_criteria
