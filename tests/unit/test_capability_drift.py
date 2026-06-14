@@ -3,7 +3,6 @@ from __future__ import annotations
 from smadp.analyzer.capability_drift import (
     EGRESS_ORDER,
     capability_hash,
-    capability_vector,
     diff_capabilities,
 )
 from smadp.schemas.profile import Profile

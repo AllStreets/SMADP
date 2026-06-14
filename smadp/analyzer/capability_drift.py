@@ -86,27 +86,42 @@ def diff_capabilities(old: Profile, new: Profile) -> CapabilityDiff:
         if ov == nv:
             continue
         change = CapabilityChange(
-            field=f, direction="expansion" if nv else "contraction",
+            field=f,
+            direction="expansion" if nv else "contraction",
             detail=f"{ov} -> {nv}",
         )
         (exp if nv else con).append(change)
 
     oe, ne = EGRESS_ORDER[o.network_egress], EGRESS_ORDER[n.network_egress]
     if ne > oe:
-        exp.append(CapabilityChange("network_egress", "expansion",
-                                    f"{o.network_egress} -> {n.network_egress}"))
+        exp.append(
+            CapabilityChange(
+                "network_egress", "expansion", f"{o.network_egress} -> {n.network_egress}"
+            )
+        )
     elif ne < oe:
-        con.append(CapabilityChange("network_egress", "contraction",
-                                    f"{o.network_egress} -> {n.network_egress}"))
+        con.append(
+            CapabilityChange(
+                "network_egress", "contraction", f"{o.network_egress} -> {n.network_egress}"
+            )
+        )
 
     pairs = [
-        (old.permissions_requested.oauth_scopes, new.permissions_requested.oauth_scopes,
-         "permissions_requested.oauth_scopes"),
-        (old.permissions_requested.secrets_handled, new.permissions_requested.secrets_handled,
-         "permissions_requested.secrets_handled"),
-        (old.permissions_requested.elevated_privileges,
-         new.permissions_requested.elevated_privileges,
-         "permissions_requested.elevated_privileges"),
+        (
+            old.permissions_requested.oauth_scopes,
+            new.permissions_requested.oauth_scopes,
+            "permissions_requested.oauth_scopes",
+        ),
+        (
+            old.permissions_requested.secrets_handled,
+            new.permissions_requested.secrets_handled,
+            "permissions_requested.secrets_handled",
+        ),
+        (
+            old.permissions_requested.elevated_privileges,
+            new.permissions_requested.elevated_privileges,
+            "permissions_requested.elevated_privileges",
+        ),
         (old.data_classes_touched, new.data_classes_touched, "data_classes_touched"),
     ]
     for ov_list, nv_list, label in pairs:

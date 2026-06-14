@@ -24,7 +24,7 @@ def _pdict(slug: str, score: float, **caps) -> dict:
 class _StubTriage:
     """Routes by slug: 'risk-*' pairs are high+uncertain, 'safe-*' are safe+confident."""
 
-    def predict(self, a, b) -> Prediction:  # noqa: ANN001
+    def predict(self, a, b) -> Prediction:
         if a.slug.startswith("risk") or b.slug.startswith("risk"):
             return Prediction(band="high", probabilities={}, uncertainty=0.9)
         return Prediction(band="safe", probabilities={}, uncertainty=0.0)

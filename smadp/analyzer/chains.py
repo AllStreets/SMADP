@@ -58,7 +58,7 @@ class ComposedChain:
     max_severity: str
 
 
-def _compose_B(links: list[LinkInput]) -> str:
+def _compose_B(links: list[LinkInput]) -> str:  # noqa: N802 - "B" is the risk-band id
     classed = [link for link in links if link.carries]
     if not classed:
         return _max_band([link.severities["B_data_leakage"] for link in links])
@@ -68,7 +68,8 @@ def _compose_B(links: list[LinkInput]) -> str:
             by_class.setdefault(dc, []).append(link.severities["B_data_leakage"])
     untagged = [link.severities["B_data_leakage"] for link in links if not link.carries]
     group_maxes = [_max_band(v) for v in by_class.values()] + (
-        [_max_band(untagged)] if untagged else [])
+        [_max_band(untagged)] if untagged else []
+    )
     return _max_band(group_maxes)
 
 
@@ -83,9 +84,7 @@ def compose_chain(*, topology: str, links: list[LinkInput], node_count: int) -> 
     sev["B_data_leakage"] = _compose_B(present) if present else "none"
 
     base_d = (
-        _max_band([link.severities["D_cascading_error"] for link in present])
-        if present
-        else "none"
+        _max_band([link.severities["D_cascading_error"] for link in present]) if present else "none"
     )
     hops_beyond_two = max(0, node_count - 2)
     loop_bonus = 1 if topology == "loop" else 0
@@ -107,6 +106,7 @@ def compose_chain(*, topology: str, links: list[LinkInput], node_count: int) -> 
 
 def _composite_from_bands(sev: dict[str, str]) -> float:
     """Reuse the canonical pairwise weights via a synthetic SubVerdicts."""
+
     def _sv(band: str) -> SubVerdict:
         return SubVerdict(
             severity=band,  # type: ignore[arg-type]

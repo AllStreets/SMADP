@@ -20,7 +20,7 @@ from pathlib import Path
 from random import Random
 from typing import Any
 
-from smadp.analyzer.capability_drift import EGRESS_ORDER, _BOOL_FIELDS
+from smadp.analyzer.capability_drift import _BOOL_FIELDS, EGRESS_ORDER
 from smadp.schemas.profile import Profile
 from smadp.utils.hashing import sha256_text
 
@@ -61,10 +61,13 @@ def _side_features(p: Profile) -> list[float]:
     return feats
 
 
-_SIDE_NAMES = (
-    [f"bool_{f}" for f in _BOOL_FIELDS]
-    + ["egress", "oauth_n", "secrets_n", "elevated_n", "data_n"]
-)
+_SIDE_NAMES = [f"bool_{f}" for f in _BOOL_FIELDS] + [
+    "egress",
+    "oauth_n",
+    "secrets_n",
+    "elevated_n",
+    "data_n",
+]
 
 
 def _build_feature_names() -> list[str]:
@@ -138,9 +141,7 @@ class TriageModel:
 
         raw: dict[str, float] = {}
         for band in self.classes:
-            z = self.bias[band] + sum(
-                w * xi for w, xi in zip(self.weights[band], x, strict=True)
-            )
+            z = self.bias[band] + sum(w * xi for w, xi in zip(self.weights[band], x, strict=True))
             raw[band] = _sigmoid(z)
         total = sum(raw.values()) or 1.0
         probs = {band: raw[band] / total for band in self.classes}
@@ -204,11 +205,15 @@ def train(
     if len(present) <= 1:
         majority = present[0] if present else "safe"
         return TriageModel(
-            weights={}, bias={}, classes=[],
-            version=version, trained_at=trained_at, majority_band=majority,
+            weights={},
+            bias={},
+            classes=[],
+            version=version,
+            trained_at=trained_at,
+            majority_band=majority,
         )
 
-    rng = Random(seed)
+    rng = Random(seed)  # noqa: S311 - deterministic weight init, not cryptographic
     n_features = len(FEATURE_NAMES)
     weights: dict[str, list[float]] = {}
     bias: dict[str, float] = {}
@@ -234,6 +239,9 @@ def train(
         bias[band] = b
 
     return TriageModel(
-        weights=weights, bias=bias, classes=present,
-        version=version, trained_at=trained_at,
+        weights=weights,
+        bias=bias,
+        classes=present,
+        version=version,
+        trained_at=trained_at,
     )

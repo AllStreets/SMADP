@@ -167,7 +167,7 @@ class _FakeJudge:
         self._severities = severities
         self._headline = headline
 
-    async def confirm_chain(self, candidate):  # noqa: ANN001
+    async def confirm_chain(self, candidate):
         self.calls += 1
         from smadp.autopilot.chain_composer import ChainJudgement
 
@@ -221,9 +221,7 @@ def test_judge_batch_is_capped(cfg: Config) -> None:
         config=cfg,
         autopilot_cfg=AutopilotConfig(chain_publish_confidence_threshold=0.99),
     )
-    judge = _FakeJudge({k: "low" for k in (
-        "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-        "D_cascading_error", "E_compliance")})
+    judge = _FakeJudge(dict.fromkeys(("A_prompt_injection", "B_data_leakage", "C_capability_conflict", "D_cascading_error", "E_compliance"), "low"))
     confirm_low_confidence_chains(
         repo_root=cfg.repo_root,
         config=cfg,
@@ -239,9 +237,7 @@ def test_no_judge_calls_when_kill_switch_off(cfg: Config) -> None:
     from smadp.autopilot.chain_composer import confirm_low_confidence_chains
 
     _seed(cfg)
-    judge = _FakeJudge({k: "low" for k in (
-        "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-        "D_cascading_error", "E_compliance")})
+    judge = _FakeJudge(dict.fromkeys(("A_prompt_injection", "B_data_leakage", "C_capability_conflict", "D_cascading_error", "E_compliance"), "low"))
     result = confirm_low_confidence_chains(
         repo_root=cfg.repo_root,
         config=cfg,

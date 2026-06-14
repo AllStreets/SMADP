@@ -1205,9 +1205,7 @@ def analyzer() -> None:
 @click.option("--seed", default=1234, type=int, help="Deterministic training seed.")
 @click.option("--version", default="v1", help="Artifact version label.")
 @click.pass_context
-def analyzer_triage_train(
-    ctx: click.Context, out: str | None, seed: int, version: str
-) -> None:
+def analyzer_triage_train(ctx: click.Context, out: str | None, seed: int, version: str) -> None:
     """Train the dependency-light triage model into a versioned JSON artifact."""
     from scripts.train_triage import main as train_main
 

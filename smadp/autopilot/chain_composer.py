@@ -18,8 +18,12 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from smadp.analyzer.chains import ComposedChain, LinkInput, compose_chain
-from smadp.analyzer.chains import _composite_from_bands as _composite_from_bands
+from smadp.analyzer.chains import (
+    ComposedChain,
+    LinkInput,
+    _composite_from_bands,
+    compose_chain,
+)
 from smadp.autopilot.config import AutopilotConfig
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo, NotFoundError
@@ -54,22 +58,29 @@ def _link_for_edge(repo: CatalogRepo, edge: Edge) -> LinkInput:
     """
     if edge.from_ == edge.to:
         return LinkInput(
-            from_slug=edge.from_, to_slug=edge.to,
-            severities={k: "none" for k in _RISK_KEYS},
-            confidence=0.0, present=False, carries=list(edge.carries),
+            from_slug=edge.from_,
+            to_slug=edge.to,
+            severities=dict.fromkeys(_RISK_KEYS, "none"),
+            confidence=0.0,
+            present=False,
+            carries=list(edge.carries),
         )
     a, b = sort_pair(edge.from_, edge.to)
     try:
         verdict: Verdict = repo.load_verdict(a, b)
     except NotFoundError:
         return LinkInput(
-            from_slug=edge.from_, to_slug=edge.to,
-            severities={k: "none" for k in _RISK_KEYS},
-            confidence=0.0, present=False, carries=list(edge.carries),
+            from_slug=edge.from_,
+            to_slug=edge.to,
+            severities=dict.fromkeys(_RISK_KEYS, "none"),
+            confidence=0.0,
+            present=False,
+            carries=list(edge.carries),
         )
     sv = verdict.sub_verdicts
     return LinkInput(
-        from_slug=edge.from_, to_slug=edge.to,
+        from_slug=edge.from_,
+        to_slug=edge.to,
         severities={
             "A_prompt_injection": sv.A_prompt_injection.severity,
             "B_data_leakage": sv.B_data_leakage.severity,
@@ -209,7 +220,7 @@ async def confirm_low_confidence_chains_async(
         for c in repo.list_pending_chains()
         if c.confidence is not None and c.confidence < threshold
     ]
-    flagged.sort(key=lambda c: (c.confidence if c.confidence is not None else 0.0))
+    flagged.sort(key=lambda c: c.confidence if c.confidence is not None else 0.0)
 
     judged = 0
     skipped = 0
@@ -220,7 +231,7 @@ async def confirm_low_confidence_chains_async(
             continue
         try:
             judgement = await judge.confirm_chain(candidate)
-        except Exception as exc:  # noqa: BLE001 - one bad chain must not kill the batch
+        except Exception as exc:
             errors.append(f"{candidate.chain_id}: {exc}")
             continue
         bands = _normalize_bands(judgement.severities)

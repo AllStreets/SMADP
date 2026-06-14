@@ -5,7 +5,6 @@ from pathlib import Path
 
 import yaml
 
-
 _VALID_TRIPWIRE_MODES = frozenset({"enabled", "log_only", "off"})
 
 

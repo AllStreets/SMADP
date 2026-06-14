@@ -56,7 +56,7 @@ def apply_capability_drift(*, config: Config, new_profile: Profile) -> DriftSumm
         capability_hash=capability_hash(new_profile),
         diff_summary=diff.summary[:600],
     )
-    history = list(new_profile.capability_history) + [entry]
+    history = [*new_profile.capability_history, entry]
     updated = new_profile.model_copy(update={"capability_history": history})
     repo.save_profile(updated)
 

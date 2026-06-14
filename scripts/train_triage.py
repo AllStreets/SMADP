@@ -41,9 +41,7 @@ def build_corpus(repo: CatalogRepo) -> list[tuple[Profile, Profile, float]]:
 
 
 def _training_set_hash(corpus: list[tuple[Profile, Profile, float]]) -> str:
-    rows = sorted(
-        (tuple(sorted((a.slug, b.slug))), round(score, 6)) for a, b, score in corpus
-    )
+    rows = sorted((tuple(sorted((a.slug, b.slug))), round(score, 6)) for a, b, score in corpus)
     return "sha256:" + sha256_canonical_json(rows)
 
 

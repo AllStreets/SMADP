@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from itertools import combinations
 from typing import Any
 
+from smadp.analyzer.triage import TriageModel
 from smadp.autopilot.planners.triage_order import triage_urgency
 from smadp.autopilot.work_queue import WorkItem
-from smadp.analyzer.triage import TriageModel
 
 _ENRICHED_TIERS = {"docs-only", "profile-verified", "sandbox-validated"}
 
