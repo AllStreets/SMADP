@@ -38,12 +38,15 @@ import structlog
 
 from smadp.config import Config, load_config
 from smadp.sandbox import queue
+from smadp.autopilot.config import load_autopilot_config
+from smadp.sandbox.events import RunObservation
 from smadp.sandbox.isolation import (
     ContainerSpec,
     RuntimeBackend,
     RuntimeUnavailableError,
     build_run_command,
     detect_runtime,
+    engine_binary,
 )
 from smadp.sandbox.keys import KEY_ALLOWLIST
 from smadp.sandbox.policy import (
@@ -57,6 +60,7 @@ from smadp.sandbox.properties import (
     evaluate_properties,
 )
 from smadp.sandbox.scenarios import AgentRole, Scenario, load_scenario
+from smadp.sandbox.tripwire import context_for_scenario
 from smadp.sandbox.transcripts import (
     EventType,
     Transcript,
@@ -228,11 +232,11 @@ def _build_spec_for_agent(
 async def _stream_lines(
     stream: asyncio.StreamReader | None,
     *,
-    writer: TranscriptWriter,
+    obs: RunObservation,
     agent: str,
     event_type: EventType,
 ) -> None:
-    """Drain ``stream`` line-by-line into the transcript."""
+    """Drain ``stream`` line-by-line into the transcript via the observation."""
     if stream is None:
         return
     while True:
@@ -244,7 +248,7 @@ async def _stream_lines(
         if not chunk:
             return
         line = chunk.decode("utf-8", errors="replace").rstrip("\r\n")
-        writer.emit(
+        obs.emit(
             agent=agent,
             event_type=event_type,
             direction="agent_to_env",
@@ -280,11 +284,11 @@ async def _run_single_container(
     *,
     spec: ContainerSpec,
     backend: RuntimeBackend,
-    writer: TranscriptWriter,
+    obs: RunObservation,
 ) -> int:
     """Run one container; return its exit code (or -1 on timeout/kill)."""
     argv = build_run_command(spec, backend)
-    writer.emit(
+    obs.emit(
         agent=spec.name,
         event_type="start",
         direction="internal",
@@ -299,25 +303,28 @@ async def _run_single_container(
             stderr=asyncio.subprocess.PIPE,
         )
     except (OSError, FileNotFoundError) as e:
-        writer.emit(
+        obs.emit(
             agent=spec.name,
             event_type="policy_violation",
             payload={"kind": "spawn_failed", "detail": repr(e)},
         )
         return -1
 
+    # Register the live client process so the halt watcher can tear it down.
+    obs.register_process(spec.name, proc)
+
     pump_stdout = asyncio.create_task(
-        _stream_lines(proc.stdout, writer=writer, agent=spec.name, event_type="stdout")
+        _stream_lines(proc.stdout, obs=obs, agent=spec.name, event_type="stdout")
     )
     pump_stderr = asyncio.create_task(
-        _stream_lines(proc.stderr, writer=writer, agent=spec.name, event_type="stderr")
+        _stream_lines(proc.stderr, obs=obs, agent=spec.name, event_type="stderr")
     )
 
     timeout = spec.timeout_s
     try:
         rc = await asyncio.wait_for(proc.wait(), timeout=timeout)
     except TimeoutError:
-        writer.emit(
+        obs.emit(
             agent=spec.name,
             event_type="policy_violation",
             payload={"kind": "wallclock_timeout", "detail": f"{timeout}s exceeded"},
@@ -339,7 +346,7 @@ async def _run_single_container(
         except (TimeoutError, asyncio.CancelledError):
             task.cancel()
 
-    writer.emit(
+    obs.emit(
         agent=spec.name,
         event_type="exit",
         direction="internal",
@@ -628,11 +635,32 @@ async def execute_run(
             raise
 
         bound.info("sandbox.run.starting", backend=backend.value)
-        writer.emit(
+
+        # Live observation: every container event flows through ``obs`` (which
+        # writes the transcript, publishes to the console bus, and checks the
+        # tripwire engine). The kill switch (``tripwires``) comes from autopilot
+        # config; absent/unknown values fail safe to ``enabled``.
+        tripwire_mode = load_autopilot_config(
+            cfg.repo_root / "config" / "autopilot.yaml"
+        ).tripwires
+        obs = RunObservation(
+            run_id=run_id,
+            writer=writer,
+            tripwire_ctx=context_for_scenario(scenario),
+            tripwire_mode=tripwire_mode,
+        )
+        obs.emit(
             agent="runner",
             event_type="start",
             payload={"backend": backend.value, "scenario": scenario.name},
         )
+
+        # Halt machinery: a watcher tears containers down on a halt signal; a
+        # poller surfaces operator halts from the queue DB at 1 Hz.
+        watcher = asyncio.create_task(
+            _halt_watcher(obs, engine_kill=lambda name: _engine_kill_container(name, backend))
+        )
+        poller = asyncio.create_task(_operator_halt_poller(run_id, obs, config=cfg))
 
         # 5. Run both containers concurrently with an outer wall-clock cap.
         outer_timeout = scenario.timeout_s + 30  # grace for cleanup
@@ -641,25 +669,33 @@ async def execute_run(
             results = list(
                 await asyncio.wait_for(
                     asyncio.gather(
-                        _run_single_container(spec=spec_a, backend=backend, writer=writer),
-                        _run_single_container(spec=spec_b, backend=backend, writer=writer),
+                        _run_single_container(spec=spec_a, backend=backend, obs=obs),
+                        _run_single_container(spec=spec_b, backend=backend, obs=obs),
                         return_exceptions=True,
                     ),
                     timeout=outer_timeout,
                 )
             )
         except TimeoutError:
-            writer.emit(
+            obs.emit(
                 agent="runner",
                 event_type="policy_violation",
                 payload={"kind": "outer_wallclock_timeout", "detail": f"{outer_timeout}s"},
             )
             results = [-1, -1]
+        finally:
+            for task in (watcher, poller):
+                task.cancel()
+            for task in (watcher, poller):
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001, S110
+                    pass
 
         # 6. Convert any exception result to a recorded violation.
         for spec, result in zip((spec_a, spec_b), results, strict=False):
             if isinstance(result, BaseException):
-                writer.emit(
+                obs.emit(
                     agent=spec.name,
                     event_type="policy_violation",
                     payload={"kind": "runner_exception", "detail": repr(result)},
@@ -678,16 +714,28 @@ async def execute_run(
             outcome, failures = _grade_adversarial(scenario, transcript, report)
         else:
             outcome, failures = _grade(scenario, transcript)
+
+        # A halt overrides the property/assertion grade: the run was torn down
+        # before it could complete, so the outcome reflects the interdiction.
+        tripwire_rule: str | None = None
+        if obs.halted:
+            if obs.operator_halt:
+                outcome = "halted_by_operator"  # type: ignore[assignment]
+            else:
+                outcome = "halted_by_tripwire"  # type: ignore[assignment]
+                tripwire_rule = obs.tripwire_rule
         bound.info(
             "sandbox.run.graded",
             outcome=outcome,
             failures=failures,
+            tripwire_rule=tripwire_rule,
         )
 
         queue.mark_completed(
             run_id,
             outcome=outcome,
             transcript_path=str(transcript_path),
+            tripwire_rule=tripwire_rule,
             config=cfg,
         )
 
@@ -733,10 +781,83 @@ async def execute_run(
 # ---------------------------------------------------------------------------
 
 
+def transcript_path_for(run_id: str, *, config: Config) -> Path:
+    """Pure: the on-disk transcript path for a run (no directory side effects).
+
+    The API WS stream and CLI ``watch`` use this to *tail* the transcript a
+    separate worker process is writing, so it must NOT create the directory.
+    """
+    return config.cache_dir / _TRANSCRIPT_DIR_NAME / run_id / "transcript.jsonl"
+
+
 def _transcript_path_for(run_id: str, *, config: Config) -> Path:
-    base = config.cache_dir / _TRANSCRIPT_DIR_NAME / run_id
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "transcript.jsonl"
+    """Like :func:`transcript_path_for` but ensures the parent dir exists.
+
+    The writer side (runner) uses this so the first ``emit`` doesn't fail.
+    """
+    path = transcript_path_for(run_id, config=config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _engine_kill_container(name: str, backend: RuntimeBackend) -> None:
+    """Best-effort ``<engine> kill <name>`` for a still-running container."""
+    import subprocess  # local import: only needed on the halt path
+
+    engine = engine_binary(backend)
+    try:
+        subprocess.run(  # noqa: S603 — argv list, never shell
+            [engine, "kill", name],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("sandbox.halt.engine_kill_failed", name=name, error=repr(exc))
+
+
+async def _halt_watcher(obs: RunObservation, *, engine_kill: Any) -> None:
+    """Wait for a halt signal, then tear every registered container down.
+
+    Kills the local ``docker/podman run`` client process AND issues an engine
+    ``kill`` by container name (the run uses ``--name <spec.name>``), because
+    killing the client does not always reap the container.
+    """
+    await obs.halt_event.wait()
+    for name, proc in obs.processes.items():
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        except Exception as exc:  # noqa: BLE001 — best-effort teardown
+            log.warning("sandbox.halt.proc_kill_failed", name=name, error=repr(exc))
+        try:
+            engine_kill(name)
+        except Exception as exc:  # noqa: BLE001 — best-effort teardown
+            log.warning("sandbox.halt.engine_kill_raised", name=name, error=repr(exc))
+
+
+async def _operator_halt_poller(
+    run_id: str, obs: RunObservation, *, config: Config, interval_s: float = 1.0
+) -> None:
+    """Poll the queue's ``halt_requested`` flag at ~1 Hz; trip on request.
+
+    Operator halts cross the process boundary via the queue DB (the API server
+    and worker are separate processes — see plan deviation 2).
+    """
+    while not obs.halt_event.is_set():
+        try:
+            row = queue.get_raw_row(run_id, config=config)
+        except Exception as exc:  # noqa: BLE001 — polling must not crash the run
+            log.warning("sandbox.halt.poll_failed", run_id=run_id, error=repr(exc))
+            row = None
+        if row is not None and int(row.get("halt_requested") or 0) == 1:
+            obs.trip_operator_halt()
+            return
+        try:
+            await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            return
 
 
 def _slugs_and_roles_for_run(run_id: str, *, config: Config) -> tuple[str, str, str, str]:
@@ -761,4 +882,5 @@ __all__ = [
     "AdapterDescriptor",
     "execute_run",
     "load_adapter",
+    "transcript_path_for",
 ]

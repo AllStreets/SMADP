@@ -113,9 +113,113 @@ class RunConsole:
 CONSOLE = RunConsole()
 
 
+class RunObservation:
+    """The single emit path the runner drives every transcript event through.
+
+    Each :meth:`emit`:
+
+    1. writes the event to the transcript (durable evidence),
+    2. publishes the corresponding :class:`ConsoleEvent` to the bus (live view),
+    3. checks the deterministic tripwire engine (unless ``tripwire_mode=='off'``).
+
+    A tripped rule under ``tripwire_mode=='enabled'`` records a ``tripwire``
+    transcript event and sets :attr:`halt_event`; under ``'log_only'`` the
+    tripwire event is recorded (with ``mode='log_only'``) but the run is NOT
+    halted. :meth:`trip_operator_halt` is the manual (operator) halt path —
+    same ``halt_event``, no rule attribution.
+    """
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        writer: Any,
+        tripwire_ctx: Any,
+        tripwire_mode: str = "enabled",
+        console: RunConsole | None = None,
+    ) -> None:
+        self.run_id = run_id
+        self.writer = writer
+        self.tripwire_ctx = tripwire_ctx
+        self.tripwire_mode = tripwire_mode
+        self.console = console if console is not None else CONSOLE
+        self.halt_event: asyncio.Event = asyncio.Event()
+        self.halted: bool = False
+        self.tripwire_rule: str | None = None
+        self.operator_halt: bool = False
+        self._processes: dict[str, Any] = {}
+
+    # -- process registry (for the halt watcher) ---------------------------
+    def register_process(self, name: str, proc: Any) -> None:
+        self._processes[name] = proc
+
+    @property
+    def processes(self) -> dict[str, Any]:
+        return dict(self._processes)
+
+    # -- emit path ---------------------------------------------------------
+    def emit(
+        self,
+        *,
+        agent: str,
+        event_type: str,
+        direction: str = "internal",
+        payload: dict[str, Any] | None = None,
+        note: str | None = None,
+    ) -> Any:
+        event = self.writer.emit(
+            agent=agent,
+            event_type=event_type,  # type: ignore[arg-type]
+            direction=direction,  # type: ignore[arg-type]
+            payload=payload or {},
+            note=note,
+        )
+        self.console.publish(to_console_event(self.run_id, event))
+        if self.tripwire_mode != "off":
+            self._check_tripwire(event)
+        return event
+
+    def _check_tripwire(self, event: Any) -> None:
+        # Local import avoids an import cycle (tripwire imports scenarios only).
+        from smadp.sandbox.tripwire import check_event
+
+        hit = check_event(event, self.tripwire_ctx)
+        if hit is None:
+            return
+        trip_event = self.writer.emit(
+            agent=hit.agent or event.agent,
+            event_type="tripwire",
+            direction="internal",
+            payload={
+                "rule": hit.rule,
+                "detail": hit.detail,
+                "mode": self.tripwire_mode,
+                "source_event_type": hit.event_type,
+            },
+        )
+        self.console.publish(to_console_event(self.run_id, trip_event))
+        if self.tripwire_mode == "enabled":
+            self.trip(hit.rule)
+
+    # -- halt signalling ---------------------------------------------------
+    def trip(self, rule: str) -> None:
+        """Tripwire halt: attribute the rule and set the halt event."""
+        if not self.halted:
+            self.tripwire_rule = rule
+        self.halted = True
+        self.halt_event.set()
+
+    def trip_operator_halt(self) -> None:
+        """Operator halt: set the halt event with no rule attribution."""
+        self.halted = True
+        self.operator_halt = True
+        self.halt_event.set()
+
+
 __all__ = [
     "CONSOLE",
     "ConsoleEvent",
     "RunConsole",
+    "RunObservation",
     "to_console_event",
 ]
