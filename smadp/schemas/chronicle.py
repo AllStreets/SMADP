@@ -18,6 +18,7 @@ ChronicleEventType = Literal[
     "verdict.corrected",
     "sandbox.run.started",
     "sandbox.run.completed",
+    "sandbox.tripwire.halted",
     "schema.migrated",
     "framework.added",
     "chain.created",

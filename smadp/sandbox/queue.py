@@ -39,7 +39,7 @@ from smadp.sandbox.policy import (
     UnsafeSecretError,
     looks_like_real_secret,
 )
-from smadp.sandbox.scenarios import list_builtin_scenarios, load_scenario
+from smadp.sandbox.scenarios import list_builtin_scenarios, load_scenario, scenario_mode
 from smadp.schemas.verdict import SandboxRun
 from smadp.utils.slug import normalize_slug, sort_pair
 from smadp.utils.time import utcnow
@@ -103,6 +103,13 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     for col in ("role_a", "role_b", "participants_json"):
         if col not in existing_cols:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
+    # Additive S1.2 columns: operator/tripwire halt signalling. ``halt_requested``
+    # is polled by the runner at 1 Hz; ``tripwire_rule`` records the rule that
+    # tripped (set by the runner at terminal time).
+    if "halt_requested" not in existing_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN halt_requested INTEGER DEFAULT 0")
+    if "tripwire_rule" not in existing_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN tripwire_rule TEXT")
 
 
 @contextmanager
@@ -163,6 +170,8 @@ def _row_to_sandbox_run(row: sqlite3.Row) -> SandboxRun:
         else:
             outcome = "inconclusive"
     transcript_ref = row["transcript_path"] or f"queue://run/{row['id']}"
+    row_keys = set(row.keys())
+    tripwire_rule = row["tripwire_rule"] if "tripwire_rule" in row_keys else None
     return SandboxRun(
         run_id=row["id"],
         started_at=started,
@@ -170,6 +179,8 @@ def _row_to_sandbox_run(row: sqlite3.Row) -> SandboxRun:
         outcome=outcome,
         transcript_ref=transcript_ref,
         scenario=row["scenario"],
+        mode=scenario_mode(row["scenario"]),
+        tripwire_rule=tripwire_rule,
     )
 
 
@@ -472,6 +483,7 @@ def mark_completed(
     *,
     outcome: str,
     transcript_path: str,
+    tripwire_rule: str | None = None,
     config: Config | None = None,
 ) -> None:
     _update_terminal(
@@ -480,6 +492,7 @@ def mark_completed(
         outcome=outcome,
         transcript_path=transcript_path,
         error=None,
+        tripwire_rule=tripwire_rule,
         config=config,
     )
 
@@ -508,6 +521,7 @@ def _update_terminal(
     outcome: str,
     transcript_path: str | None,
     error: str | None,
+    tripwire_rule: str | None = None,
     config: Config | None,
 ) -> None:
     if state not in _VALID_STATES:
@@ -519,9 +533,9 @@ def _update_terminal(
         _ensure_schema(conn)
         with _transaction(conn):
             cur = conn.execute(
-                "UPDATE runs SET state=?, completed_at=?, outcome=?, transcript_path=?, error=? "
-                "WHERE id=? AND state IN ('running','pending')",
-                (state, now_iso, outcome, transcript_path, error, run_id),
+                "UPDATE runs SET state=?, completed_at=?, outcome=?, transcript_path=?, "
+                "error=?, tripwire_rule=? WHERE id=? AND state IN ('running','pending')",
+                (state, now_iso, outcome, transcript_path, error, tripwire_rule, run_id),
             )
             if cur.rowcount == 0:
                 raise RuntimeError(
@@ -535,6 +549,39 @@ def _update_terminal(
             outcome=outcome,
             error=error,
         )
+    finally:
+        conn.close()
+
+
+def request_halt(run_id: str, *, config: Config | None = None) -> bool:
+    """Request an operator halt for a run.
+
+    Sets ``halt_requested=1`` for a ``pending`` or ``running`` run so the
+    runner (which polls the column at 1 Hz) can tear the run down. Returns:
+
+    * ``True``  — the flag was set (run was pending/running).
+    * ``False`` — the run is already terminal (completed/failed); no-op.
+
+    Raises:
+        KeyError: no run with id ``run_id`` exists.
+    """
+    cfg = config or load_config()
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            cur = conn.execute("SELECT state FROM runs WHERE id = ?", (run_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise KeyError(f"No sandbox run with id {run_id!r}")
+            if row["state"] not in {"pending", "running"}:
+                return False
+            conn.execute(
+                "UPDATE runs SET halt_requested=1 WHERE id=? AND state IN ('pending','running')",
+                (run_id,),
+            )
+        log.info("sandbox.queue.halt_requested", run_id=run_id)
+        return True
     finally:
         conn.close()
 
@@ -580,4 +627,5 @@ __all__ = [
     "mark_completed",
     "mark_failed",
     "participants_for_row",
+    "request_halt",
 ]

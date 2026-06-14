@@ -106,9 +106,17 @@ export interface SandboxRun {
   run_id: string;
   started_at: string;
   completed_at?: string | null;
-  outcome: 'pass' | 'fail' | 'inconclusive' | 'errored';
+  outcome:
+    | 'pass'
+    | 'fail'
+    | 'inconclusive'
+    | 'errored'
+    | 'halted_by_tripwire'
+    | 'halted_by_operator';
   transcript_ref: string;
   scenario?: string;
+  mode?: 'cooperative' | 'adversarial';
+  tripwire_rule?: string | null;
 }
 export interface Verdict {
   schema_version: '1.0';
