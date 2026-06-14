@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -155,3 +154,99 @@ def test_low_confidence_flags_needs_judge(cfg: Config) -> None:
         autopilot_cfg=AutopilotConfig(chain_publish_confidence_threshold=0.99),
     )
     assert summary.needs_judge >= 1
+
+
+# --------------------------------------------------------------- Task 9 judge
+
+
+class _FakeJudge:
+    """Symbols-only judge mock. Returns bands + headline, never a number."""
+
+    def __init__(self, severities: dict[str, str], headline: str = "judged headline"):
+        self.calls = 0
+        self._severities = severities
+        self._headline = headline
+
+    async def confirm_chain(self, candidate):  # noqa: ANN001
+        self.calls += 1
+        from smadp.autopilot.chain_composer import ChainJudgement
+
+        return ChainJudgement(severities=dict(self._severities), headline=self._headline)
+
+
+def test_judge_keeps_composite_python_computed(cfg: Config) -> None:
+    from smadp.autopilot.chain_composer import (
+        compose_authored_chains,
+        confirm_low_confidence_chains,
+    )
+
+    _seed(cfg)
+    compose_authored_chains(
+        repo_root=cfg.repo_root,
+        config=cfg,
+        autopilot_cfg=AutopilotConfig(chain_publish_confidence_threshold=0.99),
+    )
+    judge = _FakeJudge(
+        {
+            "A_prompt_injection": "high",
+            "B_data_leakage": "critical",
+            "C_capability_conflict": "high",
+            "D_cascading_error": "high",
+            "E_compliance": "medium",
+        }
+    )
+    result = confirm_low_confidence_chains(
+        repo_root=cfg.repo_root,
+        config=cfg,
+        autopilot_cfg=AutopilotConfig(
+            chain_publish_confidence_threshold=0.99, chain_judge_batch_max=10
+        ),
+        judge=judge,
+    )
+    assert result.judged >= 1
+    assert judge.calls >= 1
+    cand = CatalogRepo(cfg).list_pending_chains()[0]
+    assert cand.composite_score is not None and 0.0 <= cand.composite_score <= 1.0
+
+
+def test_judge_batch_is_capped(cfg: Config) -> None:
+    from smadp.autopilot.chain_composer import (
+        compose_authored_chains,
+        confirm_low_confidence_chains,
+    )
+
+    _seed(cfg)
+    compose_authored_chains(
+        repo_root=cfg.repo_root,
+        config=cfg,
+        autopilot_cfg=AutopilotConfig(chain_publish_confidence_threshold=0.99),
+    )
+    judge = _FakeJudge({k: "low" for k in (
+        "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
+        "D_cascading_error", "E_compliance")})
+    confirm_low_confidence_chains(
+        repo_root=cfg.repo_root,
+        config=cfg,
+        autopilot_cfg=AutopilotConfig(
+            chain_publish_confidence_threshold=0.99, chain_judge_batch_max=0
+        ),
+        judge=judge,
+    )
+    assert judge.calls == 0
+
+
+def test_no_judge_calls_when_kill_switch_off(cfg: Config) -> None:
+    from smadp.autopilot.chain_composer import confirm_low_confidence_chains
+
+    _seed(cfg)
+    judge = _FakeJudge({k: "low" for k in (
+        "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
+        "D_cascading_error", "E_compliance")})
+    result = confirm_low_confidence_chains(
+        repo_root=cfg.repo_root,
+        config=cfg,
+        autopilot_cfg=AutopilotConfig(chain_composition_enabled=False),
+        judge=judge,
+    )
+    assert result.disabled is True
+    assert judge.calls == 0
