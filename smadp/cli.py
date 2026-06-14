@@ -884,6 +884,39 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
     click.echo(f"approved {key}")
 
 
+@autopilot.command("compose-chains")
+@click.pass_context
+def autopilot_compose_chains(ctx: click.Context) -> None:
+    """Compose authored chains into pending/chains/ (deterministic; numbers in Python)."""
+    from smadp.autopilot.chain_composer import compose_authored_chains
+    from smadp.autopilot.config import load_autopilot_config
+
+    cfg = _config_from_ctx(ctx)
+    autopilot_cfg = load_autopilot_config(cfg.repo_root / "config" / "autopilot.yaml")
+    summary = compose_authored_chains(
+        repo_root=cfg.repo_root, config=cfg, autopilot_cfg=autopilot_cfg
+    )
+    if summary.disabled:
+        click.echo("compose-chains disabled (chain_composition.enabled: false)")
+        return
+    click.echo(f"composed={summary.composed} needs_judge={summary.needs_judge}")
+
+
+@autopilot.command("approve-chain")
+@click.argument("chain_id")
+@click.pass_context
+def autopilot_approve_chain(ctx: click.Context, chain_id: str) -> None:
+    """Promote a composed chain candidate (pending/chains -> catalog/chains)."""
+    from smadp.autopilot.approve import ApproveError, approve_chain
+
+    cfg = _config_from_ctx(ctx)
+    try:
+        approve_chain(repo_root=cfg.repo_root, chain_id=chain_id)
+    except ApproveError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"approved chain {chain_id}")
+
+
 @autopilot.command("bootstrap-onexus")
 @click.option(
     "--onexus-root",
@@ -1159,6 +1192,32 @@ cli.add_command(passport_group)
 cli.add_command(webhook_group)
 cli.add_command(vendor_group)
 cli.add_command(refresh_group)
+
+
+# --------------------------------------------------------------------- analyzer
+@cli.group()
+def analyzer() -> None:
+    """Offline analysis tooling (triage model training, etc.)."""
+
+
+@analyzer.command("triage-train")
+@click.option("--out", default=None, help="Artifact output path.")
+@click.option("--seed", default=1234, type=int, help="Deterministic training seed.")
+@click.option("--version", default="v1", help="Artifact version label.")
+@click.pass_context
+def analyzer_triage_train(
+    ctx: click.Context, out: str | None, seed: int, version: str
+) -> None:
+    """Train the dependency-light triage model into a versioned JSON artifact."""
+    from scripts.train_triage import main as train_main
+
+    cfg = _config_from_ctx(ctx)
+    argv = ["--catalog", str(cfg.catalog_dir), "--seed", str(seed), "--version", version]
+    if out:
+        argv += ["--out", out]
+    rc = train_main(argv)
+    if rc != 0:
+        raise click.ClickException(f"triage-train failed (exit {rc})")
 
 
 # --------------------------------------------------------------------- adapters
