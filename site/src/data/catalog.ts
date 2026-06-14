@@ -223,6 +223,24 @@ export function getFrameworks(): FrameworksFile {
   return _frameworks;
 }
 
+// ---------- Causal risk DAG ----------
+import { loadCausalityDag, type CausalityDag } from '../lib/causality';
+
+let _causality: CausalityDag | null = null;
+/**
+ * Hand-authored causal risk DAG (catalog/_meta/risk-causality.json), validated
+ * + memoized. Consumed at build time by CausalGraph.astro. The validation
+ * (node set, acyclicity) is the same one the Python analyzer applies.
+ */
+export function getRiskCausality(): CausalityDag {
+  if (_causality) return _causality;
+  const raw = safeReadJSON<unknown>(
+    path.join(CATALOG_DIR, '_meta', 'risk-causality.json'),
+  );
+  _causality = loadCausalityDag(raw);
+  return _causality;
+}
+
 // ---------- Chronicle ----------
 let _chronicle: ChronicleEvent[] | null = null;
 export function getChronicle(): ChronicleEvent[] {
