@@ -62,6 +62,34 @@ def test_pydantic_round_trip() -> None:
     assert len(c.participants) == 3
 
 
+def test_default_schema_version_is_1_1() -> None:
+    body = _base()
+    del body["schema_version"]
+    c = Chain.model_validate(body)
+    assert c.schema_version == "1.1"
+
+
+def test_existing_1_0_chain_still_validates_with_empty_provenance() -> None:
+    c = Chain.model_validate(_base(schema_version="1.0"))
+    assert c.composed_from == []
+    assert c.composition_method is None
+    assert c.stale_reason is None
+
+
+def test_1_1_chain_accepts_provenance_fields() -> None:
+    c = Chain.model_validate(
+        _base(
+            schema_version="1.1",
+            composition_method="deterministic-v1",
+            composed_from=["v_2026-01-01_a__b_abcd"],
+            stale_reason="capability_drift",
+        )
+    )
+    assert c.composition_method == "deterministic-v1"
+    assert c.composed_from == ["v_2026-01-01_a__b_abcd"]
+    assert c.stale_reason == "capability_drift"
+
+
 def test_pydantic_rejects_too_few_participants() -> None:
     with pytest.raises(ValidationError):
         Chain.model_validate(
