@@ -74,6 +74,16 @@ SUPPORTED_ASSERTIONS: Final[frozenset[str]] = frozenset(
     }
 )
 
+SCENARIO_MODES: Final[frozenset[str]] = frozenset({"cooperative", "adversarial"})
+
+ADVERSARIAL_OBJECTIVES: Final[frozenset[str]] = frozenset(
+    {"exfiltrate_secret", "poison_shared_state", "induce_execution", "escalate_via_partner"}
+)
+
+SUPPORTED_SUCCESS_CRITERIA: Final[frozenset[str]] = frozenset(
+    {"attacker_output_contains", "victim_output_contains", "any_output_contains"}
+)
+
 
 class ScenarioLoadError(Exception):
     """Raised when a scenario YAML fails to parse or validate."""
@@ -99,6 +109,26 @@ class Assertion:
 
 
 @dataclass(frozen=True)
+class SuccessCriterion:
+    """One machine-checkable security property of an adversarial scenario."""
+
+    type: str
+    params: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AdversarialSpec:
+    """Adversarial role assignment + objective + checkable success criteria."""
+
+    attacker: str  # role_key carrying the adversarial objective
+    victim: str  # role_key whose environment receives planted_assets
+    objective: str  # member of ADVERSARIAL_OBJECTIVES
+    success_criteria: tuple[SuccessCriterion, ...]
+    expected_subprocesses: tuple[str, ...] = ()
+    symmetric: bool = False  # accepted but double-run enqueue is deferred
+
+
+@dataclass(frozen=True)
 class Scenario:
     """A fully-validated scenario definition."""
 
@@ -111,6 +141,9 @@ class Scenario:
     synthetic_secrets: Mapping[str, str]
     assertions: tuple[Assertion, ...]
     source_path: Path | None = None
+    mode: str = "cooperative"
+    adversarial: AdversarialSpec | None = None
+    planted_assets: Mapping[str, str] = field(default_factory=dict)
 
     def agent_by_role(self, role_key: str) -> AgentRole:
         for agent in self.agents:
@@ -201,6 +234,20 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
     secrets = _validate_secrets(raw.get("synthetic_secrets", []) or [])
     assertions = _validate_assertions(raw.get("assertions", []) or [])
 
+    mode = str(raw.get("mode", "cooperative"))
+    if mode not in SCENARIO_MODES:
+        raise ScenarioLoadError(f"mode must be one of {sorted(SCENARIO_MODES)}, got {mode!r}")
+    planted = _validate_secrets(raw.get("planted_assets", []) or [])
+    adversarial = None
+    if mode == "adversarial":
+        adversarial = _validate_adversarial(
+            raw.get("adversarial"), agents=agents, planted_assets=planted
+        )
+    elif raw.get("adversarial") is not None or planted:
+        raise ScenarioLoadError(
+            "adversarial/planted_assets fields require mode: adversarial"
+        )
+
     return Scenario(
         name=name,
         description=description,
@@ -211,6 +258,9 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
         synthetic_secrets=secrets,
         assertions=assertions,
         source_path=source_path,
+        mode=mode,
+        adversarial=adversarial,
+        planted_assets=planted,
     )
 
 
@@ -296,6 +346,72 @@ def _validate_assertions(raw: Any) -> tuple[Assertion, ...]:
     return tuple(out)
 
 
+def _validate_adversarial(
+    raw: Any, *, agents: tuple[AgentRole, ...], planted_assets: Mapping[str, str]
+) -> AdversarialSpec:
+    if not isinstance(raw, Mapping):
+        raise ScenarioLoadError("mode: adversarial requires an 'adversarial' mapping")
+    role_keys = {a.role_key for a in agents}
+    attacker = str(_require(raw, "attacker", "adversarial"))
+    victim = str(_require(raw, "victim", "adversarial"))
+    for rk in (attacker, victim):
+        if rk not in role_keys:
+            raise ScenarioLoadError(f"adversarial role {rk!r} is not an agent role key")
+    if attacker == victim:
+        raise ScenarioLoadError("adversarial.attacker and adversarial.victim must differ")
+    objective = str(_require(raw, "objective", "adversarial"))
+    if objective not in ADVERSARIAL_OBJECTIVES:
+        raise ScenarioLoadError(
+            f"Unknown objective {objective!r}; allowed: {sorted(ADVERSARIAL_OBJECTIVES)}"
+        )
+    crit_raw = _require(raw, "success_criteria", "adversarial")
+    if not isinstance(crit_raw, list) or not crit_raw:
+        raise ScenarioLoadError("adversarial.success_criteria must be a non-empty list")
+    criteria: list[SuccessCriterion] = []
+    for entry in crit_raw:
+        if not isinstance(entry, Mapping) or "type" not in entry:
+            raise ScenarioLoadError("each success_criterion must be a mapping with 'type'")
+        c_type = str(entry["type"])
+        if c_type not in SUPPORTED_SUCCESS_CRITERIA:
+            raise ScenarioLoadError(
+                f"Unsupported success_criterion type {c_type!r}; "
+                f"allowed: {sorted(SUPPORTED_SUCCESS_CRITERIA)}"
+            )
+        params = {k: v for k, v in entry.items() if k != "type"}
+        asset = params.get("planted_asset")
+        needle = params.get("needle")
+        if (asset is None) == (needle is None):
+            raise ScenarioLoadError(
+                "success_criterion needs exactly one of 'planted_asset' or 'needle'"
+            )
+        if asset is not None and asset not in planted_assets:
+            raise ScenarioLoadError(f"planted_asset {asset!r} not in planted_assets")
+        if needle is not None and (not isinstance(needle, str) or not needle.strip()):
+            raise ScenarioLoadError("success_criterion needle must be a non-empty string")
+        criteria.append(SuccessCriterion(type=c_type, params=params))
+    subs_raw = raw.get("expected_subprocesses", []) or []
+    if not isinstance(subs_raw, list) or not all(isinstance(s, str) for s in subs_raw):
+        raise ScenarioLoadError("expected_subprocesses must be a list of strings")
+    return AdversarialSpec(
+        attacker=attacker,
+        victim=victim,
+        objective=objective,
+        success_criteria=tuple(criteria),
+        expected_subprocesses=tuple(subs_raw),
+        symmetric=bool(raw.get("symmetric", False)),
+    )
+
+
+def scenario_mode(name: str | None) -> str:
+    """Mode for a built-in scenario name; unknown/missing names are cooperative."""
+    if not name:
+        return "cooperative"
+    try:
+        return load_scenario(name).mode
+    except ScenarioLoadError:
+        return "cooperative"
+
+
 def assert_secrets_safe(values: Iterable[str]) -> None:
     """Raise if any of ``values`` is unsafe (defense in depth)."""
     bad = [v for v in values if not is_safe_secret(v)]
@@ -304,14 +420,20 @@ def assert_secrets_safe(values: Iterable[str]) -> None:
 
 
 __all__ = [
+    "ADVERSARIAL_OBJECTIVES",
     "KNOWN_CAPABILITIES",
+    "SCENARIO_MODES",
     "SUPPORTED_ASSERTIONS",
+    "SUPPORTED_SUCCESS_CRITERIA",
+    "AdversarialSpec",
     "AgentRole",
     "Assertion",
     "Scenario",
     "ScenarioLoadError",
+    "SuccessCriterion",
     "assert_secrets_safe",
     "list_builtin_scenarios",
     "load_scenario",
     "load_scenario_from_path",
+    "scenario_mode",
 ]

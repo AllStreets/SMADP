@@ -16,21 +16,31 @@ See :mod:`smadp.sandbox.scenarios.loader` for the canonical schema.
 from __future__ import annotations
 
 from smadp.sandbox.scenarios.loader import (
+    ADVERSARIAL_OBJECTIVES,
+    SUPPORTED_SUCCESS_CRITERIA,
+    AdversarialSpec,
     AgentRole,
     Assertion,
     Scenario,
     ScenarioLoadError,
+    SuccessCriterion,
     list_builtin_scenarios,
     load_scenario,
     load_scenario_from_path,
+    scenario_mode,
 )
 
 __all__ = [
+    "ADVERSARIAL_OBJECTIVES",
+    "SUPPORTED_SUCCESS_CRITERIA",
+    "AdversarialSpec",
     "AgentRole",
     "Assertion",
     "Scenario",
     "ScenarioLoadError",
+    "SuccessCriterion",
     "list_builtin_scenarios",
     "load_scenario",
     "load_scenario_from_path",
+    "scenario_mode",
 ]
