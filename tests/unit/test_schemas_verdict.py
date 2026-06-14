@@ -56,6 +56,25 @@ def test_extra_fields_rejected(sample_verdict: dict[str, Any]) -> None:
         Verdict.model_validate(payload)
 
 
+def test_stale_reason_defaults_none(sample_verdict: dict[str, Any]) -> None:
+    v = Verdict.model_validate(deepcopy(sample_verdict))
+    assert v.stale_reason is None
+
+
+def test_stale_reason_accepts_capability_drift(sample_verdict: dict[str, Any]) -> None:
+    payload = deepcopy(sample_verdict)
+    payload["stale_reason"] = "capability_drift"
+    v = Verdict.model_validate(payload)
+    assert v.stale_reason == "capability_drift"
+
+
+def test_stale_reason_rejects_unknown(sample_verdict: dict[str, Any]) -> None:
+    payload = deepcopy(sample_verdict)
+    payload["stale_reason"] = "bogus"
+    with pytest.raises(ValidationError):
+        Verdict.model_validate(payload)
+
+
 def test_composite_score_bounds(sample_verdict: dict[str, Any]) -> None:
     for bad in (-0.01, 1.01, 2.0):
         payload = deepcopy(sample_verdict)

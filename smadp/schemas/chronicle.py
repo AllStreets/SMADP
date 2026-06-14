@@ -23,6 +23,7 @@ ChronicleEventType = Literal[
     "framework.added",
     "chain.created",
     "chain.deleted",
+    "capability_drift",
 ]
 
 

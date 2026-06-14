@@ -13,6 +13,7 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 VERDICT_ID_RE = re.compile(r"^v_\d{4}-\d{2}-\d{2}_[a-z0-9-]+__[a-z0-9-]+_[a-f0-9]{4,8}$")
 
 Severity = Literal["none", "low", "medium", "high", "critical"]
+StaleReason = Literal["capability_drift"]
 EvidenceLevel = Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"]
 SandboxOutcome = Literal[
     "pass",
@@ -133,6 +134,7 @@ class Verdict(BaseModel):
     framework_mappings: dict[str, list[str]] = Field(default_factory=dict)
     reproducibility: Reproducibility
     sandbox_runs: list[SandboxRun] = Field(default_factory=list)
+    stale_reason: StaleReason | None = None
 
     @field_validator("pair")
     @classmethod
