@@ -550,6 +550,100 @@ def sandbox_status(ctx: click.Context, run_id: str | None) -> None:
     console.print(table)
 
 
+@sandbox.command("watch")
+@click.argument("run_id")
+@click.pass_context
+def sandbox_watch(ctx: click.Context, run_id: str) -> None:
+    """Tail a sandbox run's transcript live, then print its final outcome.
+
+    Tails the per-event-flushed transcript JSONL by byte offset and prints
+    each event as it appears; loops until the queue row reaches a terminal
+    state, then prints the outcome line. Unknown run -> exit 2.
+    """
+    import time
+
+    cfg = _config_from_ctx(ctx)
+    try:
+        from smadp.sandbox.queue import get_raw_row  # type: ignore[import-not-found]
+        from smadp.sandbox.runner import transcript_path_for
+        from smadp.sandbox.transcripts import TranscriptEvent
+    except Exception as exc:
+        err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
+        ctx.exit(1)
+        return
+
+    row = get_raw_row(run_id, config=cfg)
+    if row is None:
+        err_console.print(f"[red]unknown run:[/] {run_id}")
+        ctx.exit(2)
+        return
+
+    path = transcript_path_for(run_id, config=cfg)
+    offset = 0
+    terminal_states = {"completed", "failed"}
+
+    def _drain() -> None:
+        nonlocal offset
+        if not path.exists():
+            return
+        with path.open("r", encoding="utf-8") as fh:
+            fh.seek(offset)
+            for line in fh:
+                if not line.endswith("\n"):
+                    break  # partial flush; retry next tick
+                offset += len(line.encode("utf-8"))
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    event = TranscriptEvent.from_json_line(text)
+                except Exception:
+                    continue
+                console.print(
+                    f"[dim]{event.event_type}[/] {event.agent}: "
+                    f"{json.dumps(event.payload, ensure_ascii=False)}"
+                )
+
+    while True:
+        _drain()
+        row = get_raw_row(run_id, config=cfg)
+        state = str(row["state"]) if row else ""
+        if state in terminal_states:
+            _drain()
+            outcome = (row.get("outcome") if row else None) or "-"
+            console.print(f"[bold]state={state} outcome={outcome}[/]")
+            return
+        time.sleep(0.25)
+
+
+@sandbox.command("halt")
+@click.argument("run_id")
+@click.pass_context
+def sandbox_halt(ctx: click.Context, run_id: str) -> None:
+    """Request an operator halt for a pending/running sandbox run.
+
+    Unknown run or already-terminal run -> exit 2.
+    """
+    cfg = _config_from_ctx(ctx)
+    try:
+        from smadp.sandbox.queue import request_halt  # type: ignore[import-not-found]
+    except Exception as exc:
+        err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
+        ctx.exit(1)
+        return
+    try:
+        accepted = request_halt(run_id, config=cfg)
+    except KeyError:
+        err_console.print(f"[red]unknown run:[/] {run_id}")
+        ctx.exit(2)
+        return
+    if not accepted:
+        err_console.print(f"[red]run is already terminal:[/] {run_id}")
+        ctx.exit(2)
+        return
+    console.print(f"[green]halt requested[/] run_id={run_id}")
+
+
 @sandbox.command("runs")
 @click.option("--limit", default=50, type=int)
 @click.pass_context
