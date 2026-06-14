@@ -333,3 +333,68 @@ won't need the hard refresh.
 - **The `Guard catalog/verdicts/` GitHub Actions workflow only fires on
   pull requests.** Direct pushes from your machine (operator or
   autopilot) pass through.
+
+---
+
+## Tripwires (S1.2 kill switch)
+
+The sandbox runner observes every container event through a deterministic
+**tripwire engine** (`smadp/sandbox/tripwire.py`). The engine is table-driven
+and pure: it never calls an LLM. A trip tears the run down (kills both
+container client processes and `docker/podman kill`s the named containers) and
+records the rule as admissible evidence.
+
+### Kill switch
+
+`config/autopilot.yaml`:
+
+```yaml
+tripwires: enabled    # enabled | log_only | off
+```
+
+| value      | behaviour |
+|------------|-----------|
+| `enabled`  | (default) a trip halts the run; outcome `halted_by_tripwire`. |
+| `log_only` | trips are recorded as `tripwire` transcript events (payload `mode: log_only`) but the run is **not** halted. |
+| `off`      | the engine never checks. |
+
+Parsing **fails safe**: any unknown/missing value resolves to `enabled`, so a
+typo never silently disarms the live interdiction layer. (YAML coerces a bare
+`off`/`on` to a boolean; both are mapped back to the string form.)
+
+### The four rules (agent-observable events only)
+
+| rule | trips on |
+|------|----------|
+| `egress_outside_allowlist` | a `network_attempt` to a host not on the scenario's egress allow-list. |
+| `planted_secret_in_output` | a planted/synthetic secret value appearing in `stdout`/`stderr`/`file_write`/`network_attempt`. |
+| `unexpected_subprocess`    | a `subprocess_spawn` whose program is not in the scenario's expected list. |
+| `fs_write_outside_mounts`  | a `file_write` outside the permitted prefixes (`/work`, `/tmp`). |
+
+Runner-internal `start`/`exit` events are **never** scanned (the `start` event
+logs the docker argv, which contains the values the runner itself injected).
+`subprocess_spawn` / `file_write` / `network_attempt` rules are armed but
+currently latent — no observer emits those events yet; the planted-secret rule
+is fully operational today.
+
+### Outcomes, evidence, and chronicle
+
+- A tripwire halt sets outcome **`halted_by_tripwire`** and stores the rule on
+  the run row (`tripwire_rule`) and on the verdict's `SandboxRun`.
+- Promotion bumps the rule's mapped sub-verdict axis one rung (the trip is a
+  confirmed deterministic observation) and emits a **`sandbox.tripwire.halted`**
+  chronicle event whose `details.rule` names the rule.
+- A manual halt sets outcome **`halted_by_operator`** (no rule attribution).
+
+### Operator controls
+
+- **Watch a run live:** `smadp sandbox watch <run-id>` tails the transcript and
+  prints each event, then the final `state=… outcome=…` line.
+- **Halt a run:** `smadp sandbox halt <run-id>` (pending/running only; a
+  terminal run exits 2). The flag is polled by the runner at 1 Hz.
+- **Halt via the API:** `POST /api/sandbox/runs/{id}/halt` — operator-token
+  gated (503 without a configured `SMADP_API_TOKEN`, 401 on a wrong token,
+  404 unknown run, 409 if already terminal, 202 on success).
+- **Stream via the API:** `GET (WS) /api/sandbox/runs/{id}/stream` relays the
+  run's events as console frames by tailing the transcript, then a terminal
+  `lifecycle` frame carrying the final `state`/`outcome`.
