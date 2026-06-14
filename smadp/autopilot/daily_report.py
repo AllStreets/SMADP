@@ -265,6 +265,24 @@ def render_report(
                 lines.append(f"| `{sev}` | {count} |")
         lines.append("")
 
+    # Capability creep — agents whose safety surface expanded today.
+    drift_events = [e for e in events if e.get("event") == "capability_drift"]
+    if drift_events:
+        lines.append("## Capability creep")
+        lines.append("")
+        lines.append("| Agent | Expansion |")
+        lines.append("|---|---|")
+        for ev in drift_events:
+            slug = str(ev.get("slug") or "—")
+            details = ev.get("details") or {}
+            expansions = details.get("expansions")
+            if isinstance(expansions, list) and expansions:
+                expansion = ", ".join(str(x) for x in expansions)
+            else:
+                expansion = str(details.get("summary") or "expanded")
+            lines.append(f"| `{slug}` | {expansion} |")
+        lines.append("")
+
     # Pipeline health
     lines.append("## Pipeline health")
     lines.append(
