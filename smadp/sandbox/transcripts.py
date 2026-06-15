@@ -32,10 +32,12 @@ EventType = Literal[
     "file_write",
     "file_read",
     "network_attempt",
+    "subprocess_spawn",
     "tool_call",
     "exit",
     "policy_violation",
     "scenario_assertion",
+    "tripwire",
 ]
 
 Direction = Literal["agent_to_env", "env_to_agent", "internal"]

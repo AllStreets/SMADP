@@ -155,6 +155,7 @@ TOOL_INPUT_SCHEMA: dict[str, object] = {
             "enum": [
                 "unverified-profile",
                 "docs-only",
+                "behavior-observed",
                 "profile-verified",
                 "sandbox-validated",
             ]

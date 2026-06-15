@@ -158,11 +158,20 @@ let _verdicts: Verdict[] | null = null;
 export function getVerdicts(): Verdict[] {
   if (_verdicts) return _verdicts;
   const dir = path.join(CATALOG_DIR, 'verdicts');
-  const files = safeReadDir(dir).filter((f) => f.endsWith('.json'));
+  // Exclude detached signature sidecars (<key>.sig.json); they are loaded
+  // alongside their verdict, not as standalone verdicts.
+  const files = safeReadDir(dir).filter(
+    (f) => f.endsWith('.json') && !f.endsWith('.sig.json'),
+  );
   const out: Verdict[] = [];
   for (const f of files) {
     const v = safeReadJSON<any>(path.join(dir, f));
-    if (v) out.push(normalizeVerdict(v));
+    if (!v) continue;
+    const verdict = normalizeVerdict(v);
+    const key = f.replace(/\.json$/, '');
+    const sig = safeReadJSON<any>(path.join(dir, `${key}.sig.json`));
+    if (sig) verdict.signature = sig;
+    out.push(verdict);
   }
   out.sort(
     (a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime(),
@@ -221,6 +230,24 @@ export function getFrameworks(): FrameworksFile {
   );
   _frameworks = f ?? { schema_version: '1.0', frameworks: [] };
   return _frameworks;
+}
+
+// ---------- Causal risk DAG ----------
+import { loadCausalityDag, type CausalityDag } from '../lib/causality';
+
+let _causality: CausalityDag | null = null;
+/**
+ * Hand-authored causal risk DAG (catalog/_meta/risk-causality.json), validated
+ * + memoized. Consumed at build time by CausalGraph.astro. The validation
+ * (node set, acyclicity) is the same one the Python analyzer applies.
+ */
+export function getRiskCausality(): CausalityDag {
+  if (_causality) return _causality;
+  const raw = safeReadJSON<unknown>(
+    path.join(CATALOG_DIR, '_meta', 'risk-causality.json'),
+  );
+  _causality = loadCausalityDag(raw);
+  return _causality;
 }
 
 // ---------- Chronicle ----------
@@ -294,6 +321,7 @@ export function evidenceLevelColor(level: string): string {
     {
       'unverified-profile': '#71717A',
       'docs-only': '#A78BFA',
+      'behavior-observed': '#06B6D4',
       'profile-verified': '#7C3AED',
       'sandbox-validated': '#22C55E',
     } as Record<string, string>

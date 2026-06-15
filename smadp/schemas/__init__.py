@@ -11,6 +11,7 @@ from smadp.schemas.dispute import (
 from smadp.schemas.evidence import Evidence
 from smadp.schemas.profile import (
     Capabilities,
+    CapabilityHistoryEntry,
     ConcurrencyModel,
     IOSurfaces,
     PermissionsRequested,
@@ -41,6 +42,7 @@ from smadp.schemas.verdict import (
 
 __all__ = [
     "Capabilities",
+    "CapabilityHistoryEntry",
     "Chain",
     "ChronicleEvent",
     "Citation",

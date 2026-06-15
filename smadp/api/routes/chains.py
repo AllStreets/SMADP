@@ -37,6 +37,36 @@ async def list_chains(request: Request) -> dict[str, Any]:
     return {"items": items, "total": len(items)}
 
 
+@router.get(
+    "/{chain_id}/composition",
+    summary="Compute the deterministic composition for an authored chain (read-only)",
+)
+async def get_chain_composition(request: Request, chain_id: str) -> dict[str, Any]:
+    """Compose an authored chain on the fly from its pairwise verdicts.
+
+    Read-only and unauthenticated: no token, no write, no operator gate. Every
+    number here is computed deterministically in Python (never the LLM).
+    """
+    from smadp.autopilot.chain_composer import compose_chain_candidate
+
+    repo = CatalogRepo(request.app.state.config)
+    try:
+        chain = repo.load_chain(chain_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    candidate, composed = compose_chain_candidate(repo, chain)
+    return {
+        "chain_id": chain_id,
+        "composite_score": composed.composite,
+        "confidence": composed.confidence,
+        "max_severity": composed.max_severity,
+        "severities": composed.severities,
+        "missing_links": composed.missing_links,
+        "composed_from": candidate.composed_from,
+    }
+
+
 @router.get("/{chain_id}", summary="Fetch a single chain by id")
 async def get_chain(request: Request, chain_id: str) -> dict[str, Any]:
     repo = CatalogRepo(request.app.state.config)

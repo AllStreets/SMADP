@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from smadp.schemas.evidence_level import EvidenceLevel
 from smadp.schemas.profile import EVIDENCE_REF_RE, SLUG_RE
 
 CHAIN_ID_RE = re.compile(r"^c_[a-z0-9-]{3,80}$")
@@ -88,12 +89,7 @@ class SubVerdicts(BaseModel):
     E_compliance: SubVerdict
 
 
-EvidenceLevel = Literal[
-    "unverified-profile",
-    "docs-only",
-    "profile-verified",
-    "sandbox-validated",
-]
+# EvidenceLevel imported from smadp.schemas.evidence_level (canonical ladder).
 
 
 class Chain(BaseModel):
@@ -101,7 +97,7 @@ class Chain(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     chain_id: str
     name: str = Field(min_length=1, max_length=120)
     tagline: str | None = Field(default=None, max_length=240)
@@ -122,6 +118,11 @@ class Chain(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     first_seen_at: datetime
     last_refreshed_at: datetime
+    # Composition provenance (schema 1.1, additive). Records which pairwise
+    # verdicts a composed chain candidate was derived from for reproducibility.
+    composition_method: str | None = Field(default=None, max_length=60)
+    composed_from: list[str] = Field(default_factory=list)
+    stale_reason: Literal["capability_drift"] | None = None
 
     @field_validator("chain_id")
     @classmethod

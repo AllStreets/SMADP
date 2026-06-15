@@ -6,14 +6,18 @@ import RiskBadge from '../../components/RiskBadge.astro';
 import FrameworkBadge from '../../components/FrameworkBadge.astro';
 import CitationTooltip from '../../components/CitationTooltip.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
+import CausalGraph from '../../components/CausalGraph.astro';
+import VerdictSignature from '../../components/VerdictSignature.astro';
 import {
   getVerdicts,
   getVerdictById,
   getProfile,
+  getRiskCausality,
   compositeColor,
   riskMeta,
 } from '../../data/catalog';
 import { RISK_ORDER } from '../../data/types';
+import { computeCausality } from '../../lib/causality';
 import type { RiskId } from '../../data/types';
 
 export function getStaticPaths() {
@@ -31,6 +35,14 @@ const bName = b?.name ?? verdict.pair[1];
 const score = verdict.composite_score;
 const scoreColor = compositeColor(score);
 const confidencePct = Math.round(verdict.confidence * 100);
+
+// Causal risk graph: computed at build time from this verdict's severities and
+// the hand-authored DAG. Nothing is stored on the verdict — the report is
+// derived deterministically (parity-tested against the Python analyzer).
+const causalitySeverities = Object.fromEntries(
+  RISK_ORDER.map((rk) => [rk, verdict.sub_verdicts[rk].severity]),
+) as Record<RiskId, string>;
+const causality = computeCausality(causalitySeverities, getRiskCausality());
 ---
 
 <Layout title={`${aName} × ${bName} — Verdict — SMADP`} description={verdict.headline}>
@@ -151,6 +163,40 @@ const confidencePct = Math.round(verdict.confidence * 100);
     </div>
   </section>
 
+  <!-- Causal risk graph -->
+  <section class="container-page mt-12">
+    <div class="card">
+      <h2 class="h3 text-white">Causal risk graph</h2>
+      <p class="mt-1 text-sm text-ink-400">
+        How one realized risk amplifies a downstream risk when these two agents
+        are composed. Structure is hand-authored; activation, edge weights, and
+        mitigation leverage are computed deterministically from this verdict's
+        severities (no model in this layer).
+      </p>
+      <div class="mt-6 flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-10">
+        <CausalGraph report={causality} />
+        <div class="min-w-0 flex-1 text-sm">
+          <div class="font-mono text-[11px] uppercase tracking-wider text-ink-400">
+            Mitigation leverage
+          </div>
+          <ul class="mt-2 space-y-1">
+            {RISK_ORDER.map((rk: RiskId) => (
+              <li class="flex items-center justify-between gap-3">
+                <span class="text-ink-200">{riskMeta(rk)?.name ?? rk}</span>
+                <span
+                  class="font-mono text-xs"
+                  style={`color:${rk === causality.best_mitigation ? '#22d3ee' : '#a1a1aa'};`}
+                >
+                  {causality.leverage[rk].toFixed(2)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Framework mappings -->
   {Object.keys(verdict.framework_mappings).length > 0 && (
     <section class="container-page mt-12">
@@ -231,6 +277,18 @@ const confidencePct = Math.round(verdict.confidence * 100);
       )}
     </div>
   </section>
+
+  {verdict.signature && (
+    <section class="container-page mt-12">
+      <div class="card">
+        <h2 class="h3 text-white">Signature</h2>
+        <p class="mt-1 mb-4 text-sm text-ink-400">
+          This verdict was signed at publish time with the operator's BYOK key.
+        </p>
+        <VerdictSignature signature={verdict.signature} />
+      </div>
+    </section>
+  )}
 
   <!-- Reproducibility -->
   <section class="container-page mt-12">

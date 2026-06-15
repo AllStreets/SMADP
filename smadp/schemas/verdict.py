@@ -8,13 +8,23 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from smadp.schemas.evidence_level import EvidenceLevel
+
 EVIDENCE_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 VERDICT_ID_RE = re.compile(r"^v_\d{4}-\d{2}-\d{2}_[a-z0-9-]+__[a-z0-9-]+_[a-f0-9]{4,8}$")
 
 Severity = Literal["none", "low", "medium", "high", "critical"]
-EvidenceLevel = Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"]
-SandboxOutcome = Literal["pass", "fail", "inconclusive", "errored"]
+StaleReason = Literal["capability_drift"]
+# Re-exported from smadp.schemas.evidence_level (canonical five-rung ladder).
+SandboxOutcome = Literal[
+    "pass",
+    "fail",
+    "inconclusive",
+    "errored",
+    "halted_by_tripwire",
+    "halted_by_operator",
+]
 
 
 class Citation(BaseModel):
@@ -83,6 +93,8 @@ class SandboxRun(BaseModel):
     outcome: SandboxOutcome
     transcript_ref: str
     scenario: str | None = None
+    mode: Literal["cooperative", "adversarial"] = "cooperative"
+    tripwire_rule: str | None = None
 
 
 class SubVerdicts(BaseModel):
@@ -124,6 +136,7 @@ class Verdict(BaseModel):
     framework_mappings: dict[str, list[str]] = Field(default_factory=dict)
     reproducibility: Reproducibility
     sandbox_runs: list[SandboxRun] = Field(default_factory=list)
+    stale_reason: StaleReason | None = None
 
     @field_validator("pair")
     @classmethod

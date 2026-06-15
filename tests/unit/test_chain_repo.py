@@ -81,3 +81,20 @@ def test_load_unknown_chain_raises(cfg: Config) -> None:
     repo = CatalogRepo(cfg)
     with pytest.raises(NotFoundError):
         repo.load_chain("c_missing")
+
+
+def test_save_pending_chain_lands_under_pending_chains(cfg: Config) -> None:
+    repo = CatalogRepo(cfg)
+    chain = _chain("c_pending-demo")
+    path = repo.save_pending_chain(chain)
+    assert path.parent.name == "chains"
+    assert path.parent.parent.name == "pending"
+    listed = [c.chain_id for c in repo.list_pending_chains()]
+    assert "c_pending-demo" in listed
+    assert repo.load_pending_chain("c_pending-demo").chain_id == "c_pending-demo"
+
+
+def test_load_unknown_pending_chain_raises(cfg: Config) -> None:
+    repo = CatalogRepo(cfg)
+    with pytest.raises(NotFoundError):
+        repo.load_pending_chain("c_missing")

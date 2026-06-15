@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from smadp.schemas.evidence_level import EvidenceLevel
+
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 EVIDENCE_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -83,12 +85,30 @@ class ConcurrencyModel(BaseModel):
     supports_multiple_instances: bool = False
 
 
+class CapabilityHistoryEntry(BaseModel):
+    """Append-only record of one observed capability snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(min_length=1, max_length=120)
+    observed_at: datetime
+    capability_hash: str
+    diff_summary: str = Field(default="", max_length=600)
+
+    @field_validator("capability_hash")
+    @classmethod
+    def _validate_hash(cls, v: str) -> str:
+        if not EVIDENCE_REF_RE.match(v):
+            raise ValueError(f"Invalid capability_hash: {v!r}")
+        return v
+
+
 class Profile(BaseModel):
     """Authoritative model for `catalog/profiles/<slug>.json`."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["1.0", "1.1"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2"] = "1.2"
     slug: str
     name: str = Field(min_length=1, max_length=100)
     tagline: str | None = Field(default=None, max_length=200)
@@ -109,6 +129,7 @@ class Profile(BaseModel):
     first_seen_at: datetime
     last_refreshed_at: datetime
     pairings: list[str] = Field(default_factory=list, max_length=20)
+    capability_history: list[CapabilityHistoryEntry] = Field(default_factory=list)
 
     # ---------------------------------------------------------------------
     # Autopilot-pipeline metadata. These fields ride along on the same JSON
@@ -118,9 +139,7 @@ class Profile(BaseModel):
     # ---------------------------------------------------------------------
     manual: bool | None = None
     composite_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    evidence_level: (
-        Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"] | None
-    ) = None
+    evidence_level: EvidenceLevel | None = None
     license: str | None = None
     onexus: dict[str, Any] | None = None
 

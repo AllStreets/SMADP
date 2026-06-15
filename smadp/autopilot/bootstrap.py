@@ -64,7 +64,7 @@ def _existing_profile_has_manual_flag(path: Path) -> bool:
         return False
 
 
-_ENRICHED_TIERS = {"docs-only", "profile-verified", "sandbox-validated"}
+_ENRICHED_TIERS = {"docs-only", "behavior-observed", "profile-verified", "sandbox-validated"}
 
 
 def _existing_profile_is_enriched(path: Path) -> bool:

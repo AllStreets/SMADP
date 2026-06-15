@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from smadp.schemas.evidence_level import EVIDENCE_LADDER, rank
+
 
 class PendingError(RuntimeError):
     pass
@@ -34,12 +36,7 @@ class PendingVerdict:
 
     @property
     def tier_rank(self) -> int:
-        return {
-            "unverified-profile": 0,
-            "docs-only": 1,
-            "profile-verified": 2,
-            "sandbox-validated": 3,
-        }.get(self.evidence_level, -1)
+        return rank(self.evidence_level) if self.evidence_level in EVIDENCE_LADDER else -1
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -112,7 +109,7 @@ def list_pending(
 
 
 def approve_one(*, key: str, repo_root: Path) -> Path:
-    """Move a single pending verdict to catalog/verdicts/."""
+    """Move a single pending verdict to catalog/verdicts/ and sign it (best-effort)."""
     pending = repo_root / "catalog" / "pending" / f"{key}.json"
     verdicts = repo_root / "catalog" / "verdicts" / f"{key}.json"
     if not pending.exists():
@@ -122,8 +119,72 @@ def approve_one(*, key: str, repo_root: Path) -> Path:
         pending.rename(verdicts)
     except OSError as exc:
         raise PendingError(f"could not approve {key}: {exc}") from exc
+    _sign_published_verdict(key=key, verdict_path=verdicts, repo_root=repo_root)
     _touch_rebuild_sentinel(repo_root)
     return verdicts
+
+
+# Workspace id under which the operator's verdict-publishing BYOK key is stored.
+PUBLISHER_WORKSPACE_ID = "_smadp_publisher"
+
+
+def ensure_publisher_workspace(*, config: Any = None) -> None:
+    """Idempotently ensure the ``_smadp_publisher`` workspace row exists.
+
+    The BYOK signing-keys table has a foreign key to ``workspaces(id)``, so the
+    operator's publisher key needs a backing workspace row. ``create_workspace``
+    generates a random id, so we insert the fixed publisher id directly.
+    """
+    from smadp.config import load_config
+    from smadp.tenancy.store import _connect, _ensure_schema, _transaction
+    from smadp.utils.time import utcnow
+
+    cfg = config or load_config()
+    now_iso = utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
+    conn = _connect(cfg)
+    try:
+        _ensure_schema(conn)
+        with _transaction(conn):
+            conn.execute(
+                "INSERT OR IGNORE INTO workspaces(id, name, plan, created_at) "
+                "VALUES (?, ?, 'public', ?)",
+                (PUBLISHER_WORKSPACE_ID, "SMADP verdict publisher", now_iso),
+            )
+    finally:
+        conn.close()
+
+
+def _sign_published_verdict(*, key: str, verdict_path: Path, repo_root: Path) -> None:
+    """Write a detached BYOK signature sidecar for a freshly-published verdict.
+
+    Best-effort: signing is additive evidence, never a publish blocker. A missing
+    key publishes the verdict unsigned (logged); any failure is swallowed after a
+    log so the operator gate is never blocked.
+    """
+    import structlog
+
+    from smadp.config import load_config
+    from smadp.passport.publish_sign import sign_verdict_dict
+    from smadp.tenancy import keys
+
+    log = structlog.get_logger(__name__)
+    try:
+        cfg = load_config()
+        signing_key = keys.load_signing_key(
+            workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg
+        )
+        if signing_key is None:
+            log.info("pending.publish.unsigned", key=key)
+            return
+        verdict = json.loads(verdict_path.read_text("utf-8"))
+        sidecar = sign_verdict_dict(verdict, signing_key=signing_key)
+        sidecar_path = verdict_path.with_name(f"{key}.sig.json")
+        sidecar_path.write_text(
+            json.dumps(sidecar, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        log.info("pending.publish.signed", key=key)
+    except Exception as exc:  # never block the operator gate on a signing failure
+        log.warning("pending.publish.sign_failed", key=key, error=str(exc))
 
 
 def reject_one(*, key: str, repo_root: Path, reason: str) -> Path:

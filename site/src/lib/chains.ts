@@ -43,6 +43,7 @@ export interface SubVerdict {
 export type EvidenceLevel =
   | 'unverified-profile'
   | 'docs-only'
+  | 'behavior-observed'
   | 'profile-verified'
   | 'sandbox-validated';
 

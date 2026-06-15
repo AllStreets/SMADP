@@ -27,6 +27,7 @@ from smadp.catalog.lint import LintReport, lint_catalog
 from smadp.catalog.repo import CatalogRepo, NotFoundError
 from smadp.config import Config, load_config
 from smadp.passport.cli import passport_group
+from smadp.proxy.cli import proxy as proxy_group
 from smadp.refresh.cli import refresh_group
 from smadp.transparency.cli import transparency_group
 from smadp.utils.slug import normalize_slug, sort_pair
@@ -47,6 +48,7 @@ _SEVERITY_COLORS = {
 _EVIDENCE_COLORS = {
     "unverified-profile": "#71717A",
     "docs-only": "#A78BFA",
+    "behavior-observed": "#06B6D4",
     "profile-verified": "#7C3AED",
     "sandbox-validated": "#22C55E",
 }
@@ -550,6 +552,100 @@ def sandbox_status(ctx: click.Context, run_id: str | None) -> None:
     console.print(table)
 
 
+@sandbox.command("watch")
+@click.argument("run_id")
+@click.pass_context
+def sandbox_watch(ctx: click.Context, run_id: str) -> None:
+    """Tail a sandbox run's transcript live, then print its final outcome.
+
+    Tails the per-event-flushed transcript JSONL by byte offset and prints
+    each event as it appears; loops until the queue row reaches a terminal
+    state, then prints the outcome line. Unknown run -> exit 2.
+    """
+    import time
+
+    cfg = _config_from_ctx(ctx)
+    try:
+        from smadp.sandbox.queue import get_raw_row  # type: ignore[import-not-found]
+        from smadp.sandbox.runner import transcript_path_for
+        from smadp.sandbox.transcripts import TranscriptEvent
+    except Exception as exc:
+        err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
+        ctx.exit(1)
+        return
+
+    row = get_raw_row(run_id, config=cfg)
+    if row is None:
+        err_console.print(f"[red]unknown run:[/] {run_id}")
+        ctx.exit(2)
+        return
+
+    path = transcript_path_for(run_id, config=cfg)
+    offset = 0
+    terminal_states = {"completed", "failed"}
+
+    def _drain() -> None:
+        nonlocal offset
+        if not path.exists():
+            return
+        with path.open("r", encoding="utf-8") as fh:
+            fh.seek(offset)
+            for line in fh:
+                if not line.endswith("\n"):
+                    break  # partial flush; retry next tick
+                offset += len(line.encode("utf-8"))
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    event = TranscriptEvent.from_json_line(text)
+                except Exception:
+                    continue
+                console.print(
+                    f"[dim]{event.event_type}[/] {event.agent}: "
+                    f"{json.dumps(event.payload, ensure_ascii=False)}"
+                )
+
+    while True:
+        _drain()
+        row = get_raw_row(run_id, config=cfg)
+        state = str(row["state"]) if row else ""
+        if state in terminal_states:
+            _drain()
+            outcome = (row.get("outcome") if row else None) or "-"
+            console.print(f"[bold]state={state} outcome={outcome}[/]")
+            return
+        time.sleep(0.25)
+
+
+@sandbox.command("halt")
+@click.argument("run_id")
+@click.pass_context
+def sandbox_halt(ctx: click.Context, run_id: str) -> None:
+    """Request an operator halt for a pending/running sandbox run.
+
+    Unknown run or already-terminal run -> exit 2.
+    """
+    cfg = _config_from_ctx(ctx)
+    try:
+        from smadp.sandbox.queue import request_halt  # type: ignore[import-not-found]
+    except Exception as exc:
+        err_console.print(f"[red]sandbox subsystem unavailable:[/] {exc}")
+        ctx.exit(1)
+        return
+    try:
+        accepted = request_halt(run_id, config=cfg)
+    except KeyError:
+        err_console.print(f"[red]unknown run:[/] {run_id}")
+        ctx.exit(2)
+        return
+    if not accepted:
+        err_console.print(f"[red]run is already terminal:[/] {run_id}")
+        ctx.exit(2)
+        return
+    console.print(f"[green]halt requested[/] run_id={run_id}")
+
+
 @sandbox.command("runs")
 @click.option("--limit", default=50, type=int)
 @click.pass_context
@@ -788,6 +884,39 @@ def autopilot_approve(ctx: click.Context, key: str) -> None:
     except ApproveError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"approved {key}")
+
+
+@autopilot.command("compose-chains")
+@click.pass_context
+def autopilot_compose_chains(ctx: click.Context) -> None:
+    """Compose authored chains into pending/chains/ (deterministic; numbers in Python)."""
+    from smadp.autopilot.chain_composer import compose_authored_chains
+    from smadp.autopilot.config import load_autopilot_config
+
+    cfg = _config_from_ctx(ctx)
+    autopilot_cfg = load_autopilot_config(cfg.repo_root / "config" / "autopilot.yaml")
+    summary = compose_authored_chains(
+        repo_root=cfg.repo_root, config=cfg, autopilot_cfg=autopilot_cfg
+    )
+    if summary.disabled:
+        click.echo("compose-chains disabled (chain_composition.enabled: false)")
+        return
+    click.echo(f"composed={summary.composed} needs_judge={summary.needs_judge}")
+
+
+@autopilot.command("approve-chain")
+@click.argument("chain_id")
+@click.pass_context
+def autopilot_approve_chain(ctx: click.Context, chain_id: str) -> None:
+    """Promote a composed chain candidate (pending/chains -> catalog/chains)."""
+    from smadp.autopilot.approve import ApproveError, approve_chain
+
+    cfg = _config_from_ctx(ctx)
+    try:
+        approve_chain(repo_root=cfg.repo_root, chain_id=chain_id)
+    except ApproveError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"approved chain {chain_id}")
 
 
 @autopilot.command("bootstrap-onexus")
@@ -1062,9 +1191,34 @@ def search(ctx: click.Context, query: str, limit: int) -> None:
 
 cli.add_command(transparency_group)
 cli.add_command(passport_group)
+cli.add_command(proxy_group)
 cli.add_command(webhook_group)
 cli.add_command(vendor_group)
 cli.add_command(refresh_group)
+
+
+# --------------------------------------------------------------------- analyzer
+@cli.group()
+def analyzer() -> None:
+    """Offline analysis tooling (triage model training, etc.)."""
+
+
+@analyzer.command("triage-train")
+@click.option("--out", default=None, help="Artifact output path.")
+@click.option("--seed", default=1234, type=int, help="Deterministic training seed.")
+@click.option("--version", default="v1", help="Artifact version label.")
+@click.pass_context
+def analyzer_triage_train(ctx: click.Context, out: str | None, seed: int, version: str) -> None:
+    """Train the dependency-light triage model into a versioned JSON artifact."""
+    from scripts.train_triage import main as train_main
+
+    cfg = _config_from_ctx(ctx)
+    argv = ["--catalog", str(cfg.catalog_dir), "--seed", str(seed), "--version", version]
+    if out:
+        argv += ["--out", out]
+    rc = train_main(argv)
+    if rc != 0:
+        raise click.ClickException(f"triage-train failed (exit {rc})")
 
 
 # --------------------------------------------------------------------- adapters
@@ -1137,6 +1291,38 @@ def adapters_scaffold(
 @cli.group()
 def pending() -> None:
     """Review queue for autopilot-produced verdicts before they're published."""
+
+
+@pending.command("init-signing-key")
+def pending_init_signing_key() -> None:
+    """Provision the BYOK Ed25519 key used to sign published verdicts.
+
+    Generates a fresh Ed25519 key, stores it (AES-GCM encrypted at rest) under
+    the ``_smadp_publisher`` workspace, and prints the public key hex. Once set,
+    ``pending approve`` and ``autopilot approve`` write a detached signature
+    sidecar next to each published verdict.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from smadp.autopilot.pending import PUBLISHER_WORKSPACE_ID, ensure_publisher_workspace
+    from smadp.tenancy import keys
+
+    cfg = load_config()
+    ensure_publisher_workspace(config=cfg)
+    existing = keys.load_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg)
+    if existing is not None:
+        pub = existing.public_key().public_bytes(
+            encoding=Encoding.Raw, format=PublicFormat.Raw
+        ).hex()
+        console.print(f"[yellow]publisher signing key already provisioned[/]\npublic_key_hex: {pub}")
+        return
+    priv = Ed25519PrivateKey.generate()
+    keys.upload_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, private_key=priv, config=cfg)
+    pub = priv.public_key().public_bytes(
+        encoding=Encoding.Raw, format=PublicFormat.Raw
+    ).hex()
+    console.print(f"[green]provisioned publisher signing key[/]\npublic_key_hex: {pub}")
 
 
 @pending.command("list")

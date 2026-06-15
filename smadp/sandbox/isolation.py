@@ -117,6 +117,15 @@ def _engine_binary(backend: RuntimeBackend) -> str:
     return "podman" if backend.value.startswith("podman") else "docker"
 
 
+def engine_binary(backend: RuntimeBackend) -> str:
+    """Public accessor for the engine binary ('podman'|'docker') of a backend.
+
+    Used by the runner's halt watcher to build the ``<engine> kill <name>``
+    teardown command.
+    """
+    return _engine_binary(backend)
+
+
 def _has_binary(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -397,4 +406,5 @@ __all__ = [
     "RuntimeUnavailableError",
     "build_run_command",
     "detect_runtime",
+    "engine_binary",
 ]

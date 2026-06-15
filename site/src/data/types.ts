@@ -8,6 +8,7 @@ export type Severity = 'none' | 'low' | 'medium' | 'high' | 'critical';
 export type EvidenceLevel =
   | 'unverified-profile'
   | 'docs-only'
+  | 'behavior-observed'
   | 'profile-verified'
   | 'sandbox-validated';
 
@@ -106,9 +107,17 @@ export interface SandboxRun {
   run_id: string;
   started_at: string;
   completed_at?: string | null;
-  outcome: 'pass' | 'fail' | 'inconclusive' | 'errored';
+  outcome:
+    | 'pass'
+    | 'fail'
+    | 'inconclusive'
+    | 'errored'
+    | 'halted_by_tripwire'
+    | 'halted_by_operator';
   transcript_ref: string;
   scenario?: string;
+  mode?: 'cooperative' | 'adversarial';
+  tripwire_rule?: string | null;
 }
 export interface Verdict {
   schema_version: '1.0';
@@ -129,6 +138,16 @@ export interface Verdict {
     evidence_bundle_hash: string;
   };
   sandbox_runs: SandboxRun[];
+  /** Detached BYOK signature sidecar, present when the verdict was signed at publish. */
+  signature?: VerdictSignature;
+}
+
+/** Detached Ed25519 signature over a verdict's canonical sha256 (catalog/verdicts/<key>.sig.json). */
+export interface VerdictSignature {
+  signing_strategy: string;
+  canonical_sha256: string;
+  signature_hex: string;
+  public_key_hex: string;
 }
 
 // ----- Meta -----

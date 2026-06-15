@@ -55,6 +55,19 @@ def test_extra_fields_rejected() -> None:
         )
 
 
+def test_capability_drift_event_accepted() -> None:
+    ev = ChronicleEvent.model_validate(
+        {
+            "ts": "2026-05-02T00:00:00Z",
+            "event": "capability_drift",
+            "by": "autopilot",
+            "slug": "demo-agent",
+            "details": {"expansions": ["execute_shell"]},
+        }
+    )
+    assert ev.event == "capability_drift"
+
+
 def test_minimal_event_ok() -> None:
     ev = ChronicleEvent.model_validate(
         {

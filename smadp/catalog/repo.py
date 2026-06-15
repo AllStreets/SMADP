@@ -354,6 +354,45 @@ class CatalogRepo:
                 continue
         return out
 
+    # ------------------------------------------------------- pending chains
+    def pending_chains_dir(self) -> Path:
+        """Holding pen for composed chain candidates awaiting operator review.
+
+        Composed chains are ``Chain`` models (not pairwise ``Verdict`` files),
+        so they live in ``catalog/pending/chains/`` rather than the flat
+        pairwise pending queue. An operator promotes a candidate via
+        ``approve_chain`` (file move) into ``catalog/chains/``.
+        """
+        return self.config.pending_dir / "chains"
+
+    def pending_chain_path(self, chain_id: str) -> Path:
+        return self.pending_chains_dir() / f"{chain_id}.json"
+
+    def save_pending_chain(self, chain: Chain) -> Path:
+        path = self.pending_chain_path(chain.chain_id)
+        self.pending_chains_dir().mkdir(parents=True, exist_ok=True)
+        payload = chain.model_dump(mode="json", by_alias=True, exclude_none=True)
+        self._atomic_write_json(path, payload)
+        return path
+
+    def load_pending_chain(self, chain_id: str) -> Chain:
+        path = self.pending_chain_path(chain_id)
+        if not path.exists():
+            raise NotFoundError(f"pending chain not found: {chain_id}")
+        return Chain.model_validate(self._read_json(path))
+
+    def list_pending_chains(self) -> list[Chain]:
+        pending_chains = self.pending_chains_dir()
+        if not pending_chains.exists():
+            return []
+        out: list[Chain] = []
+        for path in sorted(pending_chains.glob("*.json")):
+            try:
+                out.append(Chain.model_validate(self._read_json(path)))
+            except (CatalogError, ValueError):
+                continue
+        return out
+
     # ------------------------------------------------------------------- pairs
     def iter_pairs(self) -> Iterator[tuple[str, str]]:
         """Yield every alphabetized pair of slugs in the catalog."""
