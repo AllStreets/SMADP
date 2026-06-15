@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 from smadp.analyzer.chains import (
@@ -130,7 +131,7 @@ def compose_chain_candidate(repo: CatalogRepo, chain: Chain) -> tuple[Chain, Com
 
 
 def compose_authored_chains(
-    *, repo_root, config: Config, autopilot_cfg: AutopilotConfig
+    *, repo_root: Path, config: Config, autopilot_cfg: AutopilotConfig
 ) -> ComposeSummary:
     if not autopilot_cfg.chain_composition_enabled:
         return ComposeSummary(disabled=True, composed=0, needs_judge=0)
@@ -204,7 +205,7 @@ def _normalize_bands(raw: dict[str, str]) -> dict[str, str]:
 
 
 async def confirm_low_confidence_chains_async(
-    *, repo_root, config: Config, autopilot_cfg: AutopilotConfig, judge: ChainJudge
+    *, repo_root: Path, config: Config, autopilot_cfg: AutopilotConfig, judge: ChainJudge
 ) -> JudgeSummary:
     if not autopilot_cfg.chain_composition_enabled:
         return JudgeSummary(disabled=True, judged=0)
@@ -264,7 +265,7 @@ async def confirm_low_confidence_chains_async(
 
 
 def confirm_low_confidence_chains(
-    *, repo_root, config: Config, autopilot_cfg: AutopilotConfig, judge: ChainJudge
+    *, repo_root: Path, config: Config, autopilot_cfg: AutopilotConfig, judge: ChainJudge
 ) -> JudgeSummary:
     """Synchronous wrapper mirroring ``refresh/evaluator.py``."""
     return asyncio.run(
