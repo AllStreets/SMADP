@@ -1293,6 +1293,38 @@ def pending() -> None:
     """Review queue for autopilot-produced verdicts before they're published."""
 
 
+@pending.command("init-signing-key")
+def pending_init_signing_key() -> None:
+    """Provision the BYOK Ed25519 key used to sign published verdicts.
+
+    Generates a fresh Ed25519 key, stores it (AES-GCM encrypted at rest) under
+    the ``_smadp_publisher`` workspace, and prints the public key hex. Once set,
+    ``pending approve`` and ``autopilot approve`` write a detached signature
+    sidecar next to each published verdict.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from smadp.autopilot.pending import PUBLISHER_WORKSPACE_ID, ensure_publisher_workspace
+    from smadp.tenancy import keys
+
+    cfg = load_config()
+    ensure_publisher_workspace(config=cfg)
+    existing = keys.load_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg)
+    if existing is not None:
+        pub = existing.public_key().public_bytes(
+            encoding=Encoding.Raw, format=PublicFormat.Raw
+        ).hex()
+        console.print(f"[yellow]publisher signing key already provisioned[/]\npublic_key_hex: {pub}")
+        return
+    priv = Ed25519PrivateKey.generate()
+    keys.upload_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, private_key=priv, config=cfg)
+    pub = priv.public_key().public_bytes(
+        encoding=Encoding.Raw, format=PublicFormat.Raw
+    ).hex()
+    console.print(f"[green]provisioned publisher signing key[/]\npublic_key_hex: {pub}")
+
+
 @pending.command("list")
 @click.option("--tier", type=str, default=None, help="Filter by evidence_level (e.g. docs-only).")
 @click.option(
