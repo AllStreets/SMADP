@@ -10,7 +10,7 @@ from smadp.analyzer.triage import TriageModel
 from smadp.autopilot.planners.triage_order import triage_urgency
 from smadp.autopilot.work_queue import WorkItem
 
-_ENRICHED_TIERS = {"docs-only", "profile-verified", "sandbox-validated"}
+_ENRICHED_TIERS = {"docs-only", "behavior-observed", "profile-verified", "sandbox-validated"}
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ export type Severity = 'none' | 'low' | 'medium' | 'high' | 'critical';
 export type EvidenceLevel =
   | 'unverified-profile'
   | 'docs-only'
+  | 'behavior-observed'
   | 'profile-verified'
   | 'sandbox-validated';
 

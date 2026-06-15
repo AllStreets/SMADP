@@ -61,6 +61,7 @@ async def judge_bundle(bundle: JudgeBundle, *, llm: LLMClient) -> JudgeOutput:
     if evidence_level not in (
         "unverified-profile",
         "docs-only",
+        "behavior-observed",
         "profile-verified",
         "sandbox-validated",
     ):

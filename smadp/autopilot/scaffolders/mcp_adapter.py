@@ -21,7 +21,7 @@ log = structlog.get_logger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-_ENRICHED_TIERS = {"docs-only", "profile-verified", "sandbox-validated"}
+_ENRICHED_TIERS = {"docs-only", "behavior-observed", "profile-verified", "sandbox-validated"}
 
 _LANGUAGE_TO_DOCKERFILE: dict[Language, str] = {
     Language.PYTHON: "python.Dockerfile",
@@ -44,6 +44,7 @@ _LANGUAGE_TO_INVOCATION: dict[Language, str] = {
 
 _TRUST_FLOOR_BY_EVIDENCE: dict[str, float] = {
     "docs-only": 0.3,
+    "behavior-observed": 0.4,
     "profile-verified": 0.5,
     "sandbox-validated": 0.7,
 }

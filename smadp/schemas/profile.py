@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from smadp.schemas.evidence_level import EvidenceLevel
+
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 EVIDENCE_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -137,9 +139,7 @@ class Profile(BaseModel):
     # ---------------------------------------------------------------------
     manual: bool | None = None
     composite_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    evidence_level: (
-        Literal["unverified-profile", "docs-only", "profile-verified", "sandbox-validated"] | None
-    ) = None
+    evidence_level: EvidenceLevel | None = None
     license: str | None = None
     onexus: dict[str, Any] | None = None
 

@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from smadp.schemas.evidence_level import EVIDENCE_LADDER, rank
+
 
 class PendingError(RuntimeError):
     pass
@@ -34,12 +36,7 @@ class PendingVerdict:
 
     @property
     def tier_rank(self) -> int:
-        return {
-            "unverified-profile": 0,
-            "docs-only": 1,
-            "profile-verified": 2,
-            "sandbox-validated": 3,
-        }.get(self.evidence_level, -1)
+        return rank(self.evidence_level) if self.evidence_level in EVIDENCE_LADDER else -1
 
 
 def _load(path: Path) -> dict[str, Any] | None:

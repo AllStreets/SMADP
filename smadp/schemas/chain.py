@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from smadp.schemas.evidence_level import EvidenceLevel
 from smadp.schemas.profile import EVIDENCE_REF_RE, SLUG_RE
 
 CHAIN_ID_RE = re.compile(r"^c_[a-z0-9-]{3,80}$")
@@ -88,12 +89,7 @@ class SubVerdicts(BaseModel):
     E_compliance: SubVerdict
 
 
-EvidenceLevel = Literal[
-    "unverified-profile",
-    "docs-only",
-    "profile-verified",
-    "sandbox-validated",
-]
+# EvidenceLevel imported from smadp.schemas.evidence_level (canonical ladder).
 
 
 class Chain(BaseModel):

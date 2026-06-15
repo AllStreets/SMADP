@@ -233,6 +233,7 @@ def render_report(
     for tier in (
         "sandbox-validated",
         "profile-verified",
+        "behavior-observed",
         "docs-only",
         "unverified-profile",
     ):

@@ -43,6 +43,7 @@ from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config
 from smadp.sandbox import queue
+from smadp.schemas.evidence_level import EVIDENCE_LADDER as _EVIDENCE_LADDER
 from smadp.sandbox.properties import PropertyReport, apply_property_floors
 from smadp.sandbox.scenarios import scenario_mode
 from smadp.schemas.verdict import (
@@ -62,12 +63,9 @@ from smadp.utils.time import utcnow
 log = structlog.get_logger(__name__)
 
 
-_EVIDENCE_LADDER: tuple[EvidenceLevel, ...] = (
-    "unverified-profile",
-    "docs-only",
-    "profile-verified",
-    "sandbox-validated",
-)
+# _EVIDENCE_LADDER is the canonical five-rung tuple; ``_maybe_promote`` indexes
+# into it via ``.index()`` so the inserted ``behavior-observed`` rung stays
+# correctly ordered.
 _SEVERITY_LADDER: tuple[Severity, ...] = ("none", "low", "medium", "high", "critical")
 _POLICY_TO_SUBVERDICT: dict[str, str] = {
     "egress_outside_allowlist": "B_data_leakage",

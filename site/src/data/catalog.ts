@@ -312,6 +312,7 @@ export function evidenceLevelColor(level: string): string {
     {
       'unverified-profile': '#71717A',
       'docs-only': '#A78BFA',
+      'behavior-observed': '#06B6D4',
       'profile-verified': '#7C3AED',
       'sandbox-validated': '#22C55E',
     } as Record<string, string>
