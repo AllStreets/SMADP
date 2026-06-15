@@ -17,6 +17,7 @@ reviewed it; it is machine-observed) — and carry the real observations under
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,7 +27,7 @@ _FILE_ARG_KEYS = ("path", "file", "filename", "dir", "directory")
 _URL_ARG_KEYS = ("url", "endpoint", "uri", "host")
 
 
-def _iter_tool_calls(messages: list[dict[str, Any]]):
+def _iter_tool_calls(messages: list[dict[str, Any]]) -> Iterator[tuple[Any, dict[str, Any]]]:
     for entry in messages:
         msg = entry.get("message", {})
         if msg.get("method") == "tools/call":

@@ -16,9 +16,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 import structlog
+
+if TYPE_CHECKING:
+    from typing import BinaryIO
 
 from smadp.autopilot.bootstrap import _atomic_write
 from smadp.config import load_config
@@ -68,7 +72,7 @@ async def _run_record(slug: str, server_cmd: list[str], session: RecordingSessio
     await proc.wait()
 
 
-def _stdin_binary():
+def _stdin_binary() -> BinaryIO:
     import sys
 
     return sys.stdin.buffer
