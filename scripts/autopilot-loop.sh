@@ -88,11 +88,29 @@ git_sync() {
   # the 60 req/hr anonymous rate limit), so this scoping is intentional.
   unset GITHUB_TOKEN
 
-  # Anything to push?
+  # Anything SUBSTANTIVE to push? Trigger a push only on real catalog changes,
+  # not the per-tick daily-report / README-stats / banner regeneration. The
+  # daily report carries a fresh timestamp every tick, so report/ is always
+  # dirty; including it in the trigger made the loop commit + push an empty
+  # "catalog sync" every 5 minutes on no-work ticks (~288/day of pure noise).
+  # When there IS substantive work, the regenerated report/README/banner are
+  # still staged and pushed below (they remain in sync_paths).
+  local trigger_paths=(
+    catalog/pending
+    catalog/verdicts
+    catalog/_rejected
+    catalog/profiles
+    catalog/_evidence
+    adapters
+  )
   local dirty
-  dirty=$(git status --porcelain -- "${sync_paths[@]}" 2>/dev/null | head -1 || true)
+  dirty=$(git status --porcelain -- "${trigger_paths[@]}" 2>/dev/null | head -1 || true)
   if [ -z "$dirty" ]; then
-    echo "[git-sync] no catalog changes to push" >>"$log"
+    # Nothing substantive changed: discard the cosmetic report/stats regen so
+    # the tree stays clean and no empty commit is churned. The next tick with
+    # real work regenerates the report fresh and pushes it along.
+    git checkout -- report README.md .github/assets/smadp-banner.svg >>"$log" 2>&1 || true
+    echo "[git-sync] no substantive catalog changes; skipping push (discarded cosmetic regen)" >>"$log"
     return 0
   fi
 
