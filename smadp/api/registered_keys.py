@@ -5,6 +5,7 @@ operator has registered in ``config/registered_keys.json``. A key can be
 disabled without deletion (audit trail). Disabled/unknown keys and any
 signature mismatch fail closed.
 """
+
 from __future__ import annotations
 
 import json

@@ -12,6 +12,7 @@ source is not. Every site that compares evidence levels MUST derive its
 ordering from EVIDENCE_LADDER / rank here so a future rung insertion is a
 one-line change rather than a codebase-wide hunt.
 """
+
 from __future__ import annotations
 
 from typing import Literal

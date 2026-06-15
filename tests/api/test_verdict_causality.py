@@ -1,4 +1,5 @@
 """API: /{a}/{b}/causality computed at read from the risk-causality DAG."""
+
 from __future__ import annotations
 
 import json

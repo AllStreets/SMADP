@@ -1,4 +1,5 @@
 """Recording sessions content-address redacted messages and honor the kill switch."""
+
 from __future__ import annotations
 
 from pathlib import Path

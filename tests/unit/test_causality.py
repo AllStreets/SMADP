@@ -3,6 +3,7 @@
 The golden numbers in this file are the cross-language parity contract with
 ``site/tests/lib/causality.test.ts`` — they MUST stay identical.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,12 +18,7 @@ from smadp.analyzer.causality import (
     load_causality_dag,
 )
 
-DAG_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "catalog"
-    / "_meta"
-    / "risk-causality.json"
-)
+DAG_PATH = Path(__file__).resolve().parents[2] / "catalog" / "_meta" / "risk-causality.json"
 
 
 def _dag() -> CausalityDag:
@@ -31,7 +27,7 @@ def _dag() -> CausalityDag:
 
 def test_shipped_dag_loads_acyclic_with_a_to_b_edge() -> None:
     dag = _dag()
-    assert {n for n in dag.nodes} == set(RISK_IDS)
+    assert set(dag.nodes) == set(RISK_IDS)
     pairs = {(e.src, e.dst) for e in dag.edges}
     assert ("A_prompt_injection", "B_data_leakage") in pairs
 
@@ -80,7 +76,7 @@ def test_case_one_amplification_leverage_and_best() -> None:
 
 def test_all_none_has_no_best_mitigation() -> None:
     dag = _dag()
-    severities = {rid: "none" for rid in RISK_IDS}
+    severities = dict.fromkeys(RISK_IDS, "none")
     report = compute_causality(severities, dag)
     assert report.best_mitigation is None
     assert all(v == 0.0 for v in report.leverage.values())

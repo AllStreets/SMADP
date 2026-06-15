@@ -1,4 +1,5 @@
 """Detached BYOK verdict signing round-trips and detects tampering."""
+
 from __future__ import annotations
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -19,9 +20,9 @@ def test_sign_produces_sidecar_fields() -> None:
     assert sidecar["signing_strategy"] == "byok"
     assert sidecar["canonical_sha256"].startswith("sha256:")
     assert "signature_hex" in sidecar
-    expected_pub = key.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    ).hex()
+    expected_pub = (
+        key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw).hex()
+    )
     assert sidecar["public_key_hex"] == expected_pub
 
 

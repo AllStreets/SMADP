@@ -160,9 +160,7 @@ async def test_adversarial_state_poisoning_e2e(
     assert result.outcome == "fail"
 
     # The property report sidecar confirms the attack + objective.
-    transcript_path = Path(
-        queue_mod.get_raw_row(run_id, config=tmp_config)["transcript_path"]
-    )
+    transcript_path = Path(queue_mod.get_raw_row(run_id, config=tmp_config)["transcript_path"])
     report = PropertyReport.from_json(
         (transcript_path.parent / "property-report.json").read_text(encoding="utf-8")
     )

@@ -1,4 +1,5 @@
 """The five-rung evidence ladder is canonical and correctly ordered."""
+
 from __future__ import annotations
 
 import pytest

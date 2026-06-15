@@ -66,10 +66,8 @@ def _authored_chain(chain_id: str = "c_demo-loop") -> Chain:
                 {"slug": "agent-cc", "role": "critic"},
             ],
             "edges": [
-                {"from": "agent-aa", "to": "agent-bb", "channel": "filesystem",
-                 "carries": ["pii"]},
-                {"from": "agent-bb", "to": "agent-cc", "channel": "filesystem",
-                 "carries": ["pii"]},
+                {"from": "agent-aa", "to": "agent-bb", "channel": "filesystem", "carries": ["pii"]},
+                {"from": "agent-bb", "to": "agent-cc", "channel": "filesystem", "carries": ["pii"]},
             ],
             "headline": "stub.",
             "sub_verdicts": {
@@ -100,12 +98,15 @@ def _seed(cfg: Config, *, high_b: bool = False) -> None:
     repo = CatalogRepo(cfg)
     repo.save_chain(_authored_chain())
     repo.save_verdict(
-        _verdict("agent-aa", "agent-bb", confidence=0.9,
-                 sevs={"B": "high" if high_b else "low", "D": "low"})
+        _verdict(
+            "agent-aa",
+            "agent-bb",
+            confidence=0.9,
+            sevs={"B": "high" if high_b else "low", "D": "low"},
+        )
     )
     repo.save_verdict(
-        _verdict("agent-bb", "agent-cc", confidence=0.85,
-                 sevs={"B": "medium", "D": "medium"})
+        _verdict("agent-bb", "agent-cc", confidence=0.85, sevs={"B": "medium", "D": "medium"})
     )
 
 
@@ -221,7 +222,18 @@ def test_judge_batch_is_capped(cfg: Config) -> None:
         config=cfg,
         autopilot_cfg=AutopilotConfig(chain_publish_confidence_threshold=0.99),
     )
-    judge = _FakeJudge(dict.fromkeys(("A_prompt_injection", "B_data_leakage", "C_capability_conflict", "D_cascading_error", "E_compliance"), "low"))
+    judge = _FakeJudge(
+        dict.fromkeys(
+            (
+                "A_prompt_injection",
+                "B_data_leakage",
+                "C_capability_conflict",
+                "D_cascading_error",
+                "E_compliance",
+            ),
+            "low",
+        )
+    )
     confirm_low_confidence_chains(
         repo_root=cfg.repo_root,
         config=cfg,
@@ -237,7 +249,18 @@ def test_no_judge_calls_when_kill_switch_off(cfg: Config) -> None:
     from smadp.autopilot.chain_composer import confirm_low_confidence_chains
 
     _seed(cfg)
-    judge = _FakeJudge(dict.fromkeys(("A_prompt_injection", "B_data_leakage", "C_capability_conflict", "D_cascading_error", "E_compliance"), "low"))
+    judge = _FakeJudge(
+        dict.fromkeys(
+            (
+                "A_prompt_injection",
+                "B_data_leakage",
+                "C_capability_conflict",
+                "D_cascading_error",
+                "E_compliance",
+            ),
+            "low",
+        )
+    )
     result = confirm_low_confidence_chains(
         repo_root=cfg.repo_root,
         config=cfg,

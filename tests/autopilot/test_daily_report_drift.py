@@ -13,9 +13,7 @@ def _write_chronicle(repo_root: Path, when: date, events: list[dict]) -> None:
     cdir = repo_root / "catalog" / "_chronicle"
     cdir.mkdir(parents=True, exist_ok=True)
     path = cdir / f"{when.isoformat()}.jsonl"
-    path.write_text(
-        "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
-    )
+    path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
 
 def test_capability_creep_section_present(tmp_path: Path) -> None:

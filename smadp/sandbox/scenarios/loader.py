@@ -244,9 +244,7 @@ def _validate(raw: dict[str, Any], source_path: Path) -> Scenario:
             raw.get("adversarial"), agents=agents, planted_assets=planted
         )
     elif raw.get("adversarial") is not None or planted:
-        raise ScenarioLoadError(
-            "adversarial/planted_assets fields require mode: adversarial"
-        )
+        raise ScenarioLoadError("adversarial/planted_assets fields require mode: adversarial")
 
     return Scenario(
         name=name,

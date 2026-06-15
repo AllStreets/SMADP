@@ -43,9 +43,9 @@ from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config
 from smadp.sandbox import queue
-from smadp.schemas.evidence_level import EVIDENCE_LADDER as _EVIDENCE_LADDER
 from smadp.sandbox.properties import PropertyReport, apply_property_floors
 from smadp.sandbox.scenarios import scenario_mode
+from smadp.schemas.evidence_level import EVIDENCE_LADDER as _EVIDENCE_LADDER
 from smadp.schemas.verdict import (
     Citation,
     EvidenceLevel,
@@ -166,9 +166,7 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     elif outcome == "halted_by_tripwire":
         # A tripwire halt is admissible evidence: bump the rule's mapped axis
         # one rung (the trip itself is a confirmed observation).
-        new_subverdicts, bumps = _apply_tripwire_bump(
-            row, transcript_path, new_subverdicts, run_id
-        )
+        new_subverdicts, bumps = _apply_tripwire_bump(row, transcript_path, new_subverdicts, run_id)
         result.severity_bumps = bumps
     # inconclusive / errored / halted_by_operator: just append the run.
 

@@ -7,6 +7,7 @@ relayed message, only parse a copy to tee for recording. A malformed line is
 relayed unchanged and teed as nothing, so the wrapped server is never broken
 by our observation.
 """
+
 from __future__ import annotations
 
 import json

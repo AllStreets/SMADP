@@ -12,12 +12,18 @@ from smadp.analyzer.triage import (
 from smadp.schemas.profile import Profile
 
 BASE = {
-    "slug": "demo-agent", "name": "Demo",
+    "slug": "demo-agent",
+    "name": "Demo",
     "vendor": {"type": "company", "handle": "acme"},
-    "source_type": "open-source", "category": "coding",
-    "verification": {"status": "verified", "verified_at": "2026-01-01T00:00:00Z",
-                     "method": "manual-authoring"},
-    "first_seen_at": "2026-01-01T00:00:00Z", "last_refreshed_at": "2026-01-01T00:00:00Z",
+    "source_type": "open-source",
+    "category": "coding",
+    "verification": {
+        "status": "verified",
+        "verified_at": "2026-01-01T00:00:00Z",
+        "method": "manual-authoring",
+    },
+    "first_seen_at": "2026-01-01T00:00:00Z",
+    "last_refreshed_at": "2026-01-01T00:00:00Z",
 }
 
 
@@ -56,10 +62,12 @@ def tiny_corpus() -> list[tuple[Profile, Profile, float]]:
         _safe("safe-cc", "safe-dd"),
         _risky("risk-aa", "risk-bb"),
         _risky("risk-cc", "risk-dd"),
-        (_profile("mid-aa", "research", read_filesystem=True),
-         _profile("mid-bb", "research", network_egress="allowlisted"), 0.45),
-        (_profile("low-aa", "support"),
-         _profile("low-bb", "support", use_mcp=True), 0.25),
+        (
+            _profile("mid-aa", "research", read_filesystem=True),
+            _profile("mid-bb", "research", network_egress="allowlisted"),
+            0.45,
+        ),
+        (_profile("low-aa", "support"), _profile("low-bb", "support", use_mcp=True), 0.25),
     ]
 
 

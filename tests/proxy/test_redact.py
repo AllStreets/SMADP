@@ -1,4 +1,5 @@
 """Redaction rewrites real secrets in recorded messages, reusing policy patterns."""
+
 from __future__ import annotations
 
 from smadp.proxy.redact import redact_secrets

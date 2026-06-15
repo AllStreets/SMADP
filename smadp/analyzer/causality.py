@@ -83,9 +83,7 @@ class CausalityDag:
     def from_dict(cls, raw: dict[str, Any]) -> CausalityDag:
         nodes_raw = raw.get("nodes")
         if not isinstance(nodes_raw, list) or {str(n) for n in nodes_raw} != set(RISK_IDS):
-            raise CausalityError(
-                f"DAG nodes must be exactly the risk ids {sorted(RISK_IDS)}"
-            )
+            raise CausalityError(f"DAG nodes must be exactly the risk ids {sorted(RISK_IDS)}")
         nodes = tuple(str(n) for n in nodes_raw)
         edges_raw = raw.get("edges")
         if not isinstance(edges_raw, list):

@@ -1,4 +1,5 @@
 """The proxy CLI group is registered and synthesize stages into _unverified/."""
+
 from __future__ import annotations
 
 import json
@@ -16,9 +17,7 @@ def test_proxy_group_registered() -> None:
     assert {"record", "synthesize"} <= set(sub)
 
 
-def test_synthesize_stages_behavior_observed_into_unverified(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_synthesize_stages_behavior_observed_into_unverified(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path
     catalog = repo / "catalog"
     evidence_dir = catalog / "_evidence"

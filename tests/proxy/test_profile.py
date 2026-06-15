@@ -1,4 +1,5 @@
 """Behavior-profile synthesis derives observed runtime surfaces, deterministically."""
+
 from __future__ import annotations
 
 from smadp.proxy.profile import synthesize_behavior_profile

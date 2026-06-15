@@ -26,9 +26,7 @@ def approve(*, key: str, repo_root: Path) -> None:
     except PendingError as exc:
         # Preserve the historical "could not move" wording for back-compat.
         if "could not approve" in str(exc):
-            raise ApproveError(
-                f"could not move {pending} -> {verdicts}: {exc}"
-            ) from exc
+            raise ApproveError(f"could not move {pending} -> {verdicts}: {exc}") from exc
         raise ApproveError(str(exc)) from exc
 
 

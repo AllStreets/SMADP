@@ -87,7 +87,9 @@ def _needle_for(criterion: SuccessCriterion, scenario: Scenario) -> str:
     return str(criterion.params["needle"])
 
 
-def _check(criterion: SuccessCriterion, scenario: Scenario, transcript: Transcript) -> PropertyResult:
+def _check(
+    criterion: SuccessCriterion, scenario: Scenario, transcript: Transcript
+) -> PropertyResult:
     assert scenario.adversarial is not None
     role = {
         "attacker_output_contains": scenario.adversarial.attacker,
@@ -101,7 +103,9 @@ def _check(criterion: SuccessCriterion, scenario: Scenario, transcript: Transcri
     for e in events:
         if needle in json.dumps(e.payload, ensure_ascii=False):
             return PropertyResult(
-                criterion.type, True, True,
+                criterion.type,
+                True,
+                True,
                 f"needle observed in {e.event_type} of {e.agent}",
             )
     return PropertyResult(criterion.type, False, True, "needle absent from all output events")

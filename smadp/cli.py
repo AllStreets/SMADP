@@ -599,7 +599,7 @@ def sandbox_watch(ctx: click.Context, run_id: str) -> None:
                     continue
                 try:
                     event = TranscriptEvent.from_json_line(text)
-                except Exception:
+                except Exception:  # noqa: S112
                     continue
                 console.print(
                     f"[dim]{event.event_type}[/] {event.agent}: "
@@ -1312,16 +1312,15 @@ def pending_init_signing_key() -> None:
     ensure_publisher_workspace(config=cfg)
     existing = keys.load_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg)
     if existing is not None:
-        pub = existing.public_key().public_bytes(
-            encoding=Encoding.Raw, format=PublicFormat.Raw
-        ).hex()
-        console.print(f"[yellow]publisher signing key already provisioned[/]\npublic_key_hex: {pub}")
+        pub = (
+            existing.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw).hex()
+        )
+        console.print("[yellow]publisher signing key already provisioned[/]")
+        console.print(f"public_key_hex: {pub}")
         return
     priv = Ed25519PrivateKey.generate()
     keys.upload_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, private_key=priv, config=cfg)
-    pub = priv.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    ).hex()
+    pub = priv.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw).hex()
     console.print(f"[green]provisioned publisher signing key[/]\npublic_key_hex: {pub}")
 
 

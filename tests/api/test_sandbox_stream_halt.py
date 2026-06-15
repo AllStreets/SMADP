@@ -1,4 +1,5 @@
 """API: WS run event stream (transcript tail) + operator-gated halt endpoint."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,9 +53,7 @@ def _completed_run(cfg: Config) -> str:
         payload={"code": 0},
     )
     writer.close()
-    queue.mark_completed(
-        run_id, outcome="pass", transcript_path=str(path), config=cfg
-    )
+    queue.mark_completed(run_id, outcome="pass", transcript_path=str(path), config=cfg)
     return run_id
 
 

@@ -1,4 +1,5 @@
 """In-process console event bus + ConsoleEvent mapping."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +9,6 @@ import pytest
 
 from smadp.sandbox.events import (
     CONSOLE,
-    ConsoleEvent,
     RunConsole,
     to_console_event,
 )

@@ -170,9 +170,7 @@ def _sign_published_verdict(*, key: str, verdict_path: Path, repo_root: Path) ->
     log = structlog.get_logger(__name__)
     try:
         cfg = load_config()
-        signing_key = keys.load_signing_key(
-            workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg
-        )
+        signing_key = keys.load_signing_key(workspace_id=PUBLISHER_WORKSPACE_ID, config=cfg)
         if signing_key is None:
             log.info("pending.publish.unsigned", key=key)
             return

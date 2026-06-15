@@ -42,7 +42,7 @@ _SCANNED_EVENTS = frozenset(
     {"stdout", "stderr", "file_write", "network_attempt", "subprocess_spawn"}
 )
 
-_DEFAULT_WRITE_PREFIXES: tuple[str, ...] = ("/work", "/tmp")
+_DEFAULT_WRITE_PREFIXES: tuple[str, ...] = ("/work", "/tmp")  # noqa: S108
 
 
 @dataclass(frozen=True)

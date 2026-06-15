@@ -7,6 +7,7 @@ This transformer is additive: ``policy`` detects; we rewrite matches to
 ``***REDACTED***`` so a recording can be content-addressed and stored as
 evidence without persisting live credentials.
 """
+
 from __future__ import annotations
 
 from typing import Any

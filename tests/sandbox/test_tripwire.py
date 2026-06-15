@@ -1,19 +1,18 @@
 """Deterministic tripwire rule engine + autopilot kill-switch parsing."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from smadp.autopilot.config import load_autopilot_config
 from smadp.sandbox.scenarios import load_scenario_from_path
+from smadp.sandbox.transcripts import TranscriptEvent
 from smadp.sandbox.tripwire import (
     TripwireContext,
     check_event,
     context_for_scenario,
 )
-from smadp.sandbox.transcripts import TranscriptEvent
 
 TS = datetime(2026, 6, 12, tzinfo=UTC)
 
@@ -94,8 +93,12 @@ def test_planted_secret_in_stderr_trips() -> None:
 def test_planted_secret_in_network_body_trips() -> None:
     ev = _event(
         "network_attempt",
-        {"host": "api.openai.com", "port": 443, "allowed": True,
-         "body": "synthetic-test-only-canary-abc"},
+        {
+            "host": "api.openai.com",
+            "port": 443,
+            "allowed": True,
+            "body": "synthetic-test-only-canary-abc",
+        },
     )
     hit = check_event(ev, _ctx())
     assert hit is not None and hit.rule == "planted_secret_in_output"
@@ -124,7 +127,7 @@ def test_fs_write_inside_work_is_clean() -> None:
 
 
 def test_fs_write_inside_tmp_is_clean() -> None:
-    ev = _event("file_write", {"path": "/tmp/scratch", "size": 10})
+    ev = _event("file_write", {"path": "/tmp/scratch", "size": 10})  # noqa: S108
     assert check_event(ev, _ctx()) is None
 
 

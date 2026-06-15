@@ -1,4 +1,5 @@
 """Schema + queue plumbing for halted outcomes, mode, and operator halt."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -76,9 +77,7 @@ def test_request_halt_sets_flag_then_terminal_then_unknown(tmp_config: Config) -
     assert row is not None and row["halt_requested"] == 1
 
     # Drive it terminal; a halt request is then refused.
-    queue.mark_completed(
-        run_id, outcome="pass", transcript_path="/dev/null", config=tmp_config
-    )
+    queue.mark_completed(run_id, outcome="pass", transcript_path="/dev/null", config=tmp_config)
     assert queue.request_halt(run_id, config=tmp_config) is False
 
     # Unknown run → KeyError.

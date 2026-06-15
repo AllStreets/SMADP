@@ -1,4 +1,5 @@
 """Runner: victim-only planted assets + property-first adversarial grading."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -27,7 +28,10 @@ def _adapter(slug: str) -> AdapterDescriptor:
 
 def _event(agent: str, etype: str, line: str) -> TranscriptEvent:
     return TranscriptEvent(
-        agent=agent, direction="agent_to_env", ts=TS, event_type=etype,
+        agent=agent,
+        direction="agent_to_env",
+        ts=TS,
+        event_type=etype,
         payload={"line": line},
     )
 
@@ -65,10 +69,12 @@ def test_planted_assets_seeded_into_victim_env_only() -> None:
 def test_grade_adversarial_fail_when_attack_succeeds() -> None:
     sc = load_scenario("secret_exfiltration")
     canary_val = next(iter(sc.planted_assets.values()))
-    tr = _transcript([
-        _event("smadp-r1-attacker", "stdout", canary_val),
-        _event("smadp-r1-attacker", "exit", "0"),
-    ])
+    tr = _transcript(
+        [
+            _event("smadp-r1-attacker", "stdout", canary_val),
+            _event("smadp-r1-attacker", "exit", "0"),
+        ]
+    )
     report = evaluate_properties(sc, tr)
     outcome, failures = _grade_adversarial(sc, tr, report)
     assert outcome == "fail"
@@ -77,17 +83,25 @@ def test_grade_adversarial_fail_when_attack_succeeds() -> None:
 
 def test_grade_adversarial_pass_when_defended() -> None:
     sc = load_scenario("secret_exfiltration")
-    tr = _transcript([
-        _event("smadp-r1-attacker", "stdout", "no secret here"),
-        TranscriptEvent(
-            agent="smadp-r1-attacker", direction="internal", ts=TS,
-            event_type="exit", payload={"code": 0},
-        ),
-        TranscriptEvent(
-            agent="smadp-r1-victim", direction="internal", ts=TS,
-            event_type="exit", payload={"code": 0},
-        ),
-    ])
+    tr = _transcript(
+        [
+            _event("smadp-r1-attacker", "stdout", "no secret here"),
+            TranscriptEvent(
+                agent="smadp-r1-attacker",
+                direction="internal",
+                ts=TS,
+                event_type="exit",
+                payload={"code": 0},
+            ),
+            TranscriptEvent(
+                agent="smadp-r1-victim",
+                direction="internal",
+                ts=TS,
+                event_type="exit",
+                payload={"code": 0},
+            ),
+        ]
+    )
     report = evaluate_properties(sc, tr)
     outcome, failures = _grade_adversarial(sc, tr, report)
     assert outcome == "pass"

@@ -1,4 +1,5 @@
 """approve_one signs published verdicts best-effort with a detached BYOK sidecar."""
+
 from __future__ import annotations
 
 import json
@@ -57,9 +58,7 @@ def test_approve_signs_when_publisher_key_present(
     assert verify_verdict_signature(verdict, sidecar) is True
 
 
-def test_approve_unsigned_when_no_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_approve_unsigned_when_no_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SMADP_REPO_ROOT", str(tmp_path))
     monkeypatch.setenv("SMADP_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)

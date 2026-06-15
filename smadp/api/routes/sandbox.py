@@ -208,11 +208,9 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
                     continue
                 try:
                     event = TranscriptEvent.from_json_line(text)
-                except Exception:
+                except Exception:  # noqa: S112
                     continue
-                await websocket.send_text(
-                    json.dumps(to_console_event(run_id, event).to_payload())
-                )
+                await websocket.send_text(json.dumps(to_console_event(run_id, event).to_payload()))
 
     try:
         while True:

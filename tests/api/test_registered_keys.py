@@ -1,4 +1,5 @@
 """Registered-key store verifies signatures and fails closed on unknown/disabled keys."""
+
 from __future__ import annotations
 
 import json
@@ -15,9 +16,7 @@ def _write_registry(path: Path, entries: dict) -> None:
 
 
 def _pub_hex(key: Ed25519PrivateKey) -> str:
-    return key.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    ).hex()
+    return key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw).hex()
 
 
 def test_valid_signature_from_enabled_key_verifies(tmp_path: Path) -> None:

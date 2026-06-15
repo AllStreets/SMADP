@@ -15,48 +15,80 @@ from smadp.utils.slug import sort_pair
 
 
 def _sub(sev: str = "low") -> dict:
-    return {"severity": sev, "rationale": "stub", "citations": [{"quote": "x"}],
-            "conditions": [], "mitigations": []}
+    return {
+        "severity": sev,
+        "rationale": "stub",
+        "citations": [{"quote": "x"}],
+        "conditions": [],
+        "mitigations": [],
+    }
 
 
 def _verdict(a: str, b: str, *, sev: str) -> Verdict:
     a, b = sort_pair(a, b)
-    return Verdict.model_validate({
-        "schema_version": "1.0", "participants": [a, b],
-        "verdict_id": f"v_2026-01-01_{a}__{b}_abcd",
-        "generated_at": "2026-01-01T00:00:00Z",
-        "model": {"id": "gpt-x", "name": "gpt-x", "rubric_version": "1.0"},
-        "evidence_level": "profile-verified", "confidence": 0.9,
-        "composite_score": 0.3, "headline": "stub",
-        "sub_verdicts": {k: _sub(sev) for k in (
-            "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-            "D_cascading_error", "E_compliance")},
-        "reproducibility": {"rubric_url": "/_meta/rubric/1.0.json",
-                            "profile_a_hash": "sha256:" + "0" * 64,
-                            "profile_b_hash": "sha256:" + "0" * 64,
-                            "evidence_bundle_hash": "sha256:" + "0" * 64}})
+    return Verdict.model_validate(
+        {
+            "schema_version": "1.0",
+            "participants": [a, b],
+            "verdict_id": f"v_2026-01-01_{a}__{b}_abcd",
+            "generated_at": "2026-01-01T00:00:00Z",
+            "model": {"id": "gpt-x", "name": "gpt-x", "rubric_version": "1.0"},
+            "evidence_level": "profile-verified",
+            "confidence": 0.9,
+            "composite_score": 0.3,
+            "headline": "stub",
+            "sub_verdicts": {
+                k: _sub(sev)
+                for k in (
+                    "A_prompt_injection",
+                    "B_data_leakage",
+                    "C_capability_conflict",
+                    "D_cascading_error",
+                    "E_compliance",
+                )
+            },
+            "reproducibility": {
+                "rubric_url": "/_meta/rubric/1.0.json",
+                "profile_a_hash": "sha256:" + "0" * 64,
+                "profile_b_hash": "sha256:" + "0" * 64,
+                "evidence_bundle_hash": "sha256:" + "0" * 64,
+            },
+        }
+    )
 
 
 def _chain() -> Chain:
-    return Chain.model_validate({
-        "schema_version": "1.0", "chain_id": "c_route-demo", "name": "demo",
-        "topology": "linear",
-        "participants": [
-            {"slug": "agent-aa", "role": "planner"},
-            {"slug": "agent-bb", "role": "executor"},
-            {"slug": "agent-cc", "role": "critic"},
-        ],
-        "edges": [
-            {"from": "agent-aa", "to": "agent-bb", "channel": "filesystem", "carries": ["pii"]},
-            {"from": "agent-bb", "to": "agent-cc", "channel": "filesystem", "carries": ["pii"]},
-        ],
-        "headline": "stub.",
-        "sub_verdicts": {k: _sub() for k in (
-            "A_prompt_injection", "B_data_leakage", "C_capability_conflict",
-            "D_cascading_error", "E_compliance")},
-        "framework_mappings": {},
-        "first_seen_at": "2026-05-04T00:00:00Z", "last_refreshed_at": "2026-05-04T00:00:00Z",
-    })
+    return Chain.model_validate(
+        {
+            "schema_version": "1.0",
+            "chain_id": "c_route-demo",
+            "name": "demo",
+            "topology": "linear",
+            "participants": [
+                {"slug": "agent-aa", "role": "planner"},
+                {"slug": "agent-bb", "role": "executor"},
+                {"slug": "agent-cc", "role": "critic"},
+            ],
+            "edges": [
+                {"from": "agent-aa", "to": "agent-bb", "channel": "filesystem", "carries": ["pii"]},
+                {"from": "agent-bb", "to": "agent-cc", "channel": "filesystem", "carries": ["pii"]},
+            ],
+            "headline": "stub.",
+            "sub_verdicts": {
+                k: _sub()
+                for k in (
+                    "A_prompt_injection",
+                    "B_data_leakage",
+                    "C_capability_conflict",
+                    "D_cascading_error",
+                    "E_compliance",
+                )
+            },
+            "framework_mappings": {},
+            "first_seen_at": "2026-05-04T00:00:00Z",
+            "last_refreshed_at": "2026-05-04T00:00:00Z",
+        }
+    )
 
 
 @pytest.fixture

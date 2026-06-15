@@ -6,6 +6,7 @@ circular), we emit a detached sidecar: a signature over the verdict's canonical
 sha256. The sidecar lives at ``catalog/verdicts/<key>.sig.json`` and is rendered
 on the site with verification instructions.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -27,14 +28,10 @@ def _canonical_sha(verdict: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(canonical).hexdigest()
 
 
-def sign_verdict_dict(
-    verdict: dict[str, Any], *, signing_key: Ed25519PrivateKey
-) -> dict[str, Any]:
+def sign_verdict_dict(verdict: dict[str, Any], *, signing_key: Ed25519PrivateKey) -> dict[str, Any]:
     sha = _canonical_sha(verdict)
     sig = signing_key.sign(sha.encode("utf-8"))
-    pub = signing_key.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    )
+    pub = signing_key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
     return {
         "signing_strategy": "byok",
         "canonical_sha256": sha,

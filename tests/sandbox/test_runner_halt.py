@@ -1,4 +1,5 @@
 """Runner observation wiring + tripwire/operator halt teardown."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,8 +10,8 @@ import pytest
 from smadp.config import Config
 from smadp.sandbox.events import CONSOLE, RunConsole, RunObservation
 from smadp.sandbox.runner import _halt_watcher, transcript_path_for
-from smadp.sandbox.tripwire import TripwireContext
 from smadp.sandbox.transcripts import Transcript, TranscriptWriter
+from smadp.sandbox.tripwire import TripwireContext
 
 
 @pytest.fixture
@@ -159,8 +160,6 @@ def test_module_console_singleton_default(tmp_path: Path) -> None:
     # RunObservation defaults to the module CONSOLE when none is passed.
     path = tmp_path / "transcript.jsonl"
     writer = TranscriptWriter(path)
-    obs = RunObservation(
-        run_id="rX", writer=writer, tripwire_ctx=_ctx(), tripwire_mode="off"
-    )
+    obs = RunObservation(run_id="rX", writer=writer, tripwire_ctx=_ctx(), tripwire_mode="off")
     assert obs.console is CONSOLE
     writer.close()

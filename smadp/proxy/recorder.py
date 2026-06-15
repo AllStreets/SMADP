@@ -1,4 +1,5 @@
 """Recording session: collect redacted MCP messages -> content-addressed evidence."""
+
 from __future__ import annotations
 
 import hashlib

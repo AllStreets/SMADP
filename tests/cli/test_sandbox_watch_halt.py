@@ -1,4 +1,5 @@
 """CLI: smadp sandbox watch + smadp sandbox halt."""
+
 from __future__ import annotations
 
 import shutil

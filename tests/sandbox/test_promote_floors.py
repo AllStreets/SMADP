@@ -1,4 +1,5 @@
 """Promote: property floors bound LLM severities; tripwire halts are chronicled."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from smadp.config import Config
 from smadp.sandbox import promote, queue
 from smadp.sandbox.properties import evaluate_properties
 from smadp.sandbox.scenarios import load_scenario
-from smadp.sandbox.transcripts import Transcript, TranscriptEvent, TranscriptWriter
+from smadp.sandbox.transcripts import Transcript, TranscriptWriter
 
 TS = datetime(2026, 6, 12, tzinfo=UTC)
 

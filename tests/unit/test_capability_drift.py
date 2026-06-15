@@ -8,12 +8,18 @@ from smadp.analyzer.capability_drift import (
 from smadp.schemas.profile import Profile
 
 BASE = {
-    "slug": "aa", "name": "A",
+    "slug": "aa",
+    "name": "A",
     "vendor": {"type": "company", "handle": "x"},
-    "source_type": "open-source", "category": "coding",
-    "verification": {"status": "verified", "verified_at": "2026-01-01T00:00:00Z",
-                     "method": "manual-authoring"},
-    "first_seen_at": "2026-01-01T00:00:00Z", "last_refreshed_at": "2026-01-01T00:00:00Z",
+    "source_type": "open-source",
+    "category": "coding",
+    "verification": {
+        "status": "verified",
+        "verified_at": "2026-01-01T00:00:00Z",
+        "method": "manual-authoring",
+    },
+    "first_seen_at": "2026-01-01T00:00:00Z",
+    "last_refreshed_at": "2026-01-01T00:00:00Z",
 }
 
 

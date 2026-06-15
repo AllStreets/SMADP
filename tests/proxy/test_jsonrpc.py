@@ -1,4 +1,5 @@
 """The stdio passthrough relays bytes unmodified and tees parsed messages."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,9 +17,7 @@ async def test_pump_relays_unmodified_and_tees_each_message() -> None:
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "read_file"}]}},
     ]
-    raw = b"".join(
-        (json.dumps(m, separators=(",", ":")) + "\n").encode("utf-8") for m in msgs
-    )
+    raw = b"".join((json.dumps(m, separators=(",", ":")) + "\n").encode("utf-8") for m in msgs)
     src.feed_data(raw)
     src.feed_eof()
 

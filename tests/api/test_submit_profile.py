@@ -1,4 +1,5 @@
 """POST /api/submit/profile — federated, signature-gated, lands in _unverified/."""
+
 from __future__ import annotations
 
 import json
@@ -36,9 +37,7 @@ def _profile_body(slug: str = "fed-agent") -> bytes:
 
 
 def _pub_hex(key: Ed25519PrivateKey) -> str:
-    return key.public_key().public_bytes(
-        encoding=Encoding.Raw, format=PublicFormat.Raw
-    ).hex()
+    return key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw).hex()
 
 
 @pytest.fixture

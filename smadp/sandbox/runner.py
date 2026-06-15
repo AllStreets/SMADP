@@ -36,9 +36,9 @@ from typing import Any, Final, Literal
 
 import structlog
 
+from smadp.autopilot.config import load_autopilot_config
 from smadp.config import Config, load_config
 from smadp.sandbox import queue
-from smadp.autopilot.config import load_autopilot_config
 from smadp.sandbox.events import RunObservation
 from smadp.sandbox.isolation import (
     ContainerSpec,
@@ -60,12 +60,12 @@ from smadp.sandbox.properties import (
     evaluate_properties,
 )
 from smadp.sandbox.scenarios import AgentRole, Scenario, load_scenario
-from smadp.sandbox.tripwire import context_for_scenario
 from smadp.sandbox.transcripts import (
     EventType,
     Transcript,
     TranscriptWriter,
 )
+from smadp.sandbox.tripwire import context_for_scenario
 from smadp.schemas.verdict import SandboxRun
 from smadp.utils.time import utcnow
 
@@ -379,9 +379,9 @@ def _grade_adversarial(
       decisively confirm or deny the attack.
     """
     if report.attack_succeeded:
-        failures = [
-            f"{r.criterion}: {r.detail}" for r in report.results if r.attack_succeeded
-        ] or [f"adversarial objective {report.objective} confirmed"]
+        failures = [f"{r.criterion}: {r.detail}" for r in report.results if r.attack_succeeded] or [
+            f"adversarial objective {report.objective} confirmed"
+        ]
         return "fail", failures
     has_exit_events = any(e.event_type == "exit" for e in transcript.events)
     if report.decisive and has_exit_events:
@@ -640,9 +640,7 @@ async def execute_run(
         # writes the transcript, publishes to the console bus, and checks the
         # tripwire engine). The kill switch (``tripwires``) comes from autopilot
         # config; absent/unknown values fail safe to ``enabled``.
-        tripwire_mode = load_autopilot_config(
-            cfg.repo_root / "config" / "autopilot.yaml"
-        ).tripwires
+        tripwire_mode = load_autopilot_config(cfg.repo_root / "config" / "autopilot.yaml").tripwires
         obs = RunObservation(
             run_id=run_id,
             writer=writer,
@@ -689,7 +687,7 @@ async def execute_run(
             for task in (watcher, poller):
                 try:
                     await task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001, S110
+                except (asyncio.CancelledError, Exception):  # noqa: S110
                     pass
 
         # 6. Convert any exception result to a recorded violation.
@@ -806,7 +804,7 @@ def _engine_kill_container(name: str, backend: RuntimeBackend) -> None:
 
     engine = engine_binary(backend)
     try:
-        subprocess.run(  # noqa: S603 — argv list, never shell
+        subprocess.run(
             [engine, "kill", name],
             capture_output=True,
             timeout=10,
@@ -829,11 +827,11 @@ async def _halt_watcher(obs: RunObservation, *, engine_kill: Any) -> None:
             proc.kill()
         except ProcessLookupError:
             pass
-        except Exception as exc:  # noqa: BLE001 — best-effort teardown
+        except Exception as exc:
             log.warning("sandbox.halt.proc_kill_failed", name=name, error=repr(exc))
         try:
             engine_kill(name)
-        except Exception as exc:  # noqa: BLE001 — best-effort teardown
+        except Exception as exc:
             log.warning("sandbox.halt.engine_kill_raised", name=name, error=repr(exc))
 
 
@@ -848,7 +846,7 @@ async def _operator_halt_poller(
     while not obs.halt_event.is_set():
         try:
             row = queue.get_raw_row(run_id, config=config)
-        except Exception as exc:  # noqa: BLE001 — polling must not crash the run
+        except Exception as exc:
             log.warning("sandbox.halt.poll_failed", run_id=run_id, error=repr(exc))
             row = None
         if row is not None and int(row.get("halt_requested") or 0) == 1:

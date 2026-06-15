@@ -8,14 +8,20 @@ from smadp.analyzer.chains import (
 )
 
 
-def _link(a, b, *, D="low", B="none", A="none", C="none", E="none",
-          conf=0.9, carries=None):
+def _link(a, b, *, D="low", B="none", A="none", C="none", E="none", conf=0.9, carries=None):
     return LinkInput(
-        from_slug=a, to_slug=b,
-        severities={"A_prompt_injection": A, "B_data_leakage": B,
-                    "C_capability_conflict": C, "D_cascading_error": D,
-                    "E_compliance": E},
-        confidence=conf, present=True, carries=carries or [],
+        from_slug=a,
+        to_slug=b,
+        severities={
+            "A_prompt_injection": A,
+            "B_data_leakage": B,
+            "C_capability_conflict": C,
+            "D_cascading_error": D,
+            "E_compliance": E,
+        },
+        confidence=conf,
+        present=True,
+        carries=carries or [],
     )
 
 
@@ -50,10 +56,20 @@ def test_B_takes_max_over_links_sharing_data_class():
 
 def test_confidence_is_min_penalized_per_missing_link():
     present = _link("a", "b", conf=0.8)
-    missing = LinkInput(from_slug="b", to_slug="c", severities={
-        "A_prompt_injection": "none", "B_data_leakage": "none",
-        "C_capability_conflict": "none", "D_cascading_error": "none",
-        "E_compliance": "none"}, confidence=0.0, present=False, carries=[])
+    missing = LinkInput(
+        from_slug="b",
+        to_slug="c",
+        severities={
+            "A_prompt_injection": "none",
+            "B_data_leakage": "none",
+            "C_capability_conflict": "none",
+            "D_cascading_error": "none",
+            "E_compliance": "none",
+        },
+        confidence=0.0,
+        present=False,
+        carries=[],
+    )
     out = compose_chain(topology="linear", links=[present, missing], node_count=3)
     assert abs(out.confidence - 0.8 * 0.85) < 1e-9
     assert out.missing_links == 1

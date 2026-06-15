@@ -15,6 +15,7 @@ to observe closed-source agents) and ``verification.method: auto-only`` (no huma
 reviewed it; it is machine-observed) — and carry the real observations under
 ``onexus.behavior``.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

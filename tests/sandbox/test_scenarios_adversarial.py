@@ -1,4 +1,5 @@
 """Adversarial scenario schema: mode, roles, objective, criteria, planted assets."""
+
 from __future__ import annotations
 
 from pathlib import Path
