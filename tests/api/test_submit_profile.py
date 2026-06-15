@@ -61,7 +61,7 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_valid_signed_submission_lands_in_unverified(setup) -> None:
-    client, cfg, key, tmp_path = setup
+    client, cfg, key, _tmp_path = setup
     body = _profile_body("fed-agent")
     sig = key.sign(body).hex()
     resp = client.post(
@@ -85,7 +85,7 @@ def test_valid_signed_submission_lands_in_unverified(setup) -> None:
 
 
 def test_unregistered_key_is_403(setup) -> None:
-    client, cfg, key, tmp_path = setup
+    client, _cfg, key, _tmp_path = setup
     body = _profile_body("fed-agent")
     sig = key.sign(body).hex()
     resp = client.post(
@@ -102,7 +102,7 @@ def test_unregistered_key_is_403(setup) -> None:
 
 
 def test_missing_operator_token_is_401(setup) -> None:
-    client, cfg, key, tmp_path = setup
+    client, _cfg, key, _tmp_path = setup
     body = _profile_body("fed-agent")
     sig = key.sign(body).hex()
     resp = client.post(
@@ -118,7 +118,7 @@ def test_missing_operator_token_is_401(setup) -> None:
 
 
 def test_federation_disabled_kill_switch_is_503(setup) -> None:
-    client, cfg, key, tmp_path = setup
+    client, _cfg, key, tmp_path = setup
     state = tmp_path / "state"
     state.mkdir(parents=True, exist_ok=True)
     (state / "FEDERATION_DISABLED").write_text("", encoding="utf-8")

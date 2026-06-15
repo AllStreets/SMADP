@@ -31,7 +31,7 @@ def test_synthesize_stages_behavior_observed_into_unverified(
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": "read_file", "arguments": {"path": "/tmp/x"}},
+            "params": {"name": "read_file", "arguments": {"path": "/etc/hosts"}},
         },
         direction="c2s",
     )

@@ -21,7 +21,7 @@ class RegisteredKeys:
     keys: dict[str, dict[str, Any]]
 
     @classmethod
-    def load(cls, path: Path) -> "RegisteredKeys":
+    def load(cls, path: Path) -> RegisteredKeys:
         if not path.exists():
             return cls(keys={})
         try:
