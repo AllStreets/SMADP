@@ -138,6 +138,16 @@ export interface Verdict {
     evidence_bundle_hash: string;
   };
   sandbox_runs: SandboxRun[];
+  /** Detached BYOK signature sidecar, present when the verdict was signed at publish. */
+  signature?: VerdictSignature;
+}
+
+/** Detached Ed25519 signature over a verdict's canonical sha256 (catalog/verdicts/<key>.sig.json). */
+export interface VerdictSignature {
+  signing_strategy: string;
+  canonical_sha256: string;
+  signature_hex: string;
+  public_key_hex: string;
 }
 
 // ----- Meta -----

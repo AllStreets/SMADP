@@ -158,11 +158,20 @@ let _verdicts: Verdict[] | null = null;
 export function getVerdicts(): Verdict[] {
   if (_verdicts) return _verdicts;
   const dir = path.join(CATALOG_DIR, 'verdicts');
-  const files = safeReadDir(dir).filter((f) => f.endsWith('.json'));
+  // Exclude detached signature sidecars (<key>.sig.json); they are loaded
+  // alongside their verdict, not as standalone verdicts.
+  const files = safeReadDir(dir).filter(
+    (f) => f.endsWith('.json') && !f.endsWith('.sig.json'),
+  );
   const out: Verdict[] = [];
   for (const f of files) {
     const v = safeReadJSON<any>(path.join(dir, f));
-    if (v) out.push(normalizeVerdict(v));
+    if (!v) continue;
+    const verdict = normalizeVerdict(v);
+    const key = f.replace(/\.json$/, '');
+    const sig = safeReadJSON<any>(path.join(dir, `${key}.sig.json`));
+    if (sig) verdict.signature = sig;
+    out.push(verdict);
   }
   out.sort(
     (a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime(),
