@@ -55,9 +55,9 @@ Every verdict is **evidence-cited** (every claim points to a verbatim quote or a
 
 ---
 
-## v2 — The Proving Ground (on `feat/proving-ground`, in review)
+## v2 — The Proving Ground
 
-The next generation moves SMADP from *describing* multi-agent risk to *hunting, predicting, and intercepting* it. Three pillars, all built and tested on the `feat/proving-ground` branch (964 tests passing), awaiting review before merge:
+The next generation moves SMADP from *describing* multi-agent risk to *hunting, predicting, and intercepting* it. Three pillars, all built and tested (964 tests passing):
 
 - **S1 — Adversarial Proving Ground.** Attack scenarios where one agent actively tries to exfiltrate a partner's secrets, poison shared state, induce code execution, or escalate via the partner's broader authority. Deterministic security-property checks *bound* the LLM judge — a confirmed exfiltration cannot grade below `high`. A live sandbox console streams each run and a deterministic **tripwire engine** halts a run mid-flight when a planted secret leaks or egress steps outside the allowlist. Verdict pages render a **causal risk graph** showing which upstream risk amplifies which downstream one, and the single mitigation that collapses the most severity.
 - **S2 — Risk Intelligence Engine.** Deterministic **N-agent chain composition** over published pairwise verdicts (linear/star/loop), **capability-drift tracking** that stales affected verdicts when an agent quietly gains shell access or broader egress, and a dependency-light **learned triage** model that concentrates judge spend on the uncertain pairs — never publishing a number itself.
