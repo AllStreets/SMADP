@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from smadp.api.auth import require_operator_token
 from smadp.api.models import JobStatus, SubmitAgentRequest
+from smadp.api.registered_keys import RegisteredKeys
+from smadp.autopilot.bootstrap import _atomic_write
 from smadp.catalog.chronicle import Chronicle
 from smadp.catalog.repo import CatalogRepo
+from smadp.schemas.profile import Profile
 from smadp.utils.slug import normalize_slug
 
 router = APIRouter(tags=["submit"])
+
+_FEDERATION_KILL_SWITCH = "FEDERATION_DISABLED"
 
 
 def _rate_limit(request: Request) -> None:
@@ -90,6 +97,73 @@ async def submit_agent(
     record = request.app.state.job_store.get(job_id)
     assert record is not None
     return JobStatus(**record)
+
+
+@router.post(
+    "/submit/profile",
+    summary="Submit a third-party signed profile into the federation staging area",
+    status_code=202,
+    dependencies=[Depends(require_operator_token)],
+)
+async def submit_profile(request: Request) -> dict:
+    """Accept a registered-key-signed third-party profile into ``_unverified/``.
+
+    Operator-token-gated AND key-signature-gated. The profile lands in
+    ``catalog/profiles/_unverified/`` exactly like an ONEXUS sync seed — it
+    never writes a published ``profiles/<slug>.json``; the operator gate
+    promotes it later. Kill switch: ``state/FEDERATION_DISABLED``.
+    """
+    cfg = request.app.state.config
+
+    if (cfg.repo_root / "state" / _FEDERATION_KILL_SWITCH).exists():
+        raise HTTPException(
+            status_code=503,
+            detail="federated submissions disabled (state/FEDERATION_DISABLED present)",
+        )
+
+    _rate_limit(request)
+
+    body = await request.body()
+    key_id = request.headers.get("X-SMADP-Key-Id", "")
+    signature_hex = request.headers.get("X-SMADP-Signature", "")
+
+    registry = RegisteredKeys.load(cfg.repo_root / "config" / "registered_keys.json")
+    if not registry.verify(key_id=key_id, body=body, signature_hex=signature_hex):
+        raise HTTPException(status_code=403, detail="invalid or unregistered signing key")
+
+    try:
+        raw = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="profile must be a JSON object")
+
+    # A submitter may not self-assert a higher rung; stamp provenance.
+    raw["evidence_level"] = "unverified-profile"
+    onexus = raw.get("onexus") if isinstance(raw.get("onexus"), dict) else {}
+    onexus = dict(onexus)
+    onexus["federated"] = {"key_id": key_id, "source": "federated-submission"}
+    raw["onexus"] = onexus
+
+    try:
+        profile = Profile.model_validate(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"profile failed validation: {exc}") from exc
+
+    slug = normalize_slug(profile.slug)
+    if (cfg.profiles_dir / f"{slug}.json").exists():
+        raise HTTPException(status_code=409, detail=f"slug already published: {slug}")
+
+    staged = cfg.unverified_profiles_dir / f"{slug}.json"
+    _atomic_write(staged, profile.model_dump(mode="json", exclude_none=True))
+
+    Chronicle(cfg).record(
+        "profile.created",
+        by="api",
+        slug=slug,
+        details={"path": str(staged), "via": "POST /api/submit/profile", "key_id": key_id},
+    )
+    return {"slug": slug, "staged": str(staged), "evidence_level": "unverified-profile"}
 
 
 @router.get(
