@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__mentat_32fe81",
+  "generated_at": "2026-06-16T22:32:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and broad egress make Mentat\u2019s edits and Airflow-driven outputs vulnerable to leakage, conflict, and unverified downstream action.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Mentat reads and writes files in a shared filesystem, so Airflow-generated artifacts or prompts could be treated as trusted content if copied into Mentat\u2019s workflow. Airflow itself has broad network egress and no browser surface, so the main bridge is file-based rather than direct. The pathway exists in default pair usage, though not via a shared MCP server.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Airflow outputs are copied into files that Mentat reads as instructions, injection is possible.",
+        "IF both agents operate on the same workspace, file-based prompt injection remains viable."
+      ],
+      "mitigations": [
+        "Keep Airflow outputs in a separate directory from Mentat inputs.",
+        "Prefix all Airflow-generated files with non-executable metadata and review before use.",
+        "Use read-only mounts for any shared artifact directory.",
+        "Add a manual approval step before Mentat consumes generated text.",
+        "requires-engineering: add provenance tagging between Airflow outputs and Mentat inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Mentat can read and write filesystem contents and shares state via filesystem, while Airflow has broad network egress. Even though Airflow\u2019s touched data classes are unspecified, any sensitive file placed in the shared workspace could be exposed through Mentat\u2019s model-provider calls or Airflow\u2019s outbound requests. This is a default workspace risk, not a provably blocked one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared workspace, Mentat can read them.",
+        "IF Airflow or Mentat forwards file contents to external APIs, leakage can occur."
+      ],
+      "mitigations": [
+        "Store secrets outside the shared workspace.",
+        "Restrict both agents to a minimal project subdirectory.",
+        "Rotate any exposed API keys immediately after use.",
+        "Review outbound requests before enabling them on sensitive projects.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Mentat can modify git state and write the filesystem, and its shared state is explicitly via filesystem. Airflow can also interact with files through its automation workflows and broad egress, so concurrent edits to the same repo or workspace can race without locking. The overlap is dangerous by default because git-state corruption or overwritten edits can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory, write conflicts can occur.",
+        "IF Mentat commits or rewrites files while Airflow generates artifacts in the same tree, state corruption is possible."
+      ],
+      "mitigations": [
+        "Run the agents on separate clones.",
+        "Serialize all writes with a lock file.",
+        "Require a human review before any git commit.",
+        "Use branch-per-agent workflows.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals and can act on file contents, while Airflow can generate or move data through automated pipelines. If Airflow\u2019s outputs are fed into Mentat without verification, Mentat may propagate incorrect assumptions into code changes. The pair lacks a documented verification boundary, so the cascade is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Airflow-generated artifacts are treated as authoritative inputs, Mentat may encode errors into edits.",
+        "IF no human verification step exists between pipeline output and code changes, cascades can propagate."
+      ],
+      "mitigations": [
+        "Require a review step before Mentat edits code from Airflow outputs.",
+        "Compare Airflow outputs against source-of-truth data.",
+        "Limit Mentat to proposing diffs, not applying them automatically.",
+        "Add tests that validate any generated artifacts.",
+        "requires-engineering: implement provenance checks for pipeline-to-editor handoff."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for either agent. Airflow\u2019s docs-only profile and Mentat\u2019s open-source profile do not show a compliance conflict by themselves, though Mentat does handle model-provider API keys and broad egress could matter if regulated data is introduced. The other agent is not cited because no specific compliance surface is documented there.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Mentat\u2019s workspace and sent to a third-party model provider, compliance review is required.",
+        "IF Airflow is configured to process regulated data, retention and residency controls must be checked."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workspaces.",
+        "Confirm provider terms before sending sensitive content.",
+        "Document retention settings for any pipeline outputs.",
+        "Review API-key handling for Mentat.",
+        "requires-engineering: add data-class routing controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

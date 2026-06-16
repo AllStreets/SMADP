@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__swe-agent_e93b55",
+  "generated_at": "2026-06-16T22:29:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.545,
+  "headline": "High-risk write-capable pair: SWE-agent can modify files and git state while Airflow has broad network egress, creating dangerous interaction and compliance exposure if connected to shared workspaces or downstream automation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No shared channel is documented, so direct prompt injection is not provable. However, if Airflow outputs are copied into SWE-agent tasks or a shared filesystem is introduced, SWE-agent can execute shell commands and Airflow can emit untrusted content over broad egress, creating a small but real hijack path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Airflow outputs are manually pasted into SWE-agent prompts",
+        "IF both agents are pointed at the same writable workspace"
+      ],
+      "mitigations": [
+        "Keep outputs out of prompts; use structured summaries only",
+        "Disable copy-paste bridging between agents",
+        "Run each agent in separate directories",
+        "Add a human review step before any shell command",
+        "requires-engineering: add provenance tags to all inter-agent artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow touches no declared sensitive classes, but SWE-agent handles repository code and has broad network egress plus model-provider API calls. If both are given the same workspace, code or secrets in files can flow from Airflow-managed artifacts into SWE-agent outputs or external APIs. The pairwise leakage path exists in default-style workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent is given files containing secrets or proprietary code",
+        "IF the two agents share a workspace or artifact directory"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Redact secrets before handoff",
+        "Restrict SWE-agent network egress where possible",
+        "Review file lists before task start",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "SWE-agent can write the filesystem, modify git state, and spawn subprocesses; Airflow has broad network egress and can participate in automation workflows. If both operate on the same repo or directory, concurrent writes and git mutations can overwrite each other or corrupt state. The profiles do not show locking, so the unsafe overlap is the default concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory",
+        "IF either agent performs git commits or file rewrites without external locking"
+      ],
+      "mitigations": [
+        "Assign disjoint directories",
+        "Serialize write phases manually",
+        "Pause one agent before the other edits git state",
+        "Use branch-per-agent workflows",
+        "requires-engineering: add file and git locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Airflow can produce automation outputs that SWE-agent may treat as task input, and SWE-agent can then act on them with shell and git authority. There is no documented verification barrier between them, so a mistaken Airflow artifact can cascade into incorrect code changes or commands. The blast radius is broader than a single document but not inherently irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Airflow-generated text as authoritative task instructions",
+        "IF no separate verification step checks Airflow outputs before execution"
+      ],
+      "mitigations": [
+        "Require a second reviewer for generated instructions",
+        "Convert Airflow outputs into machine-checked schemas",
+        "Block direct execution of free-form text",
+        "Log and diff all downstream actions",
+        "requires-engineering: add validation gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airflow is source-available and SWE-agent is open-source, but SWE-agent explicitly handles model-provider API keys and GitHub tokens, while Airflow has broad network egress. If regulated or proprietary data is routed through the pair, token-bearing or residency-sensitive material can be exposed to external services. The other agent is not cited separately because the compliance risk is driven mainly by SWE-agent's secret handling.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are processed by SWE-agent",
+        "IF outbound requests are allowed to external model providers or GitHub"
+      ],
+      "mitigations": [
+        "Do not route regulated data through the pair",
+        "Rotate any exposed tokens immediately",
+        "Use least-privilege credentials",
+        "Review retention settings for external services",
+        "requires-engineering: add residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
