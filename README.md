@@ -47,7 +47,7 @@ You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent.
 - A **multi-agent chain analysis** for 3+-agent compositions (linear, star, loop).
 - A **transcript-grounded sandbox grading** when the pair has been run end-to-end in a Docker sandbox under our five-scenario suite.
 
-Every verdict is **evidence-cited** (every claim points to a verbatim quote or a transcript line), **risk-typed** (five risk categories evaluated independently), and **reproducible** (deterministic temperature=0 LLM calls, content-addressed evidence under `catalog/_evidence/`).
+Every verdict is **evidence-grounded** — each sub-verdict's *Grounded in* row names the exact agent-profile fields the claim rests on (e.g. *Agent A · IO surfaces · Files*), expanding to a verbatim quote wherever the content-addressed evidence store under `catalog/_evidence/` has one — **risk-typed** (five risk categories evaluated independently), and **reproducible** (deterministic temperature=0 LLM calls).
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
 
