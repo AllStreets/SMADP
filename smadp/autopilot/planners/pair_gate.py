@@ -25,7 +25,18 @@ class PairGatePlanner:
     # verdict and never changes eligibility — only order.
     triage: TriageModel | None = None
 
-    def plan(self, *, profiles: list[dict[str, Any]], now_iso: str) -> list[WorkItem]:
+    def plan(
+        self,
+        *,
+        profiles: list[dict[str, Any]],
+        now_iso: str,
+        exclude_pairs: set[tuple[str, str]] | None = None,
+    ) -> list[WorkItem]:
+        # exclude_pairs holds pairs that already have a verdict (or are already
+        # queued), so re-running the planner every tick never re-enqueues work
+        # that has been judged. Each entry is compared in sorted-slug form.
+        excluded = {tuple(sorted(p)) for p in (exclude_pairs or set())}
+
         enriched = [p for p in profiles if p.get("evidence_level") in _ENRICHED_TIERS]
         enriched.sort(key=lambda p: float(p.get("composite_score", 0.0)), reverse=True)
         enriched = enriched[: self.top_n]
@@ -33,6 +44,8 @@ class PairGatePlanner:
         items: list[WorkItem] = []
         for p1, p2 in combinations(enriched, 2):
             a, b = sorted([p1["slug"], p2["slug"]])
+            if (a, b) in excluded:
+                continue
             priority = float(p1.get("composite_score", 0.0)) * float(p2.get("composite_score", 0.0))
             if self.triage is not None:
                 priority *= triage_urgency(self.triage, p1, p2)

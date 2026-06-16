@@ -46,3 +46,26 @@ def test_pair_judge_name_used() -> None:
     planner = PairGatePlanner(top_n=10, pair_cap=10)
     items = planner.plan(profiles=profiles, now_iso="2026-06-06T00:00:00Z")
     assert items[0].requested_judge == "docs_only"
+
+
+def test_exclude_pairs_skips_already_judged() -> None:
+    # (a, b) already has a verdict, so the planner must not re-enqueue it;
+    # the remaining fresh pairs (a, c) and (b, c) still emit. Pair order in
+    # exclude_pairs is irrelevant — comparison is on the sorted pair.
+    profiles = [_p("a", 0.9), _p("b", 0.8), _p("c", 0.7)]
+    planner = PairGatePlanner(top_n=10, pair_cap=10)
+    items = planner.plan(
+        profiles=profiles,
+        now_iso="2026-06-06T00:00:00Z",
+        exclude_pairs={("b", "a")},
+    )
+    pairs = {tuple(i.pair) for i in items}
+    assert pairs == {("a", "c"), ("b", "c")}
+
+
+def test_exclude_pairs_defaults_to_none() -> None:
+    # Omitting exclude_pairs keeps the original behaviour (nothing excluded).
+    profiles = [_p("a", 0.9), _p("b", 0.8)]
+    planner = PairGatePlanner(top_n=10, pair_cap=10)
+    items = planner.plan(profiles=profiles, now_iso="2026-06-06T00:00:00Z")
+    assert {tuple(i.pair) for i in items} == {("a", "b")}

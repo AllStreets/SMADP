@@ -1152,12 +1152,28 @@ def autopilot_pair_gate_plan(ctx: click.Context, top_n: int, pair_cap: int) -> N
             profiles.append(_json.loads(p.read_text("utf-8")))
         except (OSError, _json.JSONDecodeError):
             continue
+
+    # Skip pairs that already have a verdict — published (catalog/verdicts) or
+    # awaiting the operator gate (catalog/pending). Without this the planner
+    # re-enqueues every pair on every tick and the queue (and pending/) fills
+    # with duplicates of already-judged work.
+    exclude_pairs: set[tuple[str, str]] = set()
+    for sub in ("verdicts", "pending"):
+        for vf in (config.repo_root / "catalog" / sub).glob("*.json"):
+            try:
+                pair = _json.loads(vf.read_text("utf-8")).get("pair")
+            except (OSError, _json.JSONDecodeError):
+                continue
+            if isinstance(pair, list) and len(pair) == 2:
+                a, b = sorted(str(x) for x in pair)
+                exclude_pairs.add((a, b))
+
     planner = PairGatePlanner(top_n=top_n, pair_cap=pair_cap)
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    items = planner.plan(profiles=profiles, now_iso=now)
+    items = planner.plan(profiles=profiles, now_iso=now, exclude_pairs=exclude_pairs)
     queue_path = config.repo_root / "state" / "docs_only_queue.jsonl"
     append_items(queue_path, items)
-    click.echo(f"enqueued={len(items)}")
+    click.echo(f"enqueued={len(items)} excluded_existing={len(exclude_pairs)}")
 
 
 # --------------------------------------------------------------------- helpers

@@ -29,6 +29,14 @@ fi
 smadp autopilot tick
 smadp sandbox work --once --max 3
 
+# Pair-gate plan: refill the docs-only queue with fresh agent pairs to judge.
+# Without this step the queue drains to empty and every subsequent tick reports
+# reason=no_work (pending review stops growing). The planner excludes pairs that
+# already have a verdict (published or pending) and append_items dedups against
+# what is already queued, so re-running it every tick only adds genuinely-new
+# pairs — it never re-judges or duplicates. Cheap: no LLM cost, just a re-scan.
+smadp autopilot pair-gate-plan
+
 # Docs-only tick: drain the enrichment + pair-judge queue at a small batch
 # size so each launchd invocation is bounded (~10-30s of LLM work) and the
 # daily run cap (runs_per_day in config/autopilot.yaml) is respected.
