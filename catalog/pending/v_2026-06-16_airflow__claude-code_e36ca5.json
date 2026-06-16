@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "claude-code"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__claude-code_e36ca5",
+  "generated_at": "2026-06-16T23:21:18Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk filesystem and git overlap: Claude Code can modify shared workspace state while Airflow can egress broadly, creating dangerous prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code reads and writes repo files and can use MCP; Airflow has broad network egress and can consume API/file inputs. A shared filesystem or MCP bridge lets attacker-controlled content from one agent influence the other in default workflows, though no direct parser is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or MCP-backed data source",
+        "IF Claude Code reads files produced by Airflow without content validation"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable MCP servers not strictly needed",
+        "Add a manual review step before one agent consumes the other's files",
+        "Use read-only mounts for Airflow outputs",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Claude Code touches files in cwd, git history, and shell environment, while Airflow has broad network egress. If sensitive files are present in the shared workspace, Claude Code can read them and Airflow can transmit derived content outward; the pair therefore has a default leakage path through shared files and egress.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive data is stored in the shared cwd or repo",
+        "IF Airflow or Claude Code forwards file contents to external services"
+      ],
+      "mitigations": [
+        "Remove secrets from the shared workspace",
+        "Use separate service accounts and directories",
+        "Block outbound network except approved endpoints",
+        "Rotate any credentials found in repo files",
+        "requires-engineering: enforce DLP on file reads and egress"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Claude Code can write the filesystem and modify git state; Airflow is a data orchestrator that commonly operates on the same repo/workspace. Their overlapping write surfaces create a real conflict risk in shared directories, and the concurrency model explicitly says shared state is via filesystem and git only.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout",
+        "IF either agent writes to files the other also edits"
+      ],
+      "mitigations": [
+        "Assign separate branches per agent",
+        "Lock the workspace during writes",
+        "Use one-way handoff directories",
+        "Review git diffs before merge",
+        "requires-engineering: add optimistic concurrency controls"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Claude Code can act on files and git state, while Airflow can generate or transform pipeline artifacts. If Airflow output is treated as authoritative by Claude Code, errors can cascade into commits, shell actions, or downstream automation without verification. The pair lacks a documented verification barrier in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Claude Code consumes Airflow-produced artifacts as trusted input",
+        "IF Claude Code is allowed to commit or run shell actions based on those artifacts"
+      ],
+      "mitigations": [
+        "Require human approval before actions",
+        "Add checksum or schema validation on Airflow outputs",
+        "Keep Airflow outputs read-only until reviewed",
+        "Limit Claude Code to suggestion mode",
+        "requires-engineering: implement signed handoff artifacts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No specific residency or regulated-data mismatch is documented for Airflow, while Claude Code explicitly handles git credentials and local files. The main compliance concern is local secret exposure rather than a proven cross-border or PHI breach, so the pair is lower severity and only one agent needs citation here.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are placed in the shared repo or cwd",
+        "IF those files are retained in git history or logs"
+      ],
+      "mitigations": [
+        "Purge secrets from git history",
+        "Use secret scanning before commits",
+        "Store regulated data outside the workspace",
+        "Restrict retention of logs and transcripts",
+        "requires-engineering: add residency and retention policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:13ecd999903ab2eef6e546737c4bd42926360d042878016be6666f96c49b395b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
