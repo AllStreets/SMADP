@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "crewai"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__crewai_28187d",
+  "generated_at": "2026-06-16T22:48:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "CrewAI\u2019s default shared workspace and shell/network tooling create medium-to-high risks of prompt injection, data leakage, and cascading errors when paired with Airflow.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Airflow can emit task outputs and fetch remote content via broad network egress, while CrewAI reads/writes the host working directory and treats crew data as shared memory. That creates a plausible default bridge where attacker-controlled content from Airflow can be consumed by CrewAI as instructions. The pathway is interaction-based and not blocked by a provenance mechanism in either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Airflow task output is written into the CrewAI working directory",
+        "IF CrewAI agents parse that file as instructions or tool directives",
+        "IF no provenance or sanitization layer is added between the two"
+      ],
+      "mitigations": [
+        "Write Airflow outputs to a separate, read-only handoff file",
+        "Add a strict parser that strips instructions from Airflow text",
+        "Use a provenance tag or schema for all inter-agent messages",
+        "Disable automatic ingestion of arbitrary workspace files",
+        "requires-engineering: isolate the two agents in separate directories or containers"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow touches no explicit sensitive classes, but CrewAI handles developer-passed crew data, API keys, and files in the host working directory. If Airflow places secrets or sensitive artifacts into shared files, CrewAI can read them and send them to model providers or tools via broad network egress. The pair therefore has a default leakage path through shared filesystem plus outbound API calls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Airflow writes sensitive artifacts into the shared working directory",
+        "IF CrewAI is configured with model-provider or tool API calls",
+        "IF those files are included in CrewAI context without redaction"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace",
+        "Redact or tokenize sensitive fields before handoff",
+        "Restrict CrewAI to a least-privilege service account",
+        "Review file globs that CrewAI ingests automatically",
+        "requires-engineering: separate secret-bearing and agent-visible storage"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Airflow has broad network egress and orchestration duties, while CrewAI can execute shell commands, spawn subprocesses, write the filesystem, and use broad network egress. Both can mutate the same host workspace by default, and CrewAI\u2019s concurrency model allows multiple instances with developer-defined shared state. That overlap makes conflicting writes and race conditions likely, with potentially irreversible workflow corruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same host working directory",
+        "IF CrewAI instances share state or files with Airflow tasks",
+        "IF no external locking or transactional coordination is configured"
+      ],
+      "mitigations": [
+        "Assign separate directories per agent",
+        "Add file locks around shared artifacts",
+        "Disable concurrent CrewAI writes to Airflow-managed paths",
+        "Use append-only handoff files instead of mutable state",
+        "requires-engineering: introduce transactional coordination or a job queue"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Airflow is an automation/orchestration system, and CrewAI is a role-playing agent framework that can act on tool outputs. If Airflow-produced artifacts are treated by CrewAI as authoritative, CrewAI may propagate or operationalize incorrect facts into downstream tools or workflows. The pair lacks a documented verification barrier in the profiles, so the default interaction can cascade errors into actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Airflow output is fed directly into CrewAI prompts or memory",
+        "IF CrewAI uses that output without an explicit verification step",
+        "IF CrewAI is allowed to call downstream tools based on the output"
+      ],
+      "mitigations": [
+        "Insert a human or rule-based verification step",
+        "Require structured outputs with schema validation",
+        "Mark Airflow outputs as untrusted by default",
+        "Limit CrewAI tool permissions for first-pass runs",
+        "requires-engineering: add automated fact-checking before action execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airflow and CrewAI both expose broad network egress, but CrewAI explicitly handles API keys and developer-passed crew data while Airflow\u2019s profile does not specify residency or retention controls. If regulated data is passed through CrewAI\u2019s workspace or model-provider calls, compliance gaps can arise from logging, retention, or cross-border processing. The profiles do not prove a breach, so medium is the higher justified severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is included in crew inputs or workspace files",
+        "IF model-provider calls or tool integrations retain prompts or logs",
+        "IF no DPA, residency, or retention controls are configured"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in CrewAI inputs",
+        "Disable or minimize logging of prompts and tool outputs",
+        "Confirm provider residency and retention settings",
+        "Use synthetic or masked data for orchestration tests",
+        "requires-engineering: document and enforce a data-processing agreement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:52bc459e0a34a4e3cedc6c8caa4c45906efe0c9588579344983feb1684ab2056",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
