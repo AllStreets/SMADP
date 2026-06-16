@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "cursor"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__cursor_425aff",
+  "generated_at": "2026-06-16T22:07:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk default interaction: Cursor can read/write shared workspace files and run shell/MCP actions, creating prompt-injection, data-leakage, and cascading-action risks with Airflow outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor reads workspace files, open buffers, and clipboard contents by default, and can use MCP; Airflow can emit files or API-fetched content into shared workspaces. That creates a plausible instruction-hijack path if Airflow-produced artifacts are later opened in Cursor. No direct shared channel is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Airflow writes attacker-controlled text into a workspace file that Cursor opens",
+        "IF Cursor parses file contents or clipboard text as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Disable automatic opening of Airflow-generated artifacts in Cursor",
+        "Use a separate workspace directory for Airflow outputs",
+        "Add a provenance banner to generated files",
+        "Turn off clipboard-based handoff between the agents",
+        "requires-engineering: add content-sanitization or instruction-separation in the workflow"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow has broad network egress, while Cursor reads workspace files, open buffers, and clipboard contents and can send context to model providers/MCP servers. If sensitive data lands in shared files or buffers, Cursor can transmit it onward. Airflow itself does not show secret handling, so the main leakage path is through Cursor\u2019s default context capture.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive data is written by Airflow into shared workspace files",
+        "IF Cursor includes those files or clipboard contents in model requests"
+      ],
+      "mitigations": [
+        "Keep sensitive Airflow outputs out of the Cursor workspace",
+        "Use redacted sample data for shared files",
+        "Disable clipboard transfer for sensitive material",
+        "Restrict Cursor to a read-only clone for review tasks",
+        "requires-engineering: enforce data-loss-prevention or workspace segregation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor can write the filesystem, modify git state, and run shell commands; Airflow can also affect files through its automation role and broad egress. Cursor\u2019s concurrency model explicitly shares state via the local filesystem, so overlapping writes and git mutations can race and corrupt work. This is a default-dangerous overlap, not just a niche configuration issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Airflow and Cursor target the same working directory",
+        "IF Cursor auto-runs shell or git operations while Airflow updates files"
+      ],
+      "mitigations": [
+        "Assign separate directories for Airflow and Cursor",
+        "Pause Cursor auto-run while Airflow jobs execute",
+        "Use git branches per agent",
+        "Add file-locking around shared artifacts",
+        "requires-engineering: introduce orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Airflow can generate pipeline outputs that Cursor may treat as authoritative when editing code or committing changes. Cursor\u2019s agent loop and shell/git abilities make it capable of acting on those outputs without strong verification, so a bad Airflow artifact can cascade into incorrect code or destructive actions. The pair lacks a documented verification barrier.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Cursor uses Airflow-produced files as ground truth",
+        "IF Cursor commits or executes changes derived from unverified Airflow output"
+      ],
+      "mitigations": [
+        "Require human review before Cursor commits Airflow-derived changes",
+        "Mark Airflow outputs as untrusted in filenames or headers",
+        "Use checksum or schema validation before downstream use",
+        "Limit Cursor to suggestion-only mode for pipeline artifacts",
+        "requires-engineering: add explicit verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Airflow is source-available and shows no specific residency or retention commitments here, while Cursor is closed-source and documents privacy pages plus model-provider/MCP egress. The profile does not prove a concrete residency mismatch or regulated-data breach, so I keep this low. I do not cite both agents because the issue is primarily Cursor\u2019s documented handling surface and Airflow lacks a specific compliance constraint.",
+      "citations": [
+        {
+          "profile_field": "agent_b.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Cursor-managed files or prompts",
+        "IF the operator relies on undocumented retention or residency guarantees"
+      ],
+      "mitigations": [
+        "Avoid regulated data in Cursor sessions",
+        "Review Cursor privacy settings before use",
+        "Keep Airflow datasets de-identified",
+        "Store compliance-sensitive artifacts outside the editor workspace",
+        "requires-engineering: obtain a DPA or formal residency attestation"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:e5464d86b47cc64845805e9bb61b05cedde8f40fe7c68320df079b8a4377195f",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
