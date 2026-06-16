@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-16_langflow__transformers_e27e3d",
+  "generated_at": "2026-06-16T05:56:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-workspace prompt injection and data leakage; Langflow\u2019s server-side flow execution can feed untrusted outputs into transformers pipelines.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can ingest uploaded files and chain agents server-side, while transformers processes text, images, and example scripts. In a shared filesystem or flow pipeline, attacker-controlled content from agent_a can be treated as input by agent_b. The pathway is plausible by default, though not proven to be automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes attacker-controlled content into a shared workspace that agent_b later reads",
+        "IF agent_b parses file or prompt content from agent_a as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Add provenance tags to all handoff files",
+        "Require explicit allowlist parsing for agent_b inputs",
+        "Disable automatic ingestion of shared files",
+        "requires-engineering: add content-sanitization and instruction/data separation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem access, and agent_a explicitly handles flow inputs, intermediate outputs, and stored secrets. If they share a workspace or server-side store, sensitive data touched by agent_a can flow into agent_b\u2019s outputs or external calls. The pair does not show a hard isolation boundary.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a stores secrets or intermediate outputs in a directory readable by agent_b",
+        "IF agent_b sends shared files or prompts to Hugging Face Hub or transformers serve endpoints"
+      ],
+      "mitigations": [
+        "Use separate OS users for each agent",
+        "Restrict shared directories to read-only handoff files",
+        "Redact secrets before any handoff",
+        "Block outbound network for agent_b except approved endpoints",
+        "requires-engineering: enforce per-agent data-loss prevention"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shell commands, spawn subprocesses, and install packages. Agent_a also runs unsandboxed Python code by default, so concurrent writes to the same workspace can corrupt files or overwrite each other. The overlap is broad and dangerous in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory",
+        "IF either agent installs packages or rewrites files while the other is active"
+      ],
+      "mitigations": [
+        "Assign separate writable directories",
+        "Serialize write operations with a lock",
+        "Run agent_a Python components in a sandbox",
+        "Pin package installs to isolated environments",
+        "requires-engineering: add optimistic concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Langflow can chain multiple agents and tools, so agent_a\u2019s outputs may become agent_b\u2019s inputs. Transformers can then render or act on those inputs without an explicit verification layer shown in the profile. This creates a realistic cascade where errors or hallucinations propagate across the pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a-generated text is passed directly into agent_b pipelines",
+        "IF agent_b consumes agent_a outputs without validation or schema checks"
+      ],
+      "mitigations": [
+        "Insert a validation step between agents",
+        "Require schema-checked handoff messages",
+        "Log and review agent_a outputs before execution",
+        "Limit agent_b to read-only transformation of vetted inputs",
+        "requires-engineering: add automated output verification"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, retention, or certification mismatch is documented for either open-source profile. The main compliance concern is that agent_a stores per-flow credentials and handles flow inputs, while agent_b processes multimodal data; without a documented mismatch, only a low residual gap is evident. The other agent is cited because the risk is pairwise data handling, not a single-agent violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF deployment policy requires a specific residency or retention guarantee not provided by either profile",
+        "IF regulated data is routed through shared storage without a documented DPA or retention control"
+      ],
+      "mitigations": [
+        "Document data classes and retention rules",
+        "Keep regulated data out of shared workspaces",
+        "Review vendor terms before deployment",
+        "Separate credential stores from content stores",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
