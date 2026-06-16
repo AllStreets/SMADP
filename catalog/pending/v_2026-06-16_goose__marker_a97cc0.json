@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "marker"
+  ],
+  "verdict_id": "v_2026-06-16_goose__marker_a97cc0",
+  "generated_at": "2026-06-16T21:50:43Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.86,
+  "composite_score": 0.38,
+  "headline": "High-risk shared-filesystem and shell-capable pairing: Goose can alter workspace state while marker is read-only, creating prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose has shared_state_with_other_instances via filesystem and can read/write the user filesystem, so it may ingest marker-produced files as instructions. marker is document-processing and may emit attacker-controlled document text into shared outputs. This is not provably blocked, but the bridge is filesystem-based rather than an always-on parser hijack.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Goose reads marker-generated files from the shared workspace as prompts or instructions",
+        "IF marker outputs untrusted document text into files Goose later processes"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Require explicit human review before Goose reads marker outputs",
+        "Prefix marker outputs with non-executable metadata headers",
+        "Use read-only mounts for marker output directories",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd and has broad network egress, so sensitive workspace contents can leave the machine if it forwards them to configured providers. marker has no filesystem read or network egress, so the main leakage path is one-way from Goose, not reciprocal. Shared workspace makes the exposure plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Goose is pointed at files containing secrets or regulated data",
+        "IF Goose sends those files to configured model providers or MCP servers"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared cwd",
+        "Disable network egress for Goose when handling sensitive files",
+        "Use a separate non-sensitive workspace for marker",
+        "Rotate any exposed credentials immediately",
+        "requires-engineering: enforce per-directory egress policy"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Goose can write the filesystem and modify git state, while marker cannot write, modify git, or spawn subprocesses. That makes direct write-write conflict unlikely; the main overlap is Goose acting on shared files that marker reads or produces. The pair lacks symmetric mutable access, so conflict blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Goose and marker are both pointed at the same git working tree",
+        "IF Goose commits or rewrites files while marker is generating documents"
+      ],
+      "mitigations": [
+        "Run marker on a copy of the workspace",
+        "Have Goose commit only after marker finishes",
+        "Use git branches per agent",
+        "Lock the working tree during writes",
+        "requires-engineering: add orchestrator-level file locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can act on tool outputs and modify git state, so if marker-produced text is treated as authoritative, Goose may propagate errors into files or commits. marker is document-processing and may generate structured but unverified content. The pair therefore has a default path where A's output becomes B's input without a verification gate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Goose consumes marker output as factual input without verification",
+        "IF Goose uses that output to edit files or create commits"
+      ],
+      "mitigations": [
+        "Require a human verification step before Goose acts on marker output",
+        "Compare marker output against source documents",
+        "Limit Goose to draft-only edits",
+        "Keep marker outputs in a review folder",
+        "requires-engineering: add schema validation for marker outputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for either agent, so compliance risk is not provable from the profiles alone. Goose handles model-provider keys and extension tokens, while marker exposes no such data classes; the only cited compliance concern is potential handling of sensitive workspace data by Goose, not a documented policy breach by marker.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Goose processes regulated data under a provider or extension policy that forbids it",
+        "IF marker outputs are stored under a retention policy different from Goose's workspace"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Goose sessions",
+        "Review provider and extension retention settings",
+        "Store marker outputs in a separate retention bucket",
+        "Document data-class handling for both agents",
+        "requires-engineering: align residency and retention policies"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:8b584c1e8c5865c036174ff9adc84e34741ece81c5f2aac5fe3f827e661cecca",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
