@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "marker"
+  ],
+  "verdict_id": "v_2026-06-16_crewai__marker_7cc8bb",
+  "generated_at": "2026-06-16T17:20:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.29,
+  "headline": "Highest risk is prompt-injection and cascading-error from CrewAI\u2019s shared-memory orchestration into marker\u2019s document pipeline; data leakage and compliance risks are lower because marker is local-only and networkless.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI explicitly uses a shared-memory crew model and can read/write the host working directory, so attacker-controlled document content could influence downstream agent behavior. marker is a document-processing system with no isolation details, so if CrewAI feeds it parsed content, prompt-like text can propagate. This is not provably blocked, but the shared channel is limited to files/manual handoff.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted document text into a shared workspace that marker later parses as instructions",
+        "IF the operator bridges the pair by copy-pasting or file handoff without provenance checks"
+      ],
+      "mitigations": [
+        "Separate input and output directories for the two agents",
+        "Strip instruction-like text from documents before marker processes them",
+        "Require a human review step before CrewAI forwards content to marker",
+        "Use read-only mounts for marker inputs",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "CrewAI can read and write the host working directory and handle API keys, while marker has no filesystem read/write or network egress. That makes leakage from CrewAI into marker plausible only through shared files or manual transfer, but marker itself cannot exfiltrate onward. The blast radius is limited compared with a networked second agent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in a directory both agents can access",
+        "IF CrewAI writes secrets into files that marker then processes or displays"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace",
+        "Use separate per-agent directories",
+        "Redact API keys before any file handoff",
+        "Disable file-based handoff for sensitive documents",
+        "requires-engineering: enforce DLP on shared folders"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "CrewAI has filesystem write and shell/subprocess capability, but marker has no write, shell, or network capabilities. There is no overlapping mutable resource in the profiles, so direct write-write conflict is not indicated. Any conflict would require an external shared directory or orchestrator not shown here, so uncertainty stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF an external orchestrator gives both agents write access to the same directory",
+        "IF marker is wrapped with additional tools not present in its profile"
+      ],
+      "mitigations": [
+        "Assign disjoint working directories",
+        "Run marker read-only",
+        "Serialize writes through one coordinator",
+        "Avoid shared git or database state",
+        "requires-engineering: add locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI\u2019s role-playing/shared-memory design can produce outputs that marker may consume as document content or extracted text. marker is a document-processing agent with no verification controls shown, so if it treats CrewAI output as authoritative, errors can cascade into incorrect downstream artifacts. The pathway exists in default-style file handoff, but no irreversible action authority is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF marker ingests CrewAI-generated text without an independent verification step",
+        "IF CrewAI output is used as source material for a downstream document transformation"
+      ],
+      "mitigations": [
+        "Add a verification pass before marker consumes CrewAI output",
+        "Require citations or source links in CrewAI outputs",
+        "Compare extracted text against the original document",
+        "Flag low-confidence outputs for human review",
+        "requires-engineering: implement schema validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, while marker\u2019s profile shows no touched data classes or residency constraints. No explicit residency, retention, or certification mismatch is documented, so compliance risk is limited to whatever sensitive data the operator places into CrewAI and then forwards to marker. The other agent is not cited because marker exposes no compliance-specific surface here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed through CrewAI into marker without a documented DPA or retention policy",
+        "IF the operator stores outputs from either agent in a jurisdictionally restricted system"
+      ],
+      "mitigations": [
+        "Avoid sending regulated data through the pair",
+        "Document retention and deletion handling for shared outputs",
+        "Keep marker inputs de-identified",
+        "Review vendor terms before production use",
+        "requires-engineering: add residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:8b584c1e8c5865c036174ff9adc84e34741ece81c5f2aac5fe3f827e661cecca",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
