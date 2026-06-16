@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "airflow"
+  ],
+  "verdict_id": "v_2026-06-16_aider__airflow_0fc5ab",
+  "generated_at": "2026-06-16T23:10:18Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk shared-git and shell-write pairing: Aider can mutate a shared repo while Airflow can act on downstream outputs, creating prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files in a shared repo, so attacker-controlled content can enter its context. Airflow is an automation/orchestration system that can consume those outputs indirectly. The pair has a shared filesystem-like bridge via the repo, but no MCP or clipboard bridge is documented, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Airflow ingests Aider-authored repo content as instructions or config",
+        "IF the shared git repo contains attacker-controlled text that Aider later summarizes or edits"
+      ],
+      "mitigations": [
+        "Restrict Aider to a branch with review-only merges",
+        "Add a prompt-injection scan on repo text before Aider reads it",
+        "Require Airflow to treat repo-derived text as untrusted data",
+        "Use separate repos for orchestration code and Aider work",
+        "requires-engineering: add provenance tags to files and pipeline inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider has broad network egress and handles source code and git history, while Airflow is a data-engineering orchestrator that may move those artifacts onward. The shared repo means sensitive code can be exposed across the pair even without explicit secrets handling in Airflow. No evidence shows PHI or third-party exfiltration by default, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF the shared repository contains secrets or regulated data",
+        "IF Airflow tasks read files that Aider modified or summarized"
+      ],
+      "mitigations": [
+        "Remove secrets from the shared repo before either agent runs",
+        "Limit Aider to a scrubbed working tree",
+        "Disable Airflow tasks that copy repo contents off-host",
+        "Rotate any credentials found in git history",
+        "requires-engineering: enforce DLP on repo reads and task outputs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem and modify git state, and its shared-state model is explicitly via a shared git repo. Airflow is an automation system that can also mutate shared resources through pipelines. With overlapping write authority and no locking documented, concurrent edits can corrupt repo state or overwrite each other, which matches the high-risk shared-write pattern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository",
+        "IF Airflow tasks write files or commit changes without external locking"
+      ],
+      "mitigations": [
+        "Serialize access to the shared repo",
+        "Assign separate branches per agent",
+        "Add a pre-commit lock file checked by both systems",
+        "Run one agent in read-only mode during the other's write window",
+        "requires-engineering: implement optimistic concurrency control for repo mutations"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider can generate code changes and git commits, and Airflow can turn upstream artifacts into downstream automation. If Airflow treats Aider output as authoritative, a mistaken edit can cascade into automated pipeline actions or bad deployments. Because the pair includes an action-taking orchestrator and no verification step is documented, the blast radius is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Airflow consumes Aider-produced files or commit messages as pipeline inputs",
+        "IF downstream tasks execute without human verification of Aider changes"
+      ],
+      "mitigations": [
+        "Require human review before Airflow consumes Aider outputs",
+        "Add schema validation for any Aider-generated config",
+        "Gate deployments on tests and diff approval",
+        "Mark Aider outputs as advisory only in Airflow",
+        "requires-engineering: add provenance-aware verification between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider explicitly touches source code and git history, while Airflow\u2019s profile does not show regulated-data handling or residency constraints. The main compliance issue is limited to code-repo governance and retention of git history, not a documented residency or certification mismatch. Only Aider is directly cited because Airflow lacks relevant compliance fields.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the shared repo contains regulated data or secrets",
+        "IF git history retention conflicts with the operator's policy"
+      ],
+      "mitigations": [
+        "Purge secrets from git history",
+        "Use a separate repo for regulated data",
+        "Set retention rules for logs and commits",
+        "Restrict Aider to non-sensitive projects",
+        "requires-engineering: add compliance policy checks to the workflow"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:47c97457395201b2f46bae6e097e5b0ac5dd3c4eadc1344b7484560c15c1a90b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
