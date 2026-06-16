@@ -46,9 +46,9 @@ from smadp.sandbox import queue
 from smadp.sandbox.properties import PropertyReport, apply_property_floors
 from smadp.sandbox.scenarios import scenario_mode
 from smadp.schemas.evidence_level import EVIDENCE_LADDER as _EVIDENCE_LADDER
+from smadp.schemas.evidence_level import EvidenceLevel
 from smadp.schemas.verdict import (
     Citation,
-    EvidenceLevel,
     Reproducibility,
     SandboxOutcome,
     SandboxRun,

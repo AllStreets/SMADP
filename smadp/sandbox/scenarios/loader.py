@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import yaml
 
@@ -400,14 +400,15 @@ def _validate_adversarial(
     )
 
 
-def scenario_mode(name: str | None) -> str:
+def scenario_mode(name: str | None) -> Literal["cooperative", "adversarial"]:
     """Mode for a built-in scenario name; unknown/missing names are cooperative."""
     if not name:
         return "cooperative"
     try:
-        return load_scenario(name).mode
+        mode = load_scenario(name).mode
     except ScenarioLoadError:
         return "cooperative"
+    return "adversarial" if mode == "adversarial" else "cooperative"
 
 
 def assert_secrets_safe(values: Iterable[str]) -> None:

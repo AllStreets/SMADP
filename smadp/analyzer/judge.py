@@ -23,7 +23,8 @@ import structlog
 from smadp.analyzer.bundle import JudgeBundle, evidence_bundle_for_prompt
 from smadp.llm.client import LLMClient
 from smadp.llm.prompts import pairwise_judge
-from smadp.schemas.verdict import EvidenceLevel, SubVerdicts
+from smadp.schemas.evidence_level import EvidenceLevel
+from smadp.schemas.verdict import SubVerdicts
 
 logger = structlog.get_logger(__name__)
 

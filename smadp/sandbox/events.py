@@ -169,8 +169,8 @@ class RunObservation:
     ) -> Any:
         event = self.writer.emit(
             agent=agent,
-            event_type=event_type,  # type: ignore[arg-type]
-            direction=direction,  # type: ignore[arg-type]
+            event_type=event_type,
+            direction=direction,
             payload=payload or {},
             note=note,
         )

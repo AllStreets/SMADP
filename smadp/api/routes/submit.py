@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
@@ -105,7 +106,7 @@ async def submit_agent(
     status_code=202,
     dependencies=[Depends(require_operator_token)],
 )
-async def submit_profile(request: Request) -> dict:
+async def submit_profile(request: Request) -> dict[str, Any]:
     """Accept a registered-key-signed third-party profile into ``_unverified/``.
 
     Operator-token-gated AND key-signature-gated. The profile lands in
