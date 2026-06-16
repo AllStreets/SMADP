@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-16_autogen__transformers_200a5b",
+  "generated_at": "2026-06-16T06:19:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible; compliance risk is lower but nontrivial.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write configured working directories and uses stdin/stdout; transformers also reads files and processes example scripts/model files. With a shared filesystem or copy-paste bridge, A\u2019s outputs can be treated as instructions by B. No built-in provenance tracking is shown for either agent, so the pathway is plausible but not default-dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b share a writable workspace or copied text channel",
+        "IF agent_b parses A-produced files or stdout as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate work directories for A and B",
+        "Require explicit human review before B consumes A output",
+        "Prefix A outputs with machine-readable provenance tags",
+        "Disable automatic file ingestion in B",
+        "requires-engineering: add content provenance validation between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and filesystem read access, and A explicitly handles model provider API keys while B processes text, images, video, and model files. If they share a workspace or credentials, sensitive application data can flow from A into B\u2019s outputs or external calls. The profiles do not prove a shared workspace, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF A and B are configured on the same shared directory or credential store",
+        "IF B is allowed to transmit loaded file contents to Hugging Face Hub or another API"
+      ],
+      "mitigations": [
+        "Use separate credential stores for each agent",
+        "Mount distinct read/write directories",
+        "Block outbound network for B except approved endpoints",
+        "Redact secrets before passing artifacts between agents",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A and B both have unrestricted filesystem write, shell execution, subprocess spawning, and broad egress. In a shared directory, concurrent edits can overwrite files, scripts, or model artifacts without locking. Because neither profile shows coordination primitives or locking, the default interaction is dangerous enough to risk irreversible workspace corruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF A and B write to the same directory or git checkout",
+        "IF no external lock or transaction wrapper serializes their writes"
+      ],
+      "mitigations": [
+        "Assign disjoint output directories",
+        "Serialize write operations with a lock file",
+        "Disable one agent\u2019s write access during the other\u2019s run",
+        "Snapshot the workspace before concurrent runs",
+        "requires-engineering: add optimistic concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen is a multi-agent orchestration framework that can emit tool calls and code execution per role, while transformers is a document-processing/model framework that may consume those outputs as inputs. If B treats A\u2019s generated text, code, or citations as authoritative, errors can cascade into downstream processing or actions. The profiles do not show verification by default, so the pathway exists in default configurations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF B ingests A-generated text or code without validation",
+        "IF A\u2019s outputs are forwarded into B\u2019s pipeline API or example scripts"
+      ],
+      "mitigations": [
+        "Insert a verification step before B consumes A output",
+        "Require schema validation on A-produced artifacts",
+        "Limit A to draft-only outputs",
+        "Log and diff A outputs before downstream use",
+        "requires-engineering: add typed contracts between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated-data certifications or residency constraints, so no specific breach is proven. However, A handles model provider API keys and B touches multimodal data with broad egress, which can create compliance gaps if regulated data is routed through either agent. The other agent is cited because the risk is pairwise data flow, not a single-agent residency issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed through either agent",
+        "IF organizational policy requires residency, retention, or certification guarantees not present in the profiles"
+      ],
+      "mitigations": [
+        "Classify data before routing it to either agent",
+        "Keep regulated data out of both agents",
+        "Document retention and deletion handling",
+        "Restrict outbound endpoints to approved regions",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
