@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__open-interpreter_1bff27",
+  "generated_at": "2026-06-16T23:32:15Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default filesystem and shell overlap: Open Interpreter can read/write and execute on the same machine while Airflow can egress broadly, creating prompt-injection, leakage, and cascading-action exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter ingests clipboard/filesystem content and can execute shell commands, while Airflow can emit outputs and call APIs. A shared filesystem or copy-paste bridge makes attacker-controlled content from one agent plausible input to the other. The pathway is not provably blocked, but it is not documented as a default direct channel either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange content through clipboard or shared files",
+        "IF Airflow-generated text is pasted into Open Interpreter as instructions"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between agents",
+        "Use separate working directories",
+        "Require manual review of any file passed from Airflow to Open Interpreter",
+        "Run Open Interpreter in a restricted sandbox",
+        "requires-engineering: add provenance tagging for inter-agent artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Open Interpreter can read the entire user filesystem and handle model-provider API keys, while Airflow has broad network egress. If Airflow receives local files or secrets and then transmits them via its API calls, sensitive data can leave the machine. The pair\u2019s default surfaces make leakage plausible without extra safeguards.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Airflow is given files or secrets originating on the local machine",
+        "IF Open Interpreter reads those files before Airflow transmits them"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories",
+        "Restrict Airflow tasks to non-sensitive inputs",
+        "Rotate any exposed API keys immediately",
+        "Use separate OS users for each agent",
+        "requires-engineering: enforce egress allowlists and secret redaction"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter can write the filesystem, modify git state, and spawn subprocesses; Airflow can also act on external systems and broad network egress. Because Open Interpreter\u2019s shared state is via filesystem and no locking is indicated, concurrent writes or git mutations can collide with Airflow-managed artifacts. This is a default-dangerous overlap with potentially irreversible repo state changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace",
+        "IF Airflow and Open Interpreter modify the same files or git branch concurrently"
+      ],
+      "mitigations": [
+        "Assign separate repositories or branches",
+        "Pause one agent before the other writes",
+        "Use file locks around shared artifacts",
+        "Review git diffs before commit",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Airflow can produce pipeline outputs that Open Interpreter may treat as actionable input, and Open Interpreter can then execute shell commands or modify files based on those outputs. Without a verification step, one agent\u2019s output can cascade into the other\u2019s actions, including irreversible changes. The interaction is plausible from the profiles alone and not safely mediated by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Airflow output is fed into Open Interpreter without human verification",
+        "IF Open Interpreter is allowed to auto-run generated commands"
+      ],
+      "mitigations": [
+        "Require human approval before execution",
+        "Disable auto_run",
+        "Validate Airflow outputs against a schema",
+        "Use a read-only staging workspace",
+        "requires-engineering: add output attestation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Open Interpreter touches anything reachable on the local machine and can handle model-provider API keys, while Airflow has broad network egress. If local data includes regulated content, Airflow\u2019s outbound calls can create residency or retention mismatches. No specific residency or certification guarantees are provided for either agent, so the safest classification is a moderate compliance risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present on the local machine",
+        "IF Airflow sends that data to an external model or API provider"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows",
+        "Document data residency for each provider",
+        "Disable logging of sensitive prompts",
+        "Review retention settings for model providers",
+        "requires-engineering: add policy enforcement for data-class routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
