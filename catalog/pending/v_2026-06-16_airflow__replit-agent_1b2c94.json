@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__replit-agent_1b2c94",
+  "generated_at": "2026-06-16T23:15:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: Replit Agent can write and execute in a persistent workspace while Airflow can egress broadly, creating dangerous default pathways for leakage, conflict, and unverified downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has no direct ingest channel from B, but B can write Repl workspace files and A can interact with APIs; if A consumes files or outputs from B in a shared workspace, prompt injection becomes plausible. The pair lacks a documented isolation/provenance mechanism, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF B writes attacker-controlled instructions into a workspace file that A later reads",
+        "IF A is configured to parse B-produced text as trusted directives"
+      ],
+      "mitigations": [
+        "Separate workspaces so A never reads B-written files",
+        "Require explicit allowlists for any file A ingests",
+        "Add provenance tags to B outputs before A consumes them",
+        "Disable automatic file-based instruction ingestion",
+        "requires-engineering: add a sanitizer/provenance gate between B and A"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "B touches secrets and deployment configuration and has broad filesystem/network access; A has broad network egress and can call external APIs. If B passes sensitive workspace content into A, A can transmit it outward. This is a default-dangerous exfiltration pathway, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF B loads secrets or deployment files into prompts or artifacts that A can access",
+        "IF A sends those artifacts to external APIs or services"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared files",
+        "Restrict A to non-sensitive datasets only",
+        "Turn off A network egress for sensitive runs",
+        "Rotate any secrets exposed in shared workspace",
+        "requires-engineering: enforce DLP/redaction before A egress"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "B can write files, modify git state, and spawn subprocesses in a persistent Repl filesystem; A is a data orchestrator with broad egress. If both operate on the same repo or workspace, concurrent writes and git mutations can overwrite each other without locking. The shared-state model makes this a default high-risk conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.category"
+        }
+      ],
+      "conditions": [
+        "IF A and B target the same repository or workspace",
+        "IF B commits or rewrites files while A is also producing artifacts"
+      ],
+      "mitigations": [
+        "Assign separate branches or directories",
+        "Pause one agent before the other writes",
+        "Use a lock file around git operations",
+        "Review diffs before any commit",
+        "requires-engineering: add orchestrator-level write serialization"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "B can act on A-generated artifacts inside a Repl, and A can produce outputs that B may treat as operational inputs. There is no documented verification loop between them, so A's mistakes can cascade into B's file edits or deployments. The blast radius is meaningful but not inherently irreversible in the provided profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF B uses A's outputs as authoritative without review",
+        "IF B executes shell or git actions based on A-produced text"
+      ],
+      "mitigations": [
+        "Require human review of A outputs before B acts",
+        "Add a verification checklist for B",
+        "Limit B to dry-run mode for A-derived tasks",
+        "Log A-to-B handoffs for audit",
+        "requires-engineering: add schema validation for A outputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "B explicitly touches secrets and deployment configuration in a Replit-managed cloud environment, while A has broad network egress. If regulated or residency-bound data is placed in B's workspace and then processed by A, compliance gaps can arise. The profiles do not prove a specific residency mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.homepage"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or EU PII is stored in B's Repl workspace",
+        "IF A processes that data through external network calls without a DPA or residency control"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair",
+        "Confirm data-processing agreements before use",
+        "Use synthetic or masked datasets",
+        "Restrict A to approved regions/services",
+        "requires-engineering: implement residency-aware routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
