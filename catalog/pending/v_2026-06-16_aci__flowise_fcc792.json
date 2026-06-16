@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aci",
+    "flowise"
+  ],
+  "verdict_id": "v_2026-06-16_aci__flowise_fcc792",
+  "generated_at": "2026-06-16T23:43:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.725,
+  "headline": "High-risk shared-workspace and broad-egress pair: Flowise can read/write files while aci can act on CRM/email/calendar data, creating dangerous prompt-injection, leakage, and cascading-action pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read uploaded files and server filesystem, and aci can consume outputs via direct function calls or MCP-style integration. That creates a plausible instruction-hijack path if Flowise ingests attacker-controlled content and aci trusts it. The pair lacks explicit provenance controls in the profiles, but the bridge is not inherently automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Flowise ingests untrusted file or web content and forwards it into aci without provenance tagging",
+        "IF aci treats Flowise-produced text as instructions rather than data"
+      ],
+      "mitigations": [
+        "Add a provenance prefix to every Flowise output before passing to aci",
+        "Restrict Flowise inputs to allowlisted sources only",
+        "Insert a human review step before aci executes any tool call",
+        "Disable automatic chaining from file ingestion to action nodes",
+        "requires-engineering: implement signed message envelopes between the agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "aci touches CRM, email, calendar, support, and research data, while Flowise reads uploaded files and server filesystem and has broad network egress. If aci outputs sensitive records into Flowise flows, Flowise can transmit them to model providers or HTTP tools by default, creating a realistic exfiltration path with broad blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF aci passes CRM, email, calendar, or support data into a Flowise flow",
+        "IF Flowise routes that content to model providers or HTTP tools"
+      ],
+      "mitigations": [
+        "Remove sensitive fields before handing data to Flowise",
+        "Use a redaction step on aci outputs",
+        "Disable external HTTP tools in Flowise for sensitive flows",
+        "Store secrets only in a separate vault, not in chatflow inputs",
+        "requires-engineering: enforce DLP policies between the agents"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad network egress, and Flowise can write the server filesystem while supporting multiple instances with shared datastore state. aci also handles secrets and OAuth flows. Concurrent writes and shared mutable state create a strong conflict risk, especially if both are pointed at the same workspace or credentials store.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem, datastore, or credential store",
+        "IF Flowise flows and aci actions run concurrently without locking"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Use per-agent credential stores",
+        "Turn on external locking around shared resources",
+        "Limit Flowise write access to a scratch directory",
+        "requires-engineering: add optimistic concurrency controls"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based orchestrator whose tools act as nodes, and aci can directly perform CRM/email/calendar actions. If Flowise output is treated as authoritative by aci, a mistaken or injected intermediate result can cascade into real-world actions such as emails or CRM updates. The profiles show no built-in verification barrier.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Flowise output is used as the sole input to aci action nodes",
+        "IF aci executes email, CRM, or calendar actions without verification"
+      ],
+      "mitigations": [
+        "Require a confirmation step before any external action",
+        "Add schema validation to Flowise outputs",
+        "Log and review all action-triggering prompts",
+        "Use read-only dry runs for new flows",
+        "requires-engineering: add policy gates before side-effecting nodes"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "aci touches email, CRM, calendar, support, and research data, while Flowise stores chatflow inputs/outputs and uploaded files on the server filesystem. That creates a plausible retention and residency mismatch if the same regulated data class is routed through both systems. The profiles do not show a documented compliance boundary, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated customer data is routed through both agents",
+        "IF Flowise retains uploaded files or chatflow outputs longer than aci's source systems"
+      ],
+      "mitigations": [
+        "Set explicit retention limits in Flowise",
+        "Avoid sending regulated data into chatflow files",
+        "Document data residency for both systems",
+        "Purge uploaded files after each run",
+        "requires-engineering: align compliance controls across both platforms"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8f2cd1b34c34e228b806e03b3c9ac9eee45f7c46059b1c090611719e2251660f",
+    "profile_b_hash": "sha256:cd02c65d50c344abf624256bb0b9be5054b3650cd67aad173b18f54013ef31cc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
