@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-16_goose__transformers_593d80",
+  "generated_at": "2026-06-16T06:02:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High-risk shared filesystem and broad write/network defaults make prompt injection, data leakage, and cascading errors plausible; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the user filesystem, and Goose explicitly shares state via filesystem while transformers can process files/scripts. That creates a default bridge where attacker-controlled content from either side can be treated as instructions. No stronger isolation is documented, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Goose and transformers exchange files through the shared cwd or workspace, prompt-like content can cross between them.",
+        "IF either agent parses file contents as instructions without provenance checks, injected directives can be followed."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Disable automatic ingestion of untrusted files.",
+        "Add a manual review step before one agent consumes the other's output.",
+        "Use provenance labels on exchanged files.",
+        "requires-engineering: add sandbox or namespace isolation between instances."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd, and transformers touches text, images, audio, video, and multimodal data. Because both have filesystem access and broad network egress, sensitive material in shared files can flow into either agent's outputs or external API calls. The profiles do not show a hard data boundary, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the shared workspace, both agents can read them.",
+        "IF either agent forwards file contents to configured model providers or Hub/API endpoints, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Move sensitive files out of the shared workspace.",
+        "Restrict network egress for one or both agents.",
+        "Redact secrets before handing files to either agent.",
+        "Review outbound requests for file-content uploads.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and Goose also modifies git state. The shared-state-via-filesystem model means concurrent edits can collide by default, and git state corruption or lost writes are plausible. This matches the high-severity overlap indicator more than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or directory, concurrent writes can race.",
+        "IF Goose modifies git state while transformers writes files in the same tree, conflicts or corruption can occur."
+      ],
+      "mitigations": [
+        "Run each agent in a separate checkout.",
+        "Serialize write operations with a lock file.",
+        "Assign one agent read-only access.",
+        "Commit or stash changes before switching agents.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can produce tool outputs and file edits that transformers may consume as pipeline input, but the profiles do not prove transformers acts autonomously on those outputs. Still, the shared filesystem and pipeline-style use make unverified handoff plausible in default workflows, so medium is safer than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF transformers consumes Goose-generated files or stdout without validation, errors can propagate downstream.",
+        "IF Goose writes incorrect facts into shared artifacts, transformers may render or reuse them."
+      ],
+      "mitigations": [
+        "Insert a verification step between agents.",
+        "Require schema checks on exchanged artifacts.",
+        "Compare outputs against source files before acting.",
+        "Limit transformers to read-only review of Goose outputs.",
+        "requires-engineering: add typed contracts between pipeline stages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Goose explicitly handles model provider keys and extension-specific tokens, while transformers can call the Hugging Face Hub and serve APIs. If regulated or sensitive data is processed in the shared workspace, differing retention or residency assumptions could create a compliance mismatch. The profiles do not show a specific residency violation, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into files processed by both agents, retention and logging policies must align.",
+        "IF either agent sends that data to external services, residency or DPA requirements may be triggered."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Confirm retention settings for external services.",
+        "Disable external API calls for regulated workloads.",
+        "Document which agent may process which data class.",
+        "requires-engineering: implement policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
