@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "goose"
+  ],
+  "verdict_id": "v_2026-06-16_airflow__goose_a0c4de",
+  "generated_at": "2026-06-16T23:26:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of shared-workspace prompt injection and cascading errors; Goose\u2019s filesystem/MCP/tooling can steer Airflow workflows if outputs are reused without verification.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Airflow has no direct shared channel with Goose, but Goose can read/write the user filesystem and use MCP, while Airflow can egress broadly. If Goose\u2019s outputs are copied into Airflow DAGs, configs, or task inputs, attacker-controlled content can be treated as instructions. The pathway is plausible but not default without a bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes content into a shared workspace that Airflow later ingests",
+        "IF an operator copies Goose-generated text into Airflow DAGs or task parameters"
+      ],
+      "mitigations": [
+        "Separate Airflow DAG repos from Goose working directories",
+        "Require manual review of any Goose-generated config before deployment",
+        "Disable or restrict MCP servers used by Goose",
+        "Use a read-only handoff folder for artifacts",
+        "Add a lint step that rejects instruction-like text in DAG inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches files in the cwd and user filesystem, and Airflow has broad network egress plus API calls. If the pair shares a workspace, Goose can expose file contents that Airflow then moves into external systems or logs. Airflow itself does not show secret handling here, so the main risk is workspace-mediated leakage rather than guaranteed exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory tree",
+        "IF Airflow tasks transmit Goose-produced files or logs to external services"
+      ],
+      "mitigations": [
+        "Keep sensitive files out of the shared cwd",
+        "Mount Goose on a separate workspace from Airflow",
+        "Redact secrets before Airflow reads any Goose output",
+        "Turn off verbose task logging for shared artifacts",
+        "Use per-agent service accounts and separate storage buckets"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose can write the filesystem and modify git state, and its concurrency model explicitly shares state via filesystem. Airflow\u2019s profile does not show write isolation or locking, so if both touch the same repo or working tree, concurrent edits and git mutations can collide. Uncertainty about Airflow\u2019s locking pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Airflow and Goose write to the same repository or working directory",
+        "IF Airflow tasks mutate git state without external locking"
+      ],
+      "mitigations": [
+        "Assign separate working directories per agent",
+        "Serialize git writes with a lock file",
+        "Make Airflow outputs append-only where possible",
+        "Run Goose in a branch-specific checkout",
+        "Add a pre-commit check that rejects concurrent workspace mutation"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Goose can act on files and shell commands, while Airflow is a data orchestrator that can consume generated artifacts. If Goose-produced outputs are treated as authoritative by Airflow DAGs or downstream tasks, a bad fact or malformed file can cascade into automated actions. The pair lacks a documented verification boundary, so the safer high severity applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF Airflow tasks consume Goose-generated artifacts without validation",
+        "IF Goose output is used to parameterize automated jobs or shell steps"
+      ],
+      "mitigations": [
+        "Insert schema validation between Goose and Airflow",
+        "Require human approval for Goose-generated DAG changes",
+        "Use checksum or signature checks on transferred artifacts",
+        "Limit Airflow tasks to read-only inspection of Goose output",
+        "Add a canary run before any production DAG update"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No specific residency, certification, or retention mismatch is documented for Airflow versus Goose in the provided profiles. Goose handles model-provider and extension tokens, while Airflow\u2019s profile shows no sensitive data classes or compliance constraints. The only plausible issue is operator-managed policy mismatch, which is not enough for medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF the operator routes regulated data through Goose extensions or Airflow tasks",
+        "IF local retention or residency policies are imposed outside these profiles"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces",
+        "Document retention rules for any shared artifacts",
+        "Review extension tokens before enabling new integrations",
+        "Keep compliance-sensitive jobs on separate infrastructure",
+        "requires-engineering: add policy enforcement for data residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.1",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:8b84721855c69108259ebe1bcba43c9908fd2ae93d8cdf83d8b2f559b44400db",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
