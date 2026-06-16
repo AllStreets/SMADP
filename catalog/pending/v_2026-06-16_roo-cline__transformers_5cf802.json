@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "roo-cline",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-16_roo-cline__transformers_5cf802",
+  "generated_at": "2026-06-16T05:36:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-workspace pair: broad filesystem/network writes create prompt-injection, leakage, and cascading-error exposure; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Roo Code reads and writes VS Code workspace files and uses MCP; transformers can read/write files and process example scripts/model files. Because the pair shares a filesystem-based workspace, attacker-controlled content in one agent\u2019s outputs can be consumed by the other as instructions or data. This is plausible in default use, though not as direct as a shared MCP bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory, prompt-like content in files can influence the other agent.",
+        "IF either agent parses file contents as instructions or tool directives, injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP for the agent that does not need it.",
+        "Treat all file contents as untrusted input.",
+        "Add a manual review step before either agent acts on generated text.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Roo Code touches source code and browser screenshots and has broad network egress; transformers touches text, audio, images, video, and multimodal data. A shared workspace means sensitive files can be read by both, and Roo Code can transmit context to configured model APIs. The leakage path exists in default configurations and can affect multiple data classes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared workspace, both agents can access them.",
+        "IF Roo Code is configured with a third-party model API, workspace contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Remove sensitive files from the shared workspace.",
+        "Use a local-only model backend for Roo Code.",
+        "Restrict network egress during sensitive tasks.",
+        "Mount separate read-only copies for inspection.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Roo Code explicitly shares state via filesystem across instances. That creates a direct write-write conflict on the same directory, with possible git-state corruption because Roo Code can modify git state while transformers can also write files. Defaults are dangerous and failures can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory, concurrent edits can collide.",
+        "IF either agent writes git metadata or generated files without locking, repository state can be corrupted."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Pause one agent while the other writes.",
+        "Use git worktrees or branches per agent.",
+        "Add file-locking around shared outputs.",
+        "requires-engineering: implement orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Roo Code can generate code, browser-derived content, and tool outputs that transformers may ingest as pipeline input. Transformers is a processing framework that can transform or render those inputs without an inherent verification step in the profile. If Roo Code\u2019s output is treated as authoritative, errors can cascade into downstream artifacts or actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code output is fed directly into transformers pipelines, unverified errors can propagate.",
+        "IF transformers is used to generate downstream artifacts from Roo Code-produced text or files, mistakes can multiply."
+      ],
+      "mitigations": [
+        "Insert a human verification step between agents.",
+        "Require schema validation on all handoffs.",
+        "Compare outputs against source files before acting.",
+        "Limit transformers to read-only analysis on Roo Code outputs.",
+        "requires-engineering: add automated provenance and checksum checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Roo Code handles model provider API keys and browser screenshots, while transformers processes multimodal data and can run against Hub/serve APIs. The profiles do not document residency or retention guarantees, so a compliance mismatch is plausible but not proven. Because the other agent is not tied to a specific regulated residency regime, only Roo Code\u2019s secret-handling and screenshot exposure are directly relevant.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace, both agents may process it without documented residency controls.",
+        "IF Roo Code forwards screenshots or code to a third-party API, retention obligations may be implicated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the workspace.",
+        "Use a local deployment path for sensitive tasks.",
+        "Review API retention settings before use.",
+        "Disable screenshot capture when not needed.",
+        "requires-engineering: document residency and retention for both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3467a1c605b4c1e5bb0da82ccceaacaefa1cce7bbf60240c7b2b83b858bb1a0e",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
