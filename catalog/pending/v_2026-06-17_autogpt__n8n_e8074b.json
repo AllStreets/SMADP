@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__n8n_e8074b",
+  "generated_at": "2026-06-17T01:42:17Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High-risk filesystem and workflow orchestration pairing: n8n can read/write shared files and execute commands, while AutoGPT can also shell out and access the filesystem.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A can read/write the filesystem and execute shell commands; B can write/read the server filesystem and orchestrate tools from workflow nodes. If B passes attacker-controlled file content into A, or A consumes B-produced files as instructions, prompt injection is plausible via the shared filesystem. No direct clipboard/MCP bridge is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF n8n writes untrusted workflow output into a file that AutoGPT later reads as instructions",
+        "IF AutoGPT ingests file contents from the shared server filesystem without provenance checks"
+      ],
+      "mitigations": [
+        "Use separate directories for each agent's files",
+        "Prefix all handoff files with a strict schema and reject free-form text",
+        "Add a manual review step before AutoGPT reads n8n-generated files",
+        "Disable file-based handoffs for untrusted content",
+        "requires-engineering: add provenance tagging to workflow artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "B explicitly touches 'whatever the workflow processes' and has broad network egress plus server filesystem access; A also has filesystem access and allowlisted egress. If either agent processes sensitive workflow data, the other can read or transmit it through the shared server filesystem or outbound APIs. The profiles do not prove PHI or secrets, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the workflow processes secrets, customer data, or regulated records",
+        "IF n8n stores those records on the shared server filesystem before AutoGPT can read them"
+      ],
+      "mitigations": [
+        "Restrict both agents to a dedicated non-sensitive workspace",
+        "Turn off file persistence for sensitive workflow steps",
+        "Mask secrets before writing workflow artifacts",
+        "Review outbound integrations used by n8n for data egress",
+        "requires-engineering: enforce per-agent storage isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A can execute shell commands and spawn subprocesses; B can execute shell commands, spawn subprocesses, and write the server filesystem. B also supports multiple instances with shared state via n8n datastore and connected systems, while A does not support multiple instances. Concurrent writes to the same filesystem or workflow artifacts can race and corrupt state; the default overlap is dangerous enough to rate high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or workflow artifact set",
+        "IF n8n runs multiple instances against shared datastore-backed state"
+      ],
+      "mitigations": [
+        "Assign each agent a separate writable directory",
+        "Serialize writes with a lock file or queue",
+        "Avoid concurrent execution of shell-writing steps",
+        "Keep n8n workflows single-writer for shared resources",
+        "requires-engineering: add transactional locking around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "B is an orchestration system that can call tools as workflow nodes, and A can generate outputs after shell/file operations. If B treats A's output as authoritative, it can trigger downstream actions such as API calls or command execution without verification. That creates a classic cascade from generated text to real actions, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n feeds AutoGPT output directly into downstream workflow nodes",
+        "IF downstream nodes execute API calls or commands based on unverified A output"
+      ],
+      "mitigations": [
+        "Insert a human approval step before action nodes",
+        "Require structured outputs with validation rules",
+        "Compare A output against a second source before acting",
+        "Log and review all tool-triggering decisions",
+        "requires-engineering: add policy gates for high-impact workflow nodes"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "B explicitly handles 'whatever the workflow processes' on a server filesystem with broad egress and per-integration OAuth/credential stores; A also has filesystem access and allowlisted egress. The profiles do not specify residency or certifications, so a concrete compliance mismatch is unproven. Still, shared processing of regulated data could create retention or residency issues in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the workflow processes regulated data such as EU PII, PHI, or secrets",
+        "IF n8n credentials or logs retain that data longer than the source system permits"
+      ],
+      "mitigations": [
+        "Confirm the data class before enabling the pair",
+        "Minimize retention in n8n execution logs",
+        "Store credentials only in the credential store, not workflow data",
+        "Route regulated data through a compliant isolated workspace",
+        "requires-engineering: document residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

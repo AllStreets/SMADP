@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "flowise"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__flowise_5f6b5b",
+  "generated_at": "2026-06-17T01:42:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible by default in the AutoGPT\u2013Flowise pair.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and act on filesystem content, while Flowise writes uploaded files and server filesystem artifacts; that shared file channel can carry attacker-controlled text into AutoGPT\u2019s instruction stream. No MCP/clipboard bridge is shown, so this is not high, but the pathway exists in common deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes a file that AutoGPT later ingests as task context or instructions",
+        "IF both agents share the same workspace directory without content provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable automatic ingestion of uploaded files into AutoGPT prompts",
+        "Add provenance tags to files before AutoGPT reads them",
+        "Review shared directories for prompt-like content before handoff",
+        "requires-engineering: enforce file-level trust boundaries"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and stores uploaded files on the server filesystem, while AutoGPT can read files and make allowlisted network calls. If sensitive data enters Flowise, AutoGPT can re-read it and potentially transmit it through its egress path; the pair therefore has a default leakage pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive chatflow inputs or uploaded files are stored in Flowise\u2019s server filesystem",
+        "IF AutoGPT is configured to read those files and call external APIs with their contents"
+      ],
+      "mitigations": [
+        "Store sensitive files outside the shared workspace",
+        "Restrict AutoGPT to non-sensitive directories",
+        "Turn off or narrow AutoGPT network egress",
+        "Redact secrets before Flowise persists inputs",
+        "requires-engineering: add DLP scanning on file handoff"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "AutoGPT can execute shell commands and spawn subprocesses, while Flowise can write the server filesystem and supports multiple instances with shared state via server datastore. That creates overlapping mutation of shared resources without any locking evidence, so concurrent corruption or overwrite is a realistic default risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or datastore",
+        "IF Flowise instances run concurrently while AutoGPT writes files or subprocess outputs into the same path"
+      ],
+      "mitigations": [
+        "Assign disjoint write paths",
+        "Serialize writes with a lock file",
+        "Run only one Flowise instance per shared workspace",
+        "Make AutoGPT write to a temp directory",
+        "requires-engineering: add transactional coordination for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based orchestrator that can route tool outputs, and AutoGPT can generate intermediate facts or files that Flowise may treat as inputs. Without a documented verification step between them, erroneous AutoGPT output can cascade into downstream tool actions or user-visible results.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise consumes AutoGPT-produced text or files as authoritative node input",
+        "IF downstream Flowise nodes act on that content without validation"
+      ],
+      "mitigations": [
+        "Insert a human review step before action nodes",
+        "Require schema validation on AutoGPT outputs",
+        "Mark AutoGPT outputs as untrusted in Flowise",
+        "Limit downstream nodes to read-only operations",
+        "requires-engineering: add verifier nodes between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise explicitly handles chatflow inputs/outputs and model provider/tool credentials, while AutoGPT can egress data to external APIs. Even without a stated residency mismatch, the pair can move regulated content into third-party services and logs unless operators configure retention and redaction carefully.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Flowise chatflows or uploaded files",
+        "IF either agent forwards that data to external model providers or tools"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared flows",
+        "Disable logging of sensitive prompts and files",
+        "Rotate and scope tool credentials narrowly",
+        "Set short retention on chatflow artifacts",
+        "requires-engineering: implement residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:cd02c65d50c344abf624256bb0b9be5054b3650cd67aad173b18f54013ef31cc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
