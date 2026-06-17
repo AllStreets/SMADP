@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-17_gpt-engineer__unstructured_36753b",
+  "generated_at": "2026-06-17T04:13:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt-injection, data leakage, and cascading errors from shared project-directory workflows between gpt-engineer and unstructured.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a shared project directory and has no self-isolation by default; unstructured reads documents/files and can process attacker-controlled content. That creates a plausible file-based injection bridge even without MCP or clipboard. The pair is open-source, but the interaction is documented only at profile level, so uncertainty stays elevated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF gpt-engineer writes instructions into the shared project directory and unstructured later parses those files as content, injection is possible.",
+        "IF the orchestrator passes unstructured output back into gpt-engineer without sanitization, prompt hijacking risk increases."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Disable automatic ingestion of generated files by unstructured.",
+        "Add a manual review step before any file is re-read by gpt-engineer.",
+        "Use read-only mounts for unstructured where possible.",
+        "requires-engineering: add provenance tags to files and reject untrusted instruction-like text."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the project filesystem, and gpt-engineer has broad network egress while unstructured has allowlisted egress. If sensitive documents are placed in the shared workspace, either agent can expose them through model calls or downstream processing. The profiles do not show hard isolation, so the leakage pathway exists in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are stored in the shared project directory, both agents can access them.",
+        "IF either agent forwards file contents to its configured backend, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Keep sensitive inputs out of the shared workspace.",
+        "Use separate service accounts and network policies.",
+        "Restrict outbound access for both agents to approved endpoints only.",
+        "Redact secrets before either agent processes files.",
+        "requires-engineering: enforce per-agent workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write to the same project directory and can spawn subprocesses; gpt-engineer also supports per-project shared state with other instances. Even though gpt-engineer does not modify git state, concurrent writes to shared files can overwrite each other and corrupt outputs by default. Unstructured's docker isolation helps only internally, not against shared workspace conflicts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory concurrently, file clobbering can occur.",
+        "IF either agent writes intermediate artifacts without locking, race conditions can corrupt outputs."
+      ],
+      "mitigations": [
+        "Run the agents on separate working directories.",
+        "Serialize write access with a lock file.",
+        "Disable concurrent runs on the same project.",
+        "Snapshot the workspace before each agent run.",
+        "requires-engineering: add transactional file writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer produces generated source code and writes files, while unstructured processes documents and text that may be treated as authoritative input. If unstructured consumes gpt-engineer output without verification, errors can cascade into downstream artifacts or actions. The pair lacks an explicit verification or critique loop in the profiles, so the safer assumption is a dangerous default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF unstructured ingests gpt-engineer-generated files as source material, any hallucinated or malformed content can propagate.",
+        "IF downstream automation trusts unstructured's parsed output, errors can become persistent artifacts."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require schema validation on unstructured output.",
+        "Compare parsed output against the original file before acting.",
+        "Limit gpt-engineer output to drafts only.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and touch generated code/documents, but the profiles do not show a clear residency, certification, or retention mismatch. gpt-engineer handles OPENAI_API_KEY and broad egress, while unstructured uses allowlisted egress and privacy-policy endpoints; this suggests possible policy differences, but not enough to prove a breach. Uncertainty remains, so severity stays low rather than none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through gpt-engineer's configured model backend, retention and residency obligations may apply.",
+        "IF unstructured sends document contents to external services beyond the allowlist, policy mismatch risk increases."
+      ],
+      "mitigations": [
+        "Avoid regulated data in both tools.",
+        "Review vendor privacy and retention settings.",
+        "Pin both agents to approved endpoints only.",
+        "Log data classes processed by each agent.",
+        "requires-engineering: document and enforce a data-handling policy."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

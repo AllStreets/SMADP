@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-17_aider__unstructured_399c69",
+  "generated_at": "2026-06-17T04:13:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared git/workspace and permissive file writes create dangerous cross-agent conflicts; medium prompt-injection and leakage risks remain.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes repo files and shares state via a git repo, while unstructured reads documents and text from files. That creates a plausible content-to-instruction bridge if Aider ingests B-produced files or B parses Aider-authored text as authoritative. No MCP/shared clipboard is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Aider consumes unstructured output files as instructions without a review step, injection becomes active.",
+        "IF both agents operate in the same repo or document workspace, file-mediated injection is possible."
+      ],
+      "mitigations": [
+        "Add a human review step before either agent consumes the other's output.",
+        "Separate output directories for code and documents.",
+        "Prefix machine-generated files with a non-executable marker and ignore it in parsers.",
+        "Use read-only mounts for B when it only needs source material.",
+        "requires-engineering: add provenance tags to files and reject untrusted instruction-like content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history and has broad network egress; unstructured processes documents and images with allowlisted egress. If they share a workspace, sensitive repo content can flow into document extraction and then out through either agent's model/API calls. The profiles do not prove uncontrolled third-party upload, so medium is the higher justified level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the shared workspace contains secrets or regulated documents, both agents can access them.",
+        "IF either agent sends file contents to its backend during processing, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared repo and document workspace.",
+        "Run B on a sanitized copy of inputs only.",
+        "Disable network egress for A when processing sensitive code.",
+        "Use separate service accounts and separate API keys.",
+        "requires-engineering: enforce per-directory data-loss-prevention rules."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, and Aider explicitly modifies git state while sharing state via a shared git repo. Unstructured also writes files and supports multiple instances. Concurrent edits to the same repo or workspace can overwrite each other or corrupt git history; the default shared-repo pattern makes this dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or directory, write conflicts are possible.",
+        "IF Aider auto-commits while B rewrites files in place, git state can diverge or be lost."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Serialize writes with a lock file or orchestrator mutex.",
+        "Have B write to temp files and promote them only after review.",
+        "Pause Aider auto-commit while B is active.",
+        "requires-engineering: add transactional merge/commit coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate code changes and git commits, while unstructured can transform documents and text. If B consumes A's output without verification, errors can cascade from generated code or extracted text into downstream artifacts. The profiles do not show autonomous external actions, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF B treats Aider-produced files as authoritative input, errors can propagate.",
+        "IF Aider commits incorrect changes that B later packages or summarizes, the mistake is amplified."
+      ],
+      "mitigations": [
+        "Require a verification step before B consumes A outputs.",
+        "Diff and review Aider commits before downstream use.",
+        "Keep B limited to extraction, not decision-making.",
+        "Add checksum or schema validation between agents.",
+        "requires-engineering: add automated regression tests for transformed outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and touch local files, but Aider handles source code and git history while unstructured handles documents, images, and text. The profiles do not show a residency, certification, or retention mismatch, so only a small compliance gap is evidenced. The other agent is cited because the risk is about cross-pipeline handling of the same data classes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are placed into the shared workflow, retention and access controls must be checked.",
+        "IF the same data class is processed under different logging policies, compliance drift can occur."
+      ],
+      "mitigations": [
+        "Classify inputs before either agent processes them.",
+        "Keep regulated data out of the shared workflow.",
+        "Document retention settings for both tools.",
+        "Review privacy policy and data handling for B before deployment.",
+        "requires-engineering: align retention and deletion workflows across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
