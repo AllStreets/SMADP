@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "n8n",
+    "social-auto-upload"
+  ],
+  "verdict_id": "v_2026-06-17_n8n__social-auto-upload_b33e67",
+  "generated_at": "2026-06-17T05:36:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High risk of prompt injection and cascading errors: n8n can ingest untrusted workflow content and drive social-auto-upload actions without a documented verification boundary.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "n8n can read/write the server filesystem and orchestrate tools via AI Agent nodes, so workflow content can become executable input. social-auto-upload processes media/account data and uses CLI/headless automation, creating a plausible bridge if files or prompts are passed between them. No shared channel is documented, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows ingest attacker-controlled file content and forward it into agent prompts, injection becomes reachable.",
+        "IF social-auto-upload consumes text or metadata produced by n8n without sanitization, the bridge is exploitable."
+      ],
+      "mitigations": [
+        "Add a manual approval step before any prompt or file content is passed between agents.",
+        "Restrict n8n workflows to a dedicated input directory with allowlisted filenames.",
+        "Strip instructions and markup from any content handed to social-auto-upload.",
+        "Use separate credentials and separate workspaces for the two agents.",
+        "requires-engineering: add provenance tags to every cross-agent payload."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "n8n handles per-credential secrets and can access the server filesystem, while social-auto-upload touches account data and media files. If n8n passes workflow artifacts or secrets into upload jobs, sensitive data can leak into third-party social platforms. The pair does not document a hard isolation boundary, so default risk is moderate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows include secrets or customer data in files handed to social-auto-upload, leakage occurs.",
+        "IF social-auto-upload uploads media containing embedded sensitive metadata, that data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Review one representative workflow for secret-bearing fields before enabling uploads.",
+        "Remove EXIF and embedded metadata from media files before transfer.",
+        "Store n8n credentials and upload credentials in separate vault entries.",
+        "Limit n8n file access to a staging folder with non-sensitive test data.",
+        "requires-engineering: implement field-level redaction before export."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "n8n has server filesystem write and broad network egress; social-auto-upload has broad network egress and account-file based concurrency. They can contend over shared mutable resources if the orchestrator points both at the same files or account state. No locking is documented, so overlapping writes are plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same output directory or account file, write conflicts can occur.",
+        "IF n8n schedules parallel runs against the same social account, uploads may race."
+      ],
+      "mitigations": [
+        "Assign each agent a separate output directory.",
+        "Serialize uploads per account name.",
+        "Add a lock file around each account file before starting a job.",
+        "Disable parallel workflow runs for the same destination.",
+        "requires-engineering: add optimistic concurrency checks to the orchestrator."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n can orchestrate downstream actions, and social-auto-upload is an action-taking uploader. If n8n-generated content is treated as authoritative by the upload workflow, a bad prompt or hallucinated metadata can directly cause incorrect public posts. That is a default-dangerous action chain with potentially irreversible external effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n output is used as the final caption, title, or scheduling input without review, errors propagate to publication.",
+        "IF social-auto-upload executes uploads immediately after receiving n8n output, there is no verification step."
+      ],
+      "mitigations": [
+        "Insert a human review step before any publish action.",
+        "Compare generated captions against source material before upload.",
+        "Require a dry-run mode for one test post first.",
+        "Log the exact n8n payload used for each upload.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "n8n stores per-credential secrets and workflow data on its server, while social-auto-upload handles account data and media content. If regulated or personal data is routed from n8n into social platforms, retention and residency obligations can diverge. The profiles do not document matching compliance controls, so the safest reading is a policy mismatch risk rather than a proven breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF workflows contain personal data and social-auto-upload publishes it to a platform with different retention rules, compliance mismatch occurs.",
+        "IF n8n retains logs longer than the social upload workflow expects, deletion requests may not propagate."
+      ],
+      "mitigations": [
+        "Classify one workflow\u2019s data before enabling publication.",
+        "Set short log retention on n8n for the affected workflow.",
+        "Avoid routing regulated data through the upload path.",
+        "Document the retention owner for each data class.",
+        "requires-engineering: implement deletion propagation across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:7f94d0e3395a93cd0a7d122c140010a04220111f867e391d1c239387184f2fab",
+    "profile_b_hash": "sha256:24e9901778f233b303f615d2034598fe84de2e7b0529ec8b278d268595fa3dfb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
