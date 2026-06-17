@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-17_cursor__paddleocr_57630f",
+  "generated_at": "2026-06-17T04:41:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: Cursor can write/egress broadly while PaddleOCR can process documents, creating default-path data leakage and cascading misuse risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor ingests workspace files, open editor buffers, clipboard, and MCP outputs; PaddleOCR processes documents/images that could contain attacker-controlled text. If PaddleOCR output is copied into Cursor or stored in shared files, Cursor may treat it as trusted content. The pair has a filesystem bridge, so injection is plausible even without a documented direct channel.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR output is written into a Cursor-opened file or clipboard item",
+        "IF Cursor parses document text from a shared workspace without provenance checks"
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of OCR output into Cursor prompts",
+        "Keep OCR outputs in a separate directory from Cursor workspaces",
+        "Add a manual review step before pasting OCR text into Cursor",
+        "Use provenance labels in filenames or comments",
+        "requires-engineering: add content-sanitization/provenance tracking between tools"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Cursor has broad filesystem read/write and broad network egress, while PaddleOCR handles documents and images. In a shared workspace, sensitive document contents can flow from PaddleOCR inputs into Cursor\u2019s context and then out through Cursor\u2019s model-provider or API calls. This is a default-path leakage risk because Cursor\u2019s egress is broad and isolation is none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same document workspace",
+        "IF sensitive documents or images are processed by PaddleOCR and then opened in Cursor",
+        "IF Cursor sends those contents to external model providers"
+      ],
+      "mitigations": [
+        "Restrict Cursor to a non-sensitive workspace",
+        "Process sensitive documents only in an isolated directory",
+        "Turn off or limit network access for Cursor during OCR review",
+        "Redact documents before OCR processing",
+        "requires-engineering: enforce workspace-level data-loss controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor can write the filesystem, modify git state, and run shell commands; PaddleOCR can call APIs and run browsers. If both operate on the same repository or document set, concurrent writes and uncoordinated edits can overwrite each other or corrupt git state. The shared filesystem bridge in Cursor makes this a realistic conflict pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents modify the same files or repository concurrently",
+        "IF Cursor runs in Yolo mode while PaddleOCR writes derived artifacts into the same workspace"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Serialize writes with a simple manual lock file",
+        "Pause one agent before the other edits the repo",
+        "Review git diffs before commit",
+        "requires-engineering: add orchestrator locking and conflict detection"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "PaddleOCR can produce extracted text from documents, and Cursor can consume that text in its agent loop and act on it with shell or git tools. If Cursor treats OCR output as authoritative, extraction errors can cascade into incorrect code changes or commands. The pathway exists, but it is not inherently automatic because a human or workflow must pass outputs between them.",
+      "citations": [
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF OCR output is used as direct input to Cursor\u2019s agent loop",
+        "IF Cursor is allowed to execute shell or git actions based on extracted text"
+      ],
+      "mitigations": [
+        "Require human verification of OCR output before actioning it",
+        "Compare OCR text against the source document for critical fields",
+        "Limit Cursor to drafting changes, not executing them",
+        "Use a checksum or screenshot cross-check for key values",
+        "requires-engineering: add verification gates between extraction and action"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "PaddleOCR processes documents and images, while Cursor can store open files, clipboard contents, and send data to external model providers. If regulated documents or EU PII are opened in Cursor after OCR, retention and residency obligations may diverge between the two tools. The profiles do not document matching compliance controls, so uncertainty should be treated conservatively.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents, PHI, or EU PII are processed by PaddleOCR and then opened in Cursor",
+        "IF Cursor\u2019s external model-provider calls retain or transmit that data"
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workflow",
+        "Strip identifiers before OCR and editing",
+        "Keep compliance-sensitive files out of Cursor",
+        "Review vendor retention settings before use",
+        "requires-engineering: document residency and retention boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
