@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-17_cline__unstructured_cd2a3a",
+  "generated_at": "2026-06-17T03:51:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk shared filesystem and write-capable pair create prompt-injection, leakage, and cascading-error exposure by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline can read/write workspace files and use MCP, while unstructured reads files and writes outputs in a separate document-processing flow. Because Cline\u2019s shared state is via filesystem and unstructured can process documents from files, attacker-controlled content can cross the boundary through files even without a direct channel. This is plausible in default workspace/document pipelines, though not proven to be raw instruction parsing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Cline ingests unstructured-produced files as instructions or tool context",
+        "IF both agents operate on the same workspace or document directory",
+        "IF unstructured outputs attacker-controlled text that Cline later reads"
+      ],
+      "mitigations": [
+        "Separate input and output directories for the two agents",
+        "Disable automatic ingestion of generated documents into Cline",
+        "Add a manual review step before Cline consumes unstructured outputs",
+        "Use file naming conventions that prevent accidental pickup",
+        "requires-engineering: add provenance tags to files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cline touches source code and browser screenshots and has broad network egress; unstructured processes documents, images, and text. If they share a workspace, sensitive files can move from Cline into unstructured\u2019s document pipeline or vice versa. The profiles do not show encryption or access controls, so leakage is plausible in default shared-folder setups, but not enough for high because no uncontrolled third-party upload is explicit for both.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents can access the same filesystem path",
+        "IF source code or screenshots are placed into unstructured\u2019s document inputs",
+        "IF unstructured outputs are stored where Cline can read them"
+      ],
+      "mitigations": [
+        "Use separate OS users or containers",
+        "Mount only read-only inputs into unstructured",
+        "Keep screenshots and secrets out of shared folders",
+        "Restrict Cline\u2019s workspace to non-sensitive projects",
+        "requires-engineering: enforce per-agent ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and spawn subprocesses; Cline also modifies git state and runs in a per-workspace session with shared state via filesystem. That creates a direct conflict on the same mutable workspace, and concurrent edits can corrupt files or git history. The profiles do not mention locking, so uncertainty pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory",
+        "IF Cline modifies git state while unstructured writes generated artifacts",
+        "IF no external lock or serialization is configured"
+      ],
+      "mitigations": [
+        "Assign disjoint working directories",
+        "Pause one agent while the other writes",
+        "Commit or snapshot before handoff",
+        "Avoid concurrent git operations",
+        "requires-engineering: add workspace locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cline can produce browser-derived outputs and code changes, while unstructured can transform documents and text. If unstructured treats Cline\u2019s output as authoritative, errors can cascade into downstream document extraction or file generation. There is no explicit verification or critique step in either profile, but no direct action authority like email or deployment is shown, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF unstructured consumes Cline-generated text without validation",
+        "IF Cline\u2019s browser-derived content is used as source material for unstructured",
+        "IF downstream artifacts are published or reused automatically"
+      ],
+      "mitigations": [
+        "Require human review of Cline outputs before ingestion",
+        "Validate extracted facts against original sources",
+        "Keep generated artifacts separate from source documents",
+        "Add checksum checks between stages",
+        "requires-engineering: implement schema validation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Cline handles model-provider API keys and browser screenshots, while unstructured processes documents, images, and text with allowlisted egress. The profiles do not show a residency or certification mismatch, so only a limited compliance gap is visible: sensitive screenshots or documents could be routed through different retention regimes if the same data class is shared. The other agent is cited because the risk arises from their combined handling of the same content.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or screenshots are processed by both agents",
+        "IF retention or logging policies differ between the two services",
+        "IF the same sensitive data class is exported from Cline into unstructured"
+      ],
+      "mitigations": [
+        "Avoid sending regulated data to either agent",
+        "Review retention settings for both tools",
+        "Use redacted test documents",
+        "Keep API keys out of shared workspaces",
+        "requires-engineering: document a data-handling policy"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
