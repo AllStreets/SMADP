@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__open-interpreter_b1a4e2",
+  "generated_at": "2026-06-17T02:46:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default workspace overlap: Open Interpreter can read/write the user filesystem while AutoGPT can execute shell and access files, creating dangerous prompt-injection, leakage, and cascading-action pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and act on filesystem content, while Open Interpreter exposes the entire user filesystem and clipboard by default. That creates a plausible content-to-instruction bridge if one agent consumes the other's outputs from shared files or copied text. The pathway is not provably blocked, but it is not clearly a raw web-content parser either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or clipboard content is copied between them, injected instructions can propagate.",
+        "IF AutoGPT is configured to ingest file contents as task context, prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Disable clipboard-based handoff between agents.",
+        "Require manual review of any file content before AutoGPT ingests it.",
+        "Run Open Interpreter in a restricted folder only.",
+        "requires-engineering: add provenance tagging for files passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Open Interpreter can read the entire user filesystem and handle model-provider API keys, while AutoGPT can execute shell commands and access files. If either agent touches sensitive local data, the other can expose it through its broader file access or outbound model calls. The default workspace overlap makes leakage plausible without special setup.",
+      "citations": [
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared filesystem, Open Interpreter can read them.",
+        "IF AutoGPT forwards file contents into external model calls, those contents can leave the machine."
+      ],
+      "mitigations": [
+        "Move sensitive files out of the shared workspace.",
+        "Use separate OS users for each agent.",
+        "Disable network egress for tasks that do not require it.",
+        "Rotate any exposed API keys immediately.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have shell execution, and Open Interpreter additionally has filesystem write and git-state modification. AutoGPT also has filesystem access and subprocess execution. In a shared directory, concurrent writes and git mutations can collide, and AutoGPT lacks multiple-instance support while Open Interpreter shares state via filesystem, increasing conflict risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or working tree, git and file conflicts can occur.",
+        "IF either agent runs without external locking, last-writer-wins corruption is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working tree.",
+        "Pause one agent before the other writes to shared files.",
+        "Avoid concurrent git operations.",
+        "Use a lock file around any shared resource.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGPT can generate outputs from filesystem and shell activity, and Open Interpreter can act on local files and modify git state. If Open Interpreter treats AutoGPT output as authoritative, errors can cascade into destructive commands or commits. The pair lacks a documented verification boundary in the profiles, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter consumes AutoGPT-produced instructions without human verification, downstream actions can be wrong.",
+        "IF AutoGPT writes task artifacts that Open Interpreter executes, errors can propagate into shell or git actions."
+      ],
+      "mitigations": [
+        "Require human approval before execution of generated commands.",
+        "Add a verification step for all AutoGPT outputs.",
+        "Restrict Open Interpreter to read-only mode for handoffs.",
+        "Log and diff proposed actions before applying them.",
+        "requires-engineering: implement schema-validated task handoff."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Open Interpreter explicitly touches anything reachable on the local machine and handles model-provider API keys, while AutoGPT can use network egress and filesystem access. That combination can move regulated local data into external model services, but the profiles do not specify a concrete residency or certification mismatch, so this stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present on the local machine and either agent sends it to a third-party model provider, compliance obligations may be triggered.",
+        "IF the deployment requires data residency guarantees, broad local-file access plus outbound model calls can violate them."
+      ],
+      "mitigations": [
+        "Exclude regulated data from the shared workspace.",
+        "Use approved model providers only.",
+        "Review retention settings for any external API.",
+        "Document which data classes each agent may touch.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
