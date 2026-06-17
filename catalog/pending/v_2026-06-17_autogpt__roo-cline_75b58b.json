@@ -1,0 +1,192 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__roo-cline_75b58b",
+  "generated_at": "2026-06-17T02:30:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk shared-workspace and filesystem-write pairing creates prompt-injection, data-leakage, and git-state conflict exposure by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can call APIs and read/write the filesystem, while Roo Code reads workspace files, uses MCP, and runs browsers. That creates a plausible content-to-instruction bridge if AutoGPT writes attacker-controlled text into shared files that Roo Code later treats as trusted input. The shared filesystem path is documented on Roo Code; AutoGPT\u2019s file surface is documented too.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT writes untrusted content into a workspace file that Roo Code later reads as instructions",
+        "IF Roo Code is configured to ingest file contents or MCP output without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces",
+        "Disable MCP for the Roo Code session",
+        "Mark shared files as data-only and never as prompts",
+        "Add a manual review step before Roo Code acts on AutoGPT output",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Roo Code explicitly reads and writes VS Code workspace files and handles model-provider API keys; AutoGPT has filesystem access and API-call capability. If both touch the same workspace, sensitive code or secrets can flow from one agent\u2019s context into the other\u2019s outputs or external API calls. The profiles do not show a hard isolation boundary, so the leakage path is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace directory",
+        "IF sensitive files or secrets are present in that workspace",
+        "IF Roo Code sends workspace content to a configured model API"
+      ],
+      "mitigations": [
+        "Use separate workspaces per agent",
+        "Remove secrets from shared directories",
+        "Restrict Roo Code to a redacted subset of files",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-file access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "AutoGPT can execute shell commands and spawn subprocesses; Roo Code can execute shell, write files, and modify git state, with shared state via filesystem across instances. That is a direct write-conflict pathway on the same workspace and git metadata, and the rubric treats unrestricted overlapping filesystem write plus git modification as high risk. No locking mechanism is documented in either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git repository or workspace",
+        "IF either agent writes files while the other is active",
+        "IF git operations occur without external locking"
+      ],
+      "mitigations": [
+        "Assign each agent a separate clone",
+        "Pause one agent before the other edits the repo",
+        "Avoid concurrent git commits from both agents",
+        "Use a lock file around workspace mutations",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Roo Code can act on workspace content and browser output, while AutoGPT can generate files and shell-driven artifacts. If Roo Code treats AutoGPT\u2019s output as authoritative, errors can cascade into edits or external actions without verification. The profiles show no built-in cross-agent verification step, but they also do not prove automatic action-taking, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code consumes AutoGPT-produced files as source-of-truth",
+        "IF Roo Code executes edits or browser actions based on those files without review"
+      ],
+      "mitigations": [
+        "Require human approval before downstream actions",
+        "Compare AutoGPT output against original sources",
+        "Limit AutoGPT to draft-only artifacts",
+        "Use a checksum or diff review step",
+        "requires-engineering: add verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only open-source tools, and neither profile states regulated-data certifications or residency constraints. Roo Code handles model-provider API keys and workspace files; AutoGPT touches the filesystem and APIs. A compliance issue is only plausible if regulated data is placed into the shared workspace or sent to a noncompliant model endpoint, so the pathway is narrower than the operational risks.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace",
+        "IF Roo Code is configured to send that data to an external model API",
+        "IF the chosen endpoint lacks the required compliance coverage"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces",
+        "Use a compliant model endpoint only",
+        "Redact sensitive fields before prompting",
+        "Document data-handling boundaries",
+        "requires-engineering: add policy-based routing for regulated data"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.6.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
