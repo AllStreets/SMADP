@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "llamafactory",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-17_llamafactory__swe-agent_6ea57b",
+  "generated_at": "2026-06-17T02:57:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.42,
+  "headline": "High risk of cascading errors and capability conflict: SWE-agent can act on LlamaFactory outputs, while LlamaFactory lacks filesystem/network/tool surfaces to constrain or verify them.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "none",
+      "rationale": "No plausible prompt-injection bridge is documented. LlamaFactory has no clipboard, stdin/stdout, filesystem read/write, or MCP surfaces, while SWE-agent\u2019s interaction is via restricted shell/editor commands inside its own Docker task container. Without a shared channel, one agent cannot directly inject instructions into the other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF a shared clipboard, message queue, or filesystem bridge is added between the agents, injection risk becomes plausible."
+      ],
+      "mitigations": [
+        "Keep the agents in separate containers with no shared clipboard or mounted workspace.",
+        "Disable any future copy-paste bridge between outputs and inputs.",
+        "Add a provenance tag to any transferred text before it is consumed.",
+        "requires-engineering: add content-sanitization and instruction/data separation at the orchestrator layer."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "LlamaFactory touches no data classes and has no file or network surfaces, while SWE-agent can read repository code inside its Docker sandbox and use model-provider APIs. There is no documented shared workspace or common OAuth principal, so leakage between them is limited unless an operator manually moves sensitive content across the boundary.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies sensitive repository content from SWE-agent into LlamaFactory prompts, leakage becomes possible.",
+        "IF both agents are mounted on the same shared workspace, cross-agent exposure increases."
+      ],
+      "mitigations": [
+        "Do not share secrets or customer data between the two agents.",
+        "Run each agent in a separate workspace directory.",
+        "Remove API keys from any files visible to SWE-agent.",
+        "Use redacted excerpts instead of full files when transferring context.",
+        "requires-engineering: enforce per-agent storage isolation at the orchestrator."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "SWE-agent has unrestricted filesystem write, shell, subprocess, and git modification inside its sandbox, while LlamaFactory has no write or execution capabilities. Direct write-write conflict is unlikely, but if both are pointed at the same repository or mounted directory, SWE-agent can overwrite artifacts that LlamaFactory may later consume or summarize.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are mounted to the same writable repository or directory, conflicting edits become possible.",
+        "IF the orchestrator lacks locking on shared files, SWE-agent can race with LlamaFactory-generated artifacts."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Prevent LlamaFactory from writing files.",
+        "Use git locks or a single-writer policy for shared repos.",
+        "Review any SWE-agent commits before merging.",
+        "requires-engineering: add workspace-level locking in the orchestrator."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "SWE-agent can take downstream actions from text it receives, including shell and git operations, while LlamaFactory can generate unverified outputs but cannot independently verify or constrain them. If SWE-agent treats LlamaFactory output as authoritative, a mistaken recommendation can cascade into destructive edits or commits in the default workflow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes LlamaFactory output without an explicit verification step, cascading errors can reach code changes.",
+        "IF the output is used as a command plan rather than a suggestion, the blast radius increases."
+      ],
+      "mitigations": [
+        "Require human review before executing any LlamaFactory-derived plan.",
+        "Add a verification step that checks file diffs against the prompt.",
+        "Limit SWE-agent to dry-run mode for first-pass outputs.",
+        "Mark LlamaFactory output as advisory only.",
+        "requires-engineering: implement structured validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "SWE-agent explicitly handles model-provider API keys and GitHub tokens, while LlamaFactory\u2019s profile shows no secrets handled and no data classes touched. If the pair is used on the same sensitive repository, compliance risk arises from moving secrets into SWE-agent\u2019s broader execution environment; LlamaFactory is not the main compliance surface here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF GitHub tokens or model-provider keys are present in files analyzed by SWE-agent, compliance exposure increases.",
+        "IF regulated data is copied into SWE-agent\u2019s workspace, retention and logging obligations may apply."
+      ],
+      "mitigations": [
+        "Remove secrets from any repository under analysis.",
+        "Use a scrubbed clone for SWE-agent tasks.",
+        "Rotate any exposed API keys after the task.",
+        "Restrict logs to non-sensitive summaries.",
+        "requires-engineering: add secret-scanning and redaction before agent ingestion."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:087fbcab03e9941e70465c6e1567c9c8a17ff4a335481fc3ca5b896a56165cd2",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
