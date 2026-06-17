@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-17_crewai__paddleocr_de878e",
+  "generated_at": "2026-06-17T04:52:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High risk of prompt-injection and cascading errors from CrewAI\u2019s shared-memory orchestration into PaddleOCR document workflows; data leakage and compliance risks are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can ingest files from its working directory and uses shared memory across subagents, so malicious document content processed by PaddleOCR can be reintroduced into CrewAI prompts. PaddleOCR processes documents/images and may surface attacker-controlled text. No shared channel is documented, so this is not high, but the interaction pathway exists in default-style document workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR outputs text from untrusted documents into CrewAI prompts or shared memory, injection is possible.",
+        "IF the crew reads OCR output files from the shared working directory without sanitization, attacker instructions can propagate."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and schema around OCR output before CrewAI consumes it.",
+        "Route OCR text through a sanitizer that strips imperative language and tool directives.",
+        "Store OCR outputs in a separate directory with read-only access for CrewAI.",
+        "Manually review one sample document flow before enabling automation.",
+        "requires-engineering: add provenance tags from OCR output to downstream prompts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI explicitly handles API keys and broad network egress, while PaddleOCR processes documents and images. If both share a workspace, sensitive document contents can flow from PaddleOCR into CrewAI and then to model providers or tools. The profiles do not show PHI or a guaranteed shared filesystem, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same host directory, OCR text can be exposed to CrewAI.",
+        "IF CrewAI forwards crew context to external model providers, document contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Keep PaddleOCR input/output in a separate workspace from CrewAI.",
+        "Disable or minimize external model-provider calls for the crew.",
+        "Redact sensitive fields before OCR results are handed to CrewAI.",
+        "Review logs for document text exposure after one test run.",
+        "requires-engineering: enforce per-agent storage isolation and egress policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "CrewAI has write_filesystem, execute_shell, and broad network egress; PaddleOCR has allowlisted network egress and browser capability. If they share mutable files or a workspace, they can overwrite each other\u2019s artifacts or race on document outputs. The profiles do not show git writes or explicit locking, so the conflict is real but not the highest tier.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same working directory, file clobbering can occur.",
+        "IF the orchestrator does not provide locking, concurrent document updates can race."
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent.",
+        "Use file locks around shared artifacts.",
+        "Run a quick dry-run to confirm no overlapping writes.",
+        "Make one agent read-only on shared inputs.",
+        "requires-engineering: add orchestrator-level locking for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI\u2019s role-playing shared-memory design can treat upstream outputs as authoritative, and PaddleOCR produces extracted document text that downstream agents often act on. If OCR errors or injected text are passed into CrewAI without verification, the crew can take incorrect actions or propagate false facts. Because this can affect downstream decisions in default document pipelines, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR text is fed directly into CrewAI planning prompts, errors can cascade.",
+        "IF CrewAI agents act on OCR-derived facts without a verification step, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Insert a verification step between OCR and CrewAI planning.",
+        "Require human review for low-confidence OCR fields.",
+        "Compare OCR output against the source image for one sample batch.",
+        "Limit CrewAI actions to read-only analysis until validated.",
+        "requires-engineering: add confidence thresholds and structured validation gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "The profiles show CrewAI handling developer-passed crew data and PaddleOCR handling documents/images, but no explicit residency, certification, or retention mismatch is documented. Without a stated compliance gap, only a low residual risk remains from unspecified deployment choices. The other agent is not cited for a specific violation because none is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.verification.status"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through a deployment with stricter residency or retention rules than the other agent, a mismatch can arise.",
+        "IF logs retain OCR text longer than the source system permits, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Confirm both agents share the same retention policy.",
+        "Check whether any regulated data class is in scope before deployment.",
+        "Disable verbose logging for one test run.",
+        "Document the data flow for the current workspace.",
+        "requires-engineering: align residency and retention controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
