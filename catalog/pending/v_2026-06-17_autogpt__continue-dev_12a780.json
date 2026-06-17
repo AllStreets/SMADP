@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "continue-dev"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__continue-dev_12a780",
+  "generated_at": "2026-06-17T02:13:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk shared-filesystem and MCP pairing: Continue can read/write workspace files while AutoGPT can execute shell and use filesystem, creating prompt-injection, leakage, and cascading-action risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue reads workspace files and can use MCP; AutoGPT can execute shell and access the filesystem. That creates a plausible default bridge where AutoGPT-generated or user-controlled file content can be treated as instructions by Continue. The shared filesystem path is documented, but no provenance tracking is shown, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT writes instruction-like content into a workspace file that Continue later reads",
+        "IF Continue is configured to ingest workspace files or MCP outputs as trusted context"
+      ],
+      "mitigations": [
+        "Restrict both agents to separate workspaces",
+        "Disable MCP tools for Continue unless needed",
+        "Require manual review of any file-based prompts before Continue reads them",
+        "Use read-only mounts for shared artifacts",
+        "requires-engineering: add provenance tagging between file producers and consumers"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue explicitly reads workspace files and handles open editor buffers; AutoGPT has filesystem access and allowlisted egress. Even though neither profile shows PHI or secrets handling beyond model keys, shared workspace access means sensitive local code or notes could flow from one agent to the other and out through AutoGPT's network path. This is a default-configurable leakage pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared workspace",
+        "IF AutoGPT forwards file contents to an external model or API"
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive workspaces",
+        "Disable network egress for AutoGPT on sensitive projects",
+        "Limit Continue to specific folders only",
+        "Rotate or redact secrets before either agent reads files",
+        "requires-engineering: enforce per-file data classification gates"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write or mutate the same filesystem surface: AutoGPT has filesystem access and shell execution, while Continue can write workspace files and shares state via filesystem across instances. The overlap is enough for concurrent clobbering or inconsistent edits in default use, and no locking is documented. Uncertainty about exact locking means the safer high severity is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same workspace directory",
+        "IF either agent writes files without external locking"
+      ],
+      "mitigations": [
+        "Run the agents in separate directories",
+        "Serialize write access with a simple operator-managed lock file",
+        "Disable one agent's write access during the other's run",
+        "Use version control commits between turns",
+        "requires-engineering: add transactional workspace locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Continue can consume workspace files and MCP outputs, while AutoGPT can generate and modify files via shell and filesystem access. If Continue treats AutoGPT-produced artifacts as authoritative, errors can cascade into downstream code or actions. Because the pairwise interaction is undocumented and both can act on shared artifacts, the safer high rating is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Continue uses AutoGPT-produced files as source-of-truth inputs",
+        "IF either agent acts on generated code or plans without verification"
+      ],
+      "mitigations": [
+        "Require human review before executing generated artifacts",
+        "Add a verification step that diffs outputs against source inputs",
+        "Keep AutoGPT outputs in a staging folder only",
+        "Disable automatic execution of generated scripts",
+        "requires-engineering: implement signed handoff between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for either agent, and both are open-source. However, Continue handles editor buffers and workspace files while AutoGPT can access files and egress to allowlisted endpoints, so compliance risk exists if regulated data is placed in the shared workspace. The other agent is not cited for a specific mismatch because none is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace",
+        "IF AutoGPT sends that data to an external service"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use local-only models for sensitive projects",
+        "Review retention settings for any external provider",
+        "Document a data-handling policy for the pair",
+        "requires-engineering: add residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:36bc79f7fa6a4ca2df8df6ff025349ec31222a396a7bf26d1f317ca5d6e30151",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
