@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__mentat_4eee59",
+  "generated_at": "2026-06-17T02:08:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.53,
+  "headline": "Medium prompt-injection and data-leakage risk from shared filesystem and file-based handoff; no critical compliance issue is evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and write the filesystem, while Mentat reads files passed on the command line and writes filesystem diffs. That creates a default file-based handoff where attacker-controlled content from one agent can be treated as instructions by the other. No shared MCP or clipboard is documented, so this is not high, but the shared workspace makes injection plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT writes untrusted content into files that Mentat later opens as task context, injection is possible.",
+        "IF Mentat consumes AutoGPT-generated files without provenance checks, instructions can be hijacked."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Require a human review step before Mentat reads AutoGPT-produced files.",
+        "Prefix all inter-agent files with a fixed schema and reject free-form instructions.",
+        "Disable automatic ingestion of newly written files.",
+        "requires-engineering: add provenance tagging and content-type validation between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have filesystem access, and Mentat explicitly reads selected files while AutoGPT can access the filesystem and use allowlisted network egress. Even though no sensitive data class is listed for AutoGPT, shared files can expose source code or other local data to both agents in default setups. The blast radius is multiple work products, not just one file.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace, file contents can flow between them.",
+        "IF the shared workspace contains secrets or proprietary code, Mentat can read it and AutoGPT can potentially transmit context via networked model calls."
+      ],
+      "mitigations": [
+        "Use per-agent workspaces with no shared mount.",
+        "Remove secrets from any directory both agents can access.",
+        "Restrict AutoGPT to a sanitized subset of files.",
+        "Review outbound network destinations for AutoGPT.",
+        "requires-engineering: enforce workspace ACLs and redaction before model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "AutoGPT can execute shell commands and spawn subprocesses, while Mentat can write the filesystem and modify git state with shared state via filesystem. In a shared repo, both can mutate the same files and git metadata without documented locking, matching the high-risk overlap pattern. The interaction is documented enough to judge, and the default concurrency model makes conflicts likely.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, concurrent edits can overwrite each other.",
+        "IF AutoGPT runs shell-based edits while Mentat applies diffs, git state can become inconsistent without locks."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Serialize write access with a simple lock file.",
+        "Require one agent to finish before the other starts editing.",
+        "Run a dry-run diff review before any git commit.",
+        "requires-engineering: add transactional coordination around filesystem and git writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat is a coding assistant that proposes multi-file edits, and AutoGPT can generate arbitrary task outputs. If one agent\u2019s output is fed into the other without verification, errors can cascade into incorrect code changes or actions. There is no evidence of a built-in verification barrier, so the default pathway exists but is not maximally dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Mentat treats AutoGPT output as authoritative task input, mistakes can propagate into edits.",
+        "IF AutoGPT supplies incorrect file targets or instructions, Mentat may apply them across multiple files."
+      ],
+      "mitigations": [
+        "Insert a human verification step between agents.",
+        "Require Mentat to cite source files before editing.",
+        "Limit AutoGPT to drafting only, not directing edits.",
+        "Compare proposed diffs against the original task before applying.",
+        "requires-engineering: add automated consistency checks on cross-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for either agent, and both profiles are open-source with docs-only evidence. The only concrete compliance-relevant difference is Mentat\u2019s model-provider API key handling and AutoGPT\u2019s allowlisted egress, which could matter if regulated data is introduced. Because the mismatch is not evidenced, this stays low rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace and routed through Mentat's model provider or AutoGPT's network calls, compliance obligations may be triggered.",
+        "IF the deployment requires a specific residency or retention policy, neither profile documents it."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair's workspace.",
+        "Confirm vendor DPAs and residency settings before use.",
+        "Disable network access for non-required tasks.",
+        "Log which files are sent to model providers.",
+        "requires-engineering: document and enforce retention and residency controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
