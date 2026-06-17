@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aci",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-17_aci__langflow_92840e",
+  "generated_at": "2026-06-17T00:22:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.695,
+  "headline": "High-risk default interaction: Langflow can ingest and act on ACI outputs, creating prompt-injection, data-leakage, and cascading-action exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ACI can emit CRM/email/research content and Langflow can chain multiple agents and ingest files or API outputs in flows. That creates a plausible instruction-smuggling path if Langflow treats ACI output as trusted input. The pair lacks explicit provenance tracking or isolation in the profiles, so uncertainty stays above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow nodes pass ACI-generated text into an LLM prompt without sanitization",
+        "IF a shared MCP or file bridge is used to move ACI output into Langflow"
+      ],
+      "mitigations": [
+        "Add a fixed delimiter and instruction-stripping preprocessor in the flow",
+        "Mark ACI outputs as untrusted in prompt templates",
+        "Disable any file-based handoff between the two agents",
+        "Review one representative flow for prompt-injection markers",
+        "requires-engineering: add provenance tags through the orchestration path"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "ACI touches CRM, email, calendar, and customer support data, while Langflow has broad network egress and reads/writes server files and uploaded files. If ACI outputs are routed into Langflow, sensitive data can be copied into a third-party model provider or HTTP service by default. The blast radius includes exfiltration of customer data and secrets.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ACI outputs containing CRM or email data are fed into Langflow flows",
+        "IF Langflow components send those inputs to external model providers or HTTP services"
+      ],
+      "mitigations": [
+        "Restrict Langflow flows to local-only components for ACI data",
+        "Remove sensitive fields before handoff",
+        "Turn off file uploads for flows handling ACI outputs",
+        "Audit one flow for outbound API destinations",
+        "requires-engineering: enforce data-loss-prevention rules at the orchestrator"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ACI has broad network egress and multiple-instance support, and Langflow has server-side filesystem write plus broad egress with shared server-side state. Both can mutate overlapping external resources through APIs or stores, so concurrent runs can overwrite or duplicate work even without direct git conflict. The profiles show enough overlap to treat this as a default coordination risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same CRM, sheet, or HTTP-backed store",
+        "IF Langflow flows run concurrently with ACI jobs against shared external resources"
+      ],
+      "mitigations": [
+        "Serialize writes to shared downstream systems",
+        "Assign separate service accounts per agent",
+        "Add per-record idempotency keys",
+        "Check one shared resource for last-write-wins behavior",
+        "requires-engineering: add locking around shared mutable targets"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is explicitly a graph-based flow builder that can chain multiple agents, so it may treat ACI output as authoritative input and then trigger downstream actions. ACI can produce CRM/email/calendar content, and Langflow can route that into tools or model providers without a built-in verification step in the profile. That makes erroneous or manipulated ACI output capable of causing real downstream actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF a Langflow node consumes ACI output without a validation step",
+        "IF the flow uses that output to call email, CRM, or HTTP actions"
+      ],
+      "mitigations": [
+        "Insert a human approval step before action nodes",
+        "Add schema validation on ACI outputs",
+        "Limit action nodes to read-only during testing",
+        "Log one end-to-end run for verification",
+        "requires-engineering: separate generation and execution flows"
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "ACI touches customer support, CRM, email, and calendar data, while Langflow stores per-flow credentials and processes uploaded files on a server filesystem with broad egress. If regulated customer data is routed from ACI into Langflow, the pair can move it into a less controlled environment and external services, creating a likely compliance breach. The profiles do not show matching residency or retention controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated customer data from ACI is processed in Langflow flows",
+        "IF Langflow persists those inputs or forwards them to external providers"
+      ],
+      "mitigations": [
+        "Block regulated fields from entering Langflow",
+        "Document retention and deletion handling for shared data",
+        "Use a separate non-production workspace for testing",
+        "Review one flow for residency and retention settings",
+        "requires-engineering: add policy enforcement for data-class routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8f2cd1b34c34e228b806e03b3c9ac9eee45f7c46059b1c090611719e2251660f",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
