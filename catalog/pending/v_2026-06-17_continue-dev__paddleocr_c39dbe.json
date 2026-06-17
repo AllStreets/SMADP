@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-17_continue-dev__paddleocr_c39dbe",
+  "generated_at": "2026-06-17T04:57:30Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "Highest risk is medium: shared filesystem and permissive tool use create prompt-injection, leakage, and write-conflict pathways between Continue and PaddleOCR.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can read/write workspace files and use MCP; its shared_state_with_other_instances is via filesystem. PaddleOCR processes documents/images and can run browsers, so if its outputs are placed into shared files, Continue may ingest attacker-controlled content as instructions. The interaction is plausible in default workspace-sharing setups, though not proven by docs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory, prompt injection becomes reachable.",
+        "IF PaddleOCR output is copied into files that Continue reads, Continue may treat content as instructions."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable automatic ingestion of generated OCR text into agent prompts.",
+        "Require manual review before Continue reads OCR outputs.",
+        "Use read-only mounts for PaddleOCR outputs.",
+        "requires-engineering: add provenance tags to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code and open editor buffers and has broad network egress; PaddleOCR touches documents and images. If they share a filesystem, sensitive document contents can flow from PaddleOCR into Continue, and Continue may transmit context to a third-party model provider. This is a default workspace-risk pathway, not a proven exfiltration event.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are processed by PaddleOCR in the same workspace as Continue, leakage risk exists.",
+        "IF Continue is configured with a remote model provider, shared content may leave the host."
+      ],
+      "mitigations": [
+        "Use separate OS users or containers.",
+        "Keep sensitive documents out of the shared workspace.",
+        "Configure Continue to a local model provider only.",
+        "Restrict PaddleOCR input/output directories.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Continue has filesystem write and subprocess execution, while PaddleOCR has allowlisted network egress and browser execution. They do not both advertise unrestricted write to the same directory, so high severity is not justified; however, shared filesystem state plus overlapping mutable outputs can still cause conflicts in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents write artifacts into the same workspace, file clobbering can occur.",
+        "IF one agent rewrites files the other is reading, race conditions become visible."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Make shared files read-only for one agent.",
+        "Serialize writes with a simple lock file.",
+        "Avoid concurrent runs on the same project tree.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Continue can generate code or edits from workspace content, and PaddleOCR converts documents/images into extracted text. If OCR output is fed into Continue without verification, errors or hallucinations can cascade into code changes or downstream actions. The pair lacks a documented verification boundary, so the safer medium rating applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR output is used as authoritative input to Continue, cascading errors are possible.",
+        "IF Continue is allowed to act on OCR-derived text without human review, downstream mistakes can propagate."
+      ],
+      "mitigations": [
+        "Require human review of OCR output before use.",
+        "Keep OCR output and agent prompts separate.",
+        "Add a verification step for extracted fields.",
+        "Limit Continue to suggestion-only mode for OCR-derived tasks.",
+        "requires-engineering: add confidence thresholds before downstream actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and no explicit residency, certification, or retention mismatch is documented. Continue handles model-provider API keys and broad egress, while PaddleOCR handles documents/images, so compliance concerns exist only if regulated data is routed through a remote provider. The other agent is not cited because no specific compliance boundary is documented for it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are sent through a remote model provider via Continue, compliance review is required.",
+        "IF retention or residency requirements apply to the documents processed by PaddleOCR, the deployment must be constrained."
+      ],
+      "mitigations": [
+        "Use local inference for Continue.",
+        "Avoid regulated data in shared workflows.",
+        "Document retention settings for both tools.",
+        "Review vendor DPAs before enabling remote services.",
+        "requires-engineering: add residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
