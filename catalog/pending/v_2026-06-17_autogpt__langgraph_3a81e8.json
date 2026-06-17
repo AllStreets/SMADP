@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-17_autogpt__langgraph_3a81e8",
+  "generated_at": "2026-06-17T02:24:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of shared-workspace prompt injection and data leakage; LangGraph\u2019s default orchestration can amplify AutoGPT outputs into unsafe downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and write the filesystem and LangGraph exposes application-defined files plus stdin/stdout and developer-wired nodes, so a shared workspace can let attacker-controlled content flow from A into B as trusted input. No explicit provenance or isolation is documented for either agent, so the pathway is plausible in default pairings.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or file tree",
+        "IF LangGraph nodes consume AutoGPT-generated files or stdout without provenance checks"
+      ],
+      "mitigations": [
+        "Separate working directories for each agent",
+        "Disable file-based handoff between agents",
+        "Add a provenance tag to every inter-agent artifact",
+        "Require manual review before B ingests A outputs",
+        "requires-engineering: add content-sanitizing adapters between A and B"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGPT has filesystem access and allowlisted egress, while LangGraph reads application-defined files and can send data to model providers. If both touch the same workspace, sensitive material can flow from A into B and then out through B\u2019s provider calls. The profiles do not show data-class restrictions or isolation, so leakage is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the shared workspace contains secrets, customer data, or regulated records",
+        "IF B forwards A-produced file contents into model-provider calls"
+      ],
+      "mitigations": [
+        "Use separate workspaces and mounts",
+        "Keep secrets out of shared directories",
+        "Restrict B to redacted inputs only",
+        "Review outbound prompts before provider calls",
+        "requires-engineering: enforce data-loss-prevention filters on B egress"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, and both can write or mutate filesystem state in overlapping ways; LangGraph also supports multiple instances with shared checkpointer state. AutoGPT lacks multiple-instance support, but that does not prevent conflicts when paired with B on the same resources. Concurrent writes can corrupt files or shared state by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or checkpointer-backed state",
+        "IF either agent runs concurrently with the other on shared mutable resources"
+      ],
+      "mitigations": [
+        "Assign disjoint file paths per agent",
+        "Serialize access with a lock file",
+        "Disable concurrent runs on shared state",
+        "Snapshot state before each run",
+        "requires-engineering: add transactional locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is explicitly a graph of nodes where each node may itself be an agent, so it can readily treat AutoGPT outputs as inputs to downstream actions. AutoGPT can generate unverified content, and B can route that content into tools or model-provider calls without a documented verification barrier. That creates a default cascade from A\u2019s output into B\u2019s actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated text as node input or tool arguments",
+        "IF downstream nodes act on A outputs without an explicit verification step"
+      ],
+      "mitigations": [
+        "Insert a validation step between A and B",
+        "Require citations or schema checks on A outputs",
+        "Limit B to read-only evaluation of A outputs",
+        "Log and review all downstream actions",
+        "requires-engineering: add policy gates before any tool-executing node"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "AutoGPT is open-source and unverified, while LangGraph is a library that can route data to model providers and stores graph state in application-defined backends. The pair can therefore create retention and residency mismatches if regulated data enters B\u2019s checkpointer or provider calls. The profiles do not document matching compliance controls, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in LangGraph checkpointer state",
+        "IF provider calls from B transmit data subject to residency or retention rules"
+      ],
+      "mitigations": [
+        "Keep regulated data out of B state",
+        "Configure short retention on checkpointer storage",
+        "Use a compliant provider for B",
+        "Document data-flow boundaries for both agents",
+        "requires-engineering: add residency-aware routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

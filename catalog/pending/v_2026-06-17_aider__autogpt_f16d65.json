@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "autogpt"
+  ],
+  "verdict_id": "v_2026-06-17_aider__autogpt_f16d65",
+  "generated_at": "2026-06-17T02:24:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-repo write conflicts and medium risk of prompt/data leakage between Aider and AutoGPT; compliance risk is limited by missing sensitive-data evidence.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes repo files and AutoGPT exposes filesystem/agent-protocol I/O, so content from one can reach the other through shared files or copied outputs. Aider\u2019s manual git workflow and AutoGPT\u2019s agentic I/O create a plausible instruction-hijack path, though no MCP/shared clipboard is documented. Uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace files, prompt-like content can cross from one to the other.",
+        "IF AutoGPT ingests Aider-generated file content as instructions, injection becomes feasible."
+      ],
+      "mitigations": [
+        "Separate the agents into different repos/workspaces.",
+        "Require human review of any file that one agent writes before the other reads it.",
+        "Prefix untrusted content with explicit non-instruction markers in shared files.",
+        "Disable automatic ingestion of generated artifacts where possible.",
+        "requires-engineering: add provenance tagging for agent-authored files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider explicitly handles model-provider API keys via env vars and touches source code/git history; AutoGPT has filesystem access and agent-protocol API calls. If they share a workspace, sensitive code or secrets can flow from Aider into AutoGPT outputs or external calls. No evidence shows PHI/financial data, so this stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share a filesystem containing secrets or proprietary source code, leakage is possible.",
+        "IF AutoGPT forwards file contents through its agent protocol to external services, copied data can leave the workspace."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared repo and use per-agent secret stores.",
+        "Mount separate working directories for each agent.",
+        "Redact API keys and credentials before either agent reads shared files.",
+        "Review AutoGPT outbound calls before enabling them on sensitive projects.",
+        "requires-engineering: enforce workspace-level access controls and secret scanning."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem, modify git state, execute shell, and spawn subprocesses; AutoGPT can also execute shell and spawn subprocesses. Aider\u2019s shared git-repo concurrency plus AutoGPT\u2019s lack of multiple-instance support makes concurrent writes and git-state races likely in default pair usage. This matches the high-risk shared mutable-resource pattern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git repository, concurrent edits can race.",
+        "IF either agent commits or rewrites files without external locking, state corruption or lost work can occur."
+      ],
+      "mitigations": [
+        "Run only one writer at a time on the shared repo.",
+        "Use branch-per-agent workflows.",
+        "Add a manual lock file before edits begin.",
+        "Review and merge commits sequentially.",
+        "requires-engineering: add orchestrator-level locking around git operations."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider produces code changes and git commits, while AutoGPT can act on filesystem and shell outputs. If AutoGPT treats Aider\u2019s edits or commit messages as authoritative, errors can cascade into further automated actions. There is no documented verification barrier in either profile, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT consumes Aider-generated patches or commit messages without verification, mistakes can propagate.",
+        "IF AutoGPT is configured to take follow-on shell actions from Aider output, downstream errors can compound."
+      ],
+      "mitigations": [
+        "Require a human approval step between Aider output and AutoGPT actioning.",
+        "Have AutoGPT diff-check Aider changes before acting.",
+        "Limit AutoGPT to read-only analysis when consuming Aider output.",
+        "Use small, isolated tasks with explicit acceptance criteria.",
+        "requires-engineering: implement schema validation for Aider-to-AutoGPT handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and no regulated data class, residency mismatch, or retention policy is documented. Aider touches source code and git history, but AutoGPT\u2019s touched data classes are empty, so a compliance breach is not evidenced. The other agent is not cited beyond the pair context because no specific compliance mismatch is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is introduced into the shared workspace, compliance review becomes necessary.",
+        "IF either agent is later configured with stricter retention or residency constraints, mismatch risk may arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo.",
+        "Document retention and deletion expectations for both tools.",
+        "Use separate environments for regulated and non-regulated work.",
+        "Review vendor terms before processing sensitive data.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:3e2c4e54b64bdefdbedd19855f9b9f71fede7211adadaab62650b9adf6f29b35",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
