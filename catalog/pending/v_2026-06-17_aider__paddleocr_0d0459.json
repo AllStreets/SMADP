@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-17_aider__paddleocr_0d0459",
+  "generated_at": "2026-06-17T05:08:40Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk shared git workspace and unverified OCR-to-code handoff create medium prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider writes and reads a shared git repo and can execute shell commands, so attacker-controlled document text processed by PaddleOCR can be copied into files or prompts that Aider later treats as trusted content. PaddleOCR runs browser/API-backed document processing, making the handoff plausible. The shared filesystem bridge is enough for injection risk even without MCP.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR output is saved into the same repo Aider edits, injection becomes active.",
+        "IF Aider ingests OCR text as instructions or context, malicious document content can steer tool use."
+      ],
+      "mitigations": [
+        "Store OCR outputs outside the code repo for review only.",
+        "Add a manual sanitization step before Aider reads OCR text.",
+        "Use separate working directories for the two agents.",
+        "Require explicit human approval before Aider acts on OCR-derived instructions."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history and can read/write the repo; PaddleOCR processes documents and images and may send content through allowlisted network APIs. If sensitive documents are OCRed into the shared workspace, both agents can expose the same data class through different paths. The shared repo makes leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are placed in the shared repo, Aider can read them.",
+        "IF PaddleOCR forwards document content to external APIs, the same data may leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive documents out of the shared git workspace.",
+        "Disable external API paths for OCR where possible.",
+        "Use separate OS users or containers for each agent.",
+        "Redact secrets before OCR and before Aider review."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider has unrestricted filesystem write and modify_git_state in a shared git repo, while PaddleOCR can process documents and likely write outputs into the same workspace. That creates a direct write-write conflict on shared mutable resources, and git state can be corrupted or overwritten without locking. This is dangerous in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write into the same repository or output directory, conflicts can occur.",
+        "IF git operations are concurrent, one agent can overwrite the other's changes."
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent.",
+        "Serialize git writes with a lock or single-writer policy.",
+        "Have PaddleOCR write only to a staging folder.",
+        "Run Aider after OCR completes and outputs are frozen."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "PaddleOCR can produce extracted text from documents, and Aider can then act on that text by editing code or committing changes. Because Aider has shell and git authority, any OCR error or prompt injection can cascade into incorrect code changes or commits. The pair lacks a documented verification barrier in the profiles, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Aider consumes OCR output without independent verification, errors propagate downstream.",
+        "IF OCR text is used as authoritative source material for code edits, bad commits can result."
+      ],
+      "mitigations": [
+        "Require a human review of OCR output before Aider uses it.",
+        "Compare OCR text against the source document for critical fields.",
+        "Limit Aider to drafting patches, not committing them automatically.",
+        "Keep a change log linking edits back to reviewed source pages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated-data certifications or residency constraints, so no specific compliance breach is provable. However, Aider handles source code and git history while PaddleOCR handles documents and images, so a compliance mismatch could arise if regulated documents are processed through the shared repo. The other agent is not cited because no residency or certification data is present.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are routed through the shared workspace, compliance review is required.",
+        "IF either agent is used on PHI or EU PII, missing certification data becomes relevant."
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared repo.",
+        "Add a data-class gate before OCR or code editing.",
+        "Document retention and deletion handling for generated artifacts.",
+        "Use a compliance-approved environment for sensitive workloads."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
