@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-17_open-interpreter__paddleocr_3560f8",
+  "generated_at": "2026-06-17T05:30:43Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of filesystem-based prompt injection and data leakage: Open Interpreter can read/write the user filesystem and clipboard, while PaddleOCR processes documents/images with browser/API access.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the filesystem and clipboard, and its shared state is via filesystem; PaddleOCR processes documents/images that may originate from those channels. That creates a plausible injection path if Open Interpreter writes attacker-controlled content that PaddleOCR later ingests as trusted input. The pathway is interaction-based and not blocked by either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter writes content into a shared file or clipboard that PaddleOCR later parses as instructions or metadata",
+        "IF PaddleOCR is fed files produced by Open Interpreter without provenance filtering"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between agents",
+        "Use separate directories for each agent's inputs and outputs",
+        "Add a provenance header check before PaddleOCR ingests any file",
+        "Require manual review of Open Interpreter outputs before reuse",
+        "requires-engineering: add content-sanitization and allowlist parsing"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Open Interpreter can read the entire user filesystem and has broad network egress, while PaddleOCR handles documents/images and can call APIs with allowlisted egress. If sensitive files are passed from Open Interpreter into PaddleOCR, document contents can leave the local boundary through API-backed processing. The blast radius includes secrets and local files, so this is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter reads sensitive local files and forwards them to PaddleOCR",
+        "IF PaddleOCR sends document contents to an external API or hosted backend"
+      ],
+      "mitigations": [
+        "Restrict Open Interpreter to a non-sensitive directory",
+        "Block network egress for PaddleOCR during sensitive runs",
+        "Use local-only OCR models for confidential documents",
+        "Redact secrets before any document handoff",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Open Interpreter has filesystem write and git modification capabilities, while PaddleOCR can process documents/images and has API access. If both operate on the same workspace, Open Interpreter can change files that PaddleOCR reads or rewrites, causing conflicting writes and stale outputs. The profiles show overlapping mutable-resource access via filesystem, though not unrestricted write on both sides.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory",
+        "IF Open Interpreter modifies files that PaddleOCR is concurrently reading or writing"
+      ],
+      "mitigations": [
+        "Assign separate worktrees per agent",
+        "Pause one agent before the other writes",
+        "Use file locks on shared artifacts",
+        "Commit Open Interpreter changes before OCR runs",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate or transform files, and PaddleOCR can consume documents/images and emit extracted text or structured outputs. If PaddleOCR treats Open Interpreter's output as authoritative without verification, errors or hallucinations can cascade into downstream document parsing and actions. The interaction is plausible in default workflows, but not inherently irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR ingests Open Interpreter-generated documents without validation",
+        "IF downstream automation acts on OCR output as ground truth"
+      ],
+      "mitigations": [
+        "Insert a human verification step after Open Interpreter output",
+        "Compare OCR output against source documents",
+        "Flag low-confidence OCR fields for review",
+        "Keep Open Interpreter outputs read-only until checked",
+        "requires-engineering: add confidence-based gating before actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Open Interpreter touches anything reachable on the local machine and can handle model provider API keys, while PaddleOCR processes documents and images. If regulated data such as personal documents or secrets are routed from the local filesystem into PaddleOCR, retention and residency obligations can diverge across the two agents. The profiles do not document matching compliance controls, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or secrets are processed by both agents",
+        "IF PaddleOCR's deployment or API backend retains document contents beyond the operator's policy"
+      ],
+      "mitigations": [
+        "Exclude regulated folders from Open Interpreter access",
+        "Process sensitive documents only in approved environments",
+        "Review retention settings before OCR runs",
+        "Delete temporary artifacts after each run",
+        "requires-engineering: document and enforce a shared retention policy"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
