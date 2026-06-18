@@ -291,6 +291,8 @@ class CatalogRepo:
         if not self.config.verdicts_dir.exists():
             return results
         for path in sorted(self.config.verdicts_dir.glob("*__*.json")):
+            if path.name.endswith(".sig.json"):
+                continue  # detached BYOK signature sidecar, not a verdict
             try:
                 verdict = Verdict.model_validate(self._read_json(path))
             except (CatalogError, ValueError):

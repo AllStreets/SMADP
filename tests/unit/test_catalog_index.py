@@ -24,7 +24,11 @@ def test_rebuild_indexes_all_profiles_and_verdicts(tmp_catalog: Path) -> None:
     for root in [tmp_catalog / "profiles", tmp_catalog / "profiles" / "_unverified"]:
         for p in root.glob("*.json"):
             seen_slugs.add(p.stem)
-    verdicts = list((tmp_catalog / "verdicts").glob("*__*.json"))
+    verdicts = [
+        p
+        for p in (tmp_catalog / "verdicts").glob("*__*.json")
+        if not p.name.endswith(".sig.json")  # exclude detached signature sidecars
+    ]
     assert count == len(seen_slugs) + len(verdicts)
 
 

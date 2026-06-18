@@ -87,7 +87,11 @@ def all_profile_paths(profiles_dir: Path) -> list[Path]:
 
 @pytest.fixture(scope="session")
 def all_verdict_paths(verdicts_dir: Path) -> list[Path]:
-    return sorted(p for p in verdicts_dir.glob("*__*.json") if p.is_file())
+    return sorted(
+        p
+        for p in verdicts_dir.glob("*__*.json")
+        if p.is_file() and not p.name.endswith(".sig.json")
+    )
 
 
 @pytest.fixture(scope="session")

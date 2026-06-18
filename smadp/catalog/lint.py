@@ -248,6 +248,8 @@ def lint_catalog(config: Config | None = None) -> LintReport:
     verdict_evidence_refs: set[str] = set()
     if cfg.verdicts_dir.exists():
         for path in sorted(cfg.verdicts_dir.glob("*.json")):
+            if path.name.endswith(".sig.json"):
+                continue  # detached BYOK signature sidecar, not a verdict
             report.verdicts_checked += 1
             target = str(path)
             data = _load_json(path)

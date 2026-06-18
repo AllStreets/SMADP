@@ -35,7 +35,9 @@ def test_detects_evidence_ref_pointing_to_missing_file(tmp_catalog: Path) -> Non
 
 
 def test_detects_sub_verdict_missing_required_risk_key(tmp_catalog: Path) -> None:
-    verdict_path = next((tmp_catalog / "verdicts").glob("*__*.json"))
+    verdict_path = next(
+        p for p in (tmp_catalog / "verdicts").glob("*__*.json") if not p.name.endswith(".sig.json")
+    )
     payload = json.loads(verdict_path.read_text(encoding="utf-8"))
     # Drop one of the five required risks.
     del payload["sub_verdicts"]["E_compliance"]
@@ -63,7 +65,9 @@ def test_detects_profile_slug_mismatch_with_filename(tmp_catalog: Path) -> None:
 def test_detects_unknown_framework_reference_in_verdict(tmp_catalog: Path) -> None:
     """A verdict whose pair references a non-existent profile must fail lint."""
     # Easiest case: verdict whose pair references an unknown slug.
-    verdict_path = next((tmp_catalog / "verdicts").glob("*__*.json"))
+    verdict_path = next(
+        p for p in (tmp_catalog / "verdicts").glob("*__*.json") if not p.name.endswith(".sig.json")
+    )
     payload = json.loads(verdict_path.read_text(encoding="utf-8"))
     payload["pair"] = ["does-not-exist-xyz", payload["pair"][1]]
     payload["pair"] = sorted(payload["pair"])

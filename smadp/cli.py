@@ -1160,6 +1160,8 @@ def autopilot_pair_gate_plan(ctx: click.Context, top_n: int, pair_cap: int) -> N
     exclude_pairs: set[tuple[str, str]] = set()
     for sub in ("verdicts", "pending"):
         for vf in (config.repo_root / "catalog" / sub).glob("*.json"):
+            if vf.name.endswith(".sig.json"):
+                continue  # detached BYOK signature sidecar, not a verdict
             try:
                 pair = _json.loads(vf.read_text("utf-8")).get("pair")
             except (OSError, _json.JSONDecodeError):

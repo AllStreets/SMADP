@@ -53,6 +53,8 @@ def gather_catalog_stats(repo_root: Path) -> CatalogStats:
     sandbox_validated = 0
     if verdicts_dir.exists():
         for p in verdicts_dir.glob("*.json"):
+            if p.name.endswith(".sig.json"):
+                continue  # detached BYOK signature sidecar, not a verdict
             try:
                 d = json.loads(p.read_text("utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -186,6 +188,8 @@ def render_report(
     if verdicts_dir.exists():
         cutoff = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
         for p in verdicts_dir.glob("*.json"):
+            if p.name.endswith(".sig.json"):
+                continue  # detached BYOK signature sidecar, not a verdict
             try:
                 stat = p.stat()
             except OSError:
