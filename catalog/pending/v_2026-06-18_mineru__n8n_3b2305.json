@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mineru",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-18_mineru__n8n_3b2305",
+  "generated_at": "2026-06-18T07:11:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default data and tool-use overlap: n8n can read/write shared server state and execute commands, while MinerU exposes MCP/API document ingestion without isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "MinerU exposes an MCP Server and API/file ingestion, so its outputs can be bridged into n8n workflows. n8n\u2019s AI Agent node treats tools as workflow nodes and can orchestrate downstream actions, making prompt-like content in documents a plausible control channel. The shared path is not proven by docs, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF MinerU outputs are passed into an n8n AI Agent node or text-parsing workflow without sanitization, injection risk exists.",
+        "IF the workflow uses document text as instructions or tool arguments, attacker-controlled content can steer actions."
+      ],
+      "mitigations": [
+        "Add a strict content-to-command separator in the workflow.",
+        "Strip or escape instruction-like text before handing MinerU output to n8n.",
+        "Route MinerU output through a validation step that rejects tool directives.",
+        "Disable autonomous tool execution for workflows consuming untrusted documents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "MinerU processes PDFs, DOCX, XLSX, images, and OCR text, while n8n reads and writes the server filesystem and sends data through broad integrations. If MinerU outputs sensitive document content into n8n, n8n can transmit it onward through connected systems by default. The pair therefore creates a realistic exfiltration path with broad blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are processed by MinerU and then handed to n8n workflows, those contents can flow to external integrations.",
+        "IF n8n credentials or integrations are configured for third-party services, document data may leave the server."
+      ],
+      "mitigations": [
+        "Restrict n8n workflows to redacted MinerU outputs only.",
+        "Use separate storage locations for raw documents and workflow artifacts.",
+        "Disable or pause outbound integrations for workflows handling sensitive files.",
+        "Apply per-workflow allowlists for destinations and credentials.",
+        "requires-engineering: add automated DLP checks before any outbound node."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "MinerU can use MCP and local file inputs, while n8n has server filesystem write, broad network egress, and shared state via datastore/connected systems. Both can mutate shared resources in the same deployment, and n8n explicitly supports command execution on the server. Without documented locking between them, concurrent writes and state corruption are plausible in default orchestration setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same server directory or datastore, write conflicts can occur.",
+        "IF n8n workflows invoke command or file-writing nodes while MinerU processes the same workspace, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign separate directories for MinerU and n8n artifacts.",
+        "Serialize access with a lock file or queue.",
+        "Disable command-execution nodes in workflows that touch shared files.",
+        "Use per-run unique output paths.",
+        "requires-engineering: add orchestrator-level locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "MinerU produces extracted document text, tables, and OCR output that n8n can consume as workflow input. n8n\u2019s AI Agent and integration nodes can act on that input, so an extraction error or hallucinated field from MinerU can cascade into downstream actions without verification. The default workflow model makes this dangerous unless explicit validation is added.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows treat MinerU extraction as authoritative, downstream actions may be wrong.",
+        "IF extracted fields drive emails, tickets, or database updates, a MinerU parsing error can propagate into real actions."
+      ],
+      "mitigations": [
+        "Insert a human review step before any action-taking node.",
+        "Require schema validation on MinerU outputs.",
+        "Compare extracted fields against source-document snippets.",
+        "Limit downstream workflows to read-only reporting until validated.",
+        "requires-engineering: add confidence thresholds and rejection logic."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "MinerU is documented as private and fully offline, while n8n is a server-side automation platform with broad network egress and per-integration credentials. If regulated data processed by MinerU is handed to n8n, retention, residency, and third-party processing obligations can diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are routed from MinerU into n8n integrations, retention and residency controls may differ.",
+        "IF n8n workflows store outputs longer than the source document policy allows, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Keep regulated data out of n8n unless necessary.",
+        "Set short retention on workflow logs and artifacts.",
+        "Document which integrations receive document-derived data.",
+        "Use separate credentials for regulated workflows.",
+        "requires-engineering: align retention and deletion policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d46444da1c6ab192bf5d8c6721200103334cbfae893d1a7ddfe56c465d237e43",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
