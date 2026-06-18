@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "plano"
+  ],
+  "verdict_id": "v_2026-06-18_langgraph__plano_1e2554",
+  "generated_at": "2026-06-18T05:58:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High: LangGraph\u2019s shared checkpointer and broad write/network capabilities can cascade into Plano\u2019s logs/metrics and create default data-leak and coordination risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can write/read application files and shares state via a checkpointer store; Plano consumes config.yaml and OpenAI-compatible chat inputs. That creates a plausible bridge where attacker-controlled content in shared state or files can influence downstream prompts. No direct shared channel is documented, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph nodes persist untrusted text into shared checkpointer state",
+        "IF Plano reads that shared state or config-derived content into prompts without sanitization"
+      ],
+      "mitigations": [
+        "Separate shared state from prompt-bearing fields",
+        "Add allowlist parsing for any file-fed prompt content",
+        "Strip instruction-like text before passing data between agents",
+        "Use per-agent namespaces in the checkpointer store",
+        "requires-engineering: add provenance tags to all cross-agent content"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LangGraph can read/write application-defined files and handles model provider API keys; Plano exposes logs, metrics, and traces and sends data to an OpenAI-compatible endpoint. If they share a workspace or checkpointer-backed state, sensitive graph state can flow into Plano\u2019s telemetry or outbound requests. The profiles do not prove a shared filesystem, so medium is the higher justified severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are deployed against the same workspace or checkpointer store",
+        "IF Plano logs or forwards request payloads containing LangGraph state"
+      ],
+      "mitigations": [
+        "Keep LangGraph state and Plano telemetry in separate stores",
+        "Redact secrets before any outbound API call",
+        "Disable verbose request/response logging in Plano",
+        "Restrict shared filesystem access to read-only where possible",
+        "requires-engineering: add field-level redaction on graph state"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "LangGraph has broad filesystem write, shell, subprocess, and browser capabilities; Plano has broad network egress and an OpenAI-compatible API surface. Even without explicit git/OAuth overlap, both can mutate shared application state or files if co-located, so coordination conflicts are plausible in default orchestration setups. Uncertainty about the shared workspace pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same application directory or config path",
+        "IF one agent updates files while the other reads them concurrently"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize writes with a lock file",
+        "Make shared config read-only during runs",
+        "Limit LangGraph tool nodes to least privilege",
+        "requires-engineering: add optimistic concurrency checks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is a low-level orchestration framework that can emit structured outputs from nodes, while Plano is an AI gateway/proxy that routes chat completions. If Plano treats LangGraph-produced content as authoritative routing or policy input, errors can cascade into incorrect downstream actions or model calls. Because this interaction is undocumented and could affect many requests, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        }
+      ],
+      "conditions": [
+        "IF Plano uses LangGraph output as routing or policy input without verification",
+        "IF LangGraph nodes generate facts that Plano forwards to downstream systems"
+      ],
+      "mitigations": [
+        "Insert a verification step before Plano acts on LangGraph output",
+        "Require schema validation on all inter-agent messages",
+        "Log and review a sample of routed decisions",
+        "Use explicit confidence thresholds for automated actions",
+        "requires-engineering: add human approval for high-impact routes"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LangGraph touches model provider API keys and application-defined graph state, while Plano stores logs, metrics, and traces and routes data through an OpenAI-compatible endpoint. If regulated or sensitive data enters the shared pipeline, retention and residency obligations can diverge across the two systems. The profiles do not specify certifications or residency, so medium is the safest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is included in graph state or routed prompts",
+        "IF Plano retains logs or traces longer than the source system"
+      ],
+      "mitigations": [
+        "Classify data before it enters either agent",
+        "Disable or shorten retention for logs and traces",
+        "Avoid sending secrets through Plano",
+        "Document residency and retention for both systems",
+        "requires-engineering: add policy-based data loss prevention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
