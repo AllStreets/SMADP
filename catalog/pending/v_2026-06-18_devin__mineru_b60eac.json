@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "devin",
+    "mineru"
+  ],
+  "verdict_id": "v_2026-06-18_devin__mineru_b60eac",
+  "generated_at": "2026-06-18T07:33:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-write and API-bridge pair: Devin can mutate repos and tickets while MinerU can ingest untrusted documents, creating prompt-injection, leakage, and cascading-action risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Devin can consume outputs via MCP, files, Slack, and GitHub integrations, while MinerU processes attacker-controlled PDFs/DOCX/XLSX and exposes an MCP server. That creates a plausible instruction-injection bridge if MinerU output is fed into Devin without sanitization. The path is documented, but not default-proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF MinerU output is copied into Devin prompts or MCP inputs without provenance filtering",
+        "IF Devin treats extracted document text as instructions rather than data"
+      ],
+      "mitigations": [
+        "Add a fixed delimiter and provenance tag before passing MinerU output to Devin",
+        "Disable MCP handoff for raw document text",
+        "Review one sample extraction for prompt-like content before automation",
+        "Use a human approval step for any instruction-bearing document",
+        "requires-engineering: add content-type validation between MinerU and Devin"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Devin handles source code, issue trackers, team chat, docs, and secrets, and can write to GitHub/Slack/Jira/Notion; MinerU ingests local documents and OCR text. If sensitive documents are extracted by MinerU and then routed into Devin's cloud workspace or integrations, data can leave the original boundary. The profiles show a shared document-to-workspace path, but not a guaranteed leak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF MinerU processes confidential PDFs or spreadsheets",
+        "IF Devin receives the extracted text through files, MCP, or integration posts"
+      ],
+      "mitigations": [
+        "Restrict MinerU inputs to non-sensitive documents",
+        "Redact secrets before sending extracted text to Devin",
+        "Turn off automatic posting from MinerU to Slack or ticketing tools",
+        "Store extracted outputs in a separate workspace",
+        "requires-engineering: enforce data-loss-prevention rules on the transfer"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Devin has broad filesystem write, shell, and Git mutation in a cloud workspace, while MinerU can accept file inputs and expose APIs/MCP. If both operate on the same repo or shared workspace, concurrent writes and state changes can collide, and Devin's git mutations are especially risky. The overlap is explicit enough to treat as dangerous by default when integrated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or directory",
+        "IF Devin and MinerU run concurrently without locking or branch isolation"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Use one branch per agent",
+        "Pause MinerU while Devin writes git state",
+        "Add a lock file around shared outputs",
+        "requires-engineering: implement orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Devin is an autonomous planner-executor that can act on GitHub, Slack, Linear, Jira, and Notion, while MinerU produces extracted text, tables, and OCR output. If Devin treats MinerU's extraction as authoritative, a parsing error can cascade into commits, tickets, or messages. Because Devin has downstream action authority, the blast radius is larger than a simple document error.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Devin uses MinerU output as source-of-truth without verification",
+        "IF extracted OCR or table data is forwarded into commits, tickets, or chat"
+      ],
+      "mitigations": [
+        "Require a verification step before Devin acts on MinerU output",
+        "Compare extracted values against the original document for one sample",
+        "Limit Devin to drafting, not sending, on first pass",
+        "Flag low-confidence OCR fields for manual review",
+        "requires-engineering: add schema and confidence checks before actioning"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Devin is a closed-source cloud workspace agent that handles code, chat, docs, and secrets, while MinerU is open-source and documented as private/offline for local document processing. If regulated documents or EU PII are extracted by MinerU and then moved into Devin's cloud integrations, residency and retention expectations can diverge. The profiles do not prove a breach, but the mismatch is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed by MinerU and then uploaded into Devin",
+        "IF the deployment requires local-only retention or EU residency"
+      ],
+      "mitigations": [
+        "Keep regulated documents inside MinerU only",
+        "Do not sync extracted outputs to cloud tools",
+        "Check retention settings on Devin integrations",
+        "Use a separate local-only workflow for sensitive files",
+        "requires-engineering: document and enforce residency boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1d97574bb7982fc1717d4bef5ab11836bf78e14703fff89e823dac3311cba4ee",
+    "profile_b_hash": "sha256:cd49ea0a247dc3089757cd83e2cf358aa2a43d1bab55355c097839f0dd11ccbb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
