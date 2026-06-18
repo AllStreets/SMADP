@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-18_airbyte__langflow_791a68",
+  "generated_at": "2026-06-18T08:46:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk shared-workflow pair: Langflow\u2019s unsandboxed server-side execution plus Airbyte\u2019s broad egress create dangerous default paths for leakage, cascading errors, and compliance drift.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Airbyte has broad network egress and API calls, while Langflow can chain multiple agents and run server-side Python unsandboxed by default. If Langflow ingests Airbyte outputs through a shared flow or file handoff, attacker-controlled content can be treated as instructions. The pair lacks a documented provenance barrier, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow nodes pass Airbyte output into an LLM or tool node without provenance tagging",
+        "IF a shared file or server-side store is used as the bridge between Airbyte and Langflow"
+      ],
+      "mitigations": [
+        "Add a provenance label to every Airbyte output before Langflow consumes it",
+        "Insert a manual review step before any Langflow agent acts on Airbyte text",
+        "Restrict Langflow nodes to structured fields only, not raw content",
+        "Disable server-side Python code components for the shared flow",
+        "requires-engineering: add content-sanitization and instruction-stripping at the handoff"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Airbyte touches business data and has broad network egress; Langflow reads and writes the server filesystem, stores per-flow credentials, and sends data to model providers or arbitrary HTTP services. In a shared deployment, Airbyte data can flow into Langflow and then out to third parties by default. That creates a realistic exfiltration path with sensitive business data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte outputs business data into a Langflow flow",
+        "IF Langflow components forward that data to model providers or arbitrary HTTP services",
+        "IF uploaded files or server-side state contain the same business data"
+      ],
+      "mitigations": [
+        "Keep Airbyte and Langflow on separate workspaces",
+        "Block Langflow flows from sending business data to external providers",
+        "Store secrets outside Langflow for the shared workflow",
+        "Use redaction before any Langflow API call",
+        "requires-engineering: enforce egress allowlists and data-class policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Airbyte can call APIs with broad egress, and Langflow can execute shell, install packages, spawn subprocesses, and write the filesystem. Even though Airbyte itself does not request write access, the pair can still contend over shared files or downstream resources in a flow. Because Langflow\u2019s server-side execution is unsandboxed by default, the safer choice is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same server filesystem or shared output directory",
+        "IF Langflow shell or Python components mutate artifacts that Airbyte also reads or publishes"
+      ],
+      "mitigations": [
+        "Separate writable directories for each agent",
+        "Disable shell and package-install steps in shared flows",
+        "Run Langflow with a locked-down service account",
+        "Avoid shared mutable git or file state",
+        "requires-engineering: add orchestration locks around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is explicitly a graph-based flow system that can chain multiple agents, while Airbyte produces data that downstream components may treat as input. If Langflow treats Airbyte output as authoritative, errors or hallucinations can cascade into automated actions or further agent steps. The interaction is documented enough to see the pathway, but not enough to assume verification exists.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.manual"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte output is fed into a Langflow node without validation",
+        "IF a downstream Langflow component sends emails, writes records, or triggers APIs based on that output"
+      ],
+      "mitigations": [
+        "Add schema validation between Airbyte and Langflow",
+        "Require human approval before any downstream action",
+        "Use a verification node that checks Airbyte outputs against source data",
+        "Limit Langflow to read-only summarization for this flow",
+        "requires-engineering: implement confidence gates and rollback for automated actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data, while Langflow stores per-flow credentials and can route data to model providers or arbitrary HTTP services. If regulated or residency-bound business data enters Langflow, retention and residency can diverge from Airbyte\u2019s handling. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF business data subject to retention or residency rules is processed in Langflow",
+        "IF Langflow forwards that data to external model providers or HTTP services with different retention terms"
+      ],
+      "mitigations": [
+        "Document the data classes allowed in the shared flow",
+        "Set explicit retention limits for Langflow stores",
+        "Avoid sending regulated data to external providers",
+        "Review vendor terms for residency and retention",
+        "requires-engineering: add policy enforcement for data-class routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
