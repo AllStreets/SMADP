@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "openhands"
+  ],
+  "verdict_id": "v_2026-06-18_airbyte__openhands_2a6263",
+  "generated_at": "2026-06-18T08:24:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default interaction: OpenHands can write/egress broadly while Airbyte can ingest business data, creating leakage and cascading-action risk if paired without strict isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Airbyte has broad network egress and API access, while OpenHands can use MCP, browsers, shell, and filesystem writes. If Airbyte outputs are routed into OpenHands via shared files or MCP, attacker-controlled content could be treated as instructions. The shared bridge is plausible, but not proven by the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte exports content into a file or MCP channel that OpenHands reads",
+        "IF OpenHands parses that content as instructions rather than data"
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of Airbyte outputs into OpenHands",
+        "Use a read-only handoff file format with strict schema validation",
+        "Separate the agents onto different workspaces",
+        "Add a human review step before any OpenHands tool action",
+        "requires-engineering: add provenance tagging for all inter-agent messages"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Airbyte touches business data and has broad network egress; OpenHands reads and writes runtime files and can send data to a configured model provider. If the same mounted workspace carries business data, OpenHands may transmit it onward during normal operation. This is a default-dangerous leakage path unless the pair is tightly isolated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF business data from Airbyte is mounted into OpenHands' runtime",
+        "IF OpenHands forwards file contents to its model provider or MCP servers"
+      ],
+      "mitigations": [
+        "Keep Airbyte and OpenHands on separate volumes",
+        "Remove sensitive datasets from the OpenHands runtime",
+        "Disable outbound connectors in OpenHands for the shared workspace",
+        "Use synthetic or redacted data for agent-to-agent handoff",
+        "requires-engineering: enforce per-directory egress controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Airbyte can move data over APIs and OpenHands can write the filesystem, modify git state, and spawn subprocesses. If both operate on the same mutable workspace, they can overwrite each other's artifacts or commit conflicting changes. The profiles show overlapping write/egress authority and OpenHands has explicit concurrency scope only within its own runtime, not across the pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or git repository",
+        "IF Airbyte writes artifacts that OpenHands also edits"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Pause one agent while the other writes shared artifacts",
+        "Use git branches with manual merge review",
+        "Mount shared data read-only for one side",
+        "requires-engineering: add cross-agent locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "OpenHands can act on files and browser/MCP outputs, while Airbyte can produce data and API-derived artifacts. If OpenHands treats Airbyte output as authoritative, it may automate incorrect downstream actions or commits. The pair lacks a documented verification boundary, so the safer assumption is that unverified outputs can cascade into actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands consumes Airbyte-generated files or records without verification",
+        "IF OpenHands uses those records to edit code, commit, or trigger browser actions"
+      ],
+      "mitigations": [
+        "Require explicit validation before OpenHands acts on Airbyte output",
+        "Add checksum or schema checks on transferred artifacts",
+        "Limit OpenHands to read-only review of Airbyte outputs",
+        "Log every handoff between the agents",
+        "requires-engineering: implement a verification gate between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data, and OpenHands handles files in a runtime sandbox while sending data to a user-configured model provider. If business data includes regulated or residency-bound records, the pair can create retention or transfer mismatches. The profiles do not prove a specific jurisdiction breach, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated or residency-bound data is placed into the shared runtime",
+        "IF OpenHands forwards that data to an external model provider or retains it longer than Airbyte's policy"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared runtime",
+        "Use a provider with approved residency and retention terms",
+        "Redact identifiers before handoff",
+        "Document retention rules for both agents",
+        "requires-engineering: align logging and deletion policies across the pair"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:0345cd7b3df6bba823b893f8ad14411216e1ed73428db3bb44ba121b9768c380",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
