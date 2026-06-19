@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "openhands"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__openhands_668e1a",
+  "generated_at": "2026-06-19T01:29:15Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-write and broad-egress pairing: Kestra can feed OpenHands unverified outputs, creating default-path data leakage, capability conflict, and cascading error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can write files and emit workflow outputs via stdin/stdout, while OpenHands can read mounted files and use MCP servers. A shared filesystem or file handoff lets attacker-controlled workflow content reach OpenHands as instructions. This is not provably blocked by either profile, though it is not a guaranteed default bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes untrusted content into a file that OpenHands later reads",
+        "IF OpenHands parses workflow artifacts or logs as instructions"
+      ],
+      "mitigations": [
+        "Separate the agents onto different mounted volumes",
+        "Disable file-based handoff between workflows and agent prompts",
+        "Add a manual review step before OpenHands consumes Kestra outputs",
+        "Use read-only mounts for any shared artifacts",
+        "requires-engineering: add provenance tagging for all inter-agent files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, and has broad network egress. OpenHands can read runtime files and send data to a configured model provider or MCP servers. If Kestra places sensitive data into shared runtime files, OpenHands can transmit it outward by default configuration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Kestra stores sensitive workflow data in files mounted into OpenHands",
+        "IF OpenHands forwards those files to a model provider or MCP server"
+      ],
+      "mitigations": [
+        "Keep sensitive Kestra artifacts off any OpenHands-mounted volume",
+        "Restrict OpenHands model-provider access for shared runs",
+        "Redact logs and artifacts before handoff",
+        "Use separate credentials and storage buckets",
+        "requires-engineering: enforce data-loss-prevention on mounted files"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have write_filesystem and broad network egress; OpenHands also modifies git state, and Kestra can spawn subprocesses and write to /app/storage and /tmp. If they share a writable workspace, concurrent edits can corrupt files or git state without locking. The overlap is enough to make the default shared-volume path dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory",
+        "IF OpenHands and Kestra modify the same git repository or artifact tree"
+      ],
+      "mitigations": [
+        "Give each agent a separate workspace directory",
+        "Mount shared data read-only",
+        "Avoid concurrent git operations in the same repo",
+        "Serialize writes with an external lock",
+        "requires-engineering: add workspace-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra can generate workflow artifacts, logs, and notifications, and OpenHands can act with shell, browser, and git privileges. If OpenHands treats Kestra outputs as authoritative, it can commit or execute incorrect actions downstream. That creates a classic unverified-output cascade with potentially irreversible side effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands consumes Kestra-produced artifacts without verification",
+        "IF OpenHands uses those artifacts to edit code, commit git state, or trigger external actions"
+      ],
+      "mitigations": [
+        "Require human review before OpenHands acts on Kestra outputs",
+        "Add schema validation for all Kestra-to-OpenHands handoffs",
+        "Limit OpenHands to read-only analysis on shared outputs",
+        "Log and diff every downstream action against source artifacts",
+        "requires-engineering: implement signed, provenance-checked handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra explicitly touches database data, cloud storage data, messages, and notifications, while OpenHands handles files in the runtime sandbox and model-provider API keys. If regulated data is routed from Kestra into OpenHands, residency and retention obligations can diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from Kestra is copied into OpenHands runtime files",
+        "IF OpenHands sends that data to a model provider with different retention or residency terms"
+      ],
+      "mitigations": [
+        "Keep regulated datasets out of OpenHands runs",
+        "Use a DPA-approved model provider for shared data",
+        "Minimize retention in both systems",
+        "Document which data classes may cross the boundary",
+        "requires-engineering: enforce residency and retention policy checks"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:0345cd7b3df6bba823b893f8ad14411216e1ed73428db3bb44ba121b9768c380",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
