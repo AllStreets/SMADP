@@ -254,6 +254,38 @@ def test_pass_promotes_evidence_level(tmp_config: Config) -> None:
     assert persisted.sandbox_runs[0].outcome == "pass"
 
 
+def test_promote_resigns_mutated_verdict(
+    tmp_config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Promotion mutates the published verdict, so its detached BYOK signature
+    must be refreshed to match the new content."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from smadp.autopilot.pending import PUBLISHER_WORKSPACE_ID, ensure_publisher_workspace
+    from smadp.passport.publish_sign import verify_verdict_signature
+    from smadp.tenancy import keys
+
+    monkeypatch.setenv("SMADP_KEK_MASTER", "0" * 64)
+    ensure_publisher_workspace(config=tmp_config)
+    keys.upload_signing_key(
+        workspace_id=PUBLISHER_WORKSPACE_ID,
+        private_key=Ed25519PrivateKey.generate(),
+        config=tmp_config,
+    )
+    repo = CatalogRepo(tmp_config)
+    repo.save_verdict(_stub_verdict())
+    run_id, _ = _seed_completed_run(tmp_config, outcome="pass")
+
+    promote.promote_from_run(run_id, config=tmp_config)
+
+    saved = repo.verdict_path("aider", "continue-dev")
+    sidecar = saved.with_name(saved.stem + ".sig.json")
+    assert sidecar.exists(), "promotion must write/refresh the signature sidecar"
+    verdict_doc = json.loads(saved.read_text("utf-8"))
+    sidecar_doc = json.loads(sidecar.read_text("utf-8"))
+    assert verify_verdict_signature(verdict_doc, sidecar_doc)
+
+
 def test_pass_does_not_downgrade_existing_validated_level(tmp_config: Config) -> None:
     repo = CatalogRepo(tmp_config)
     verdict = _stub_verdict()

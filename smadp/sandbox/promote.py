@@ -204,8 +204,13 @@ def promote_from_run(run_id: str, *, config: Config) -> PromotionResult:
     if target_dir == "pending":
         repo.save_pending_verdict(persisted)
     else:
-        repo.save_verdict(persisted)
+        saved = repo.save_verdict(persisted)
         _touch_rebuild_request(config)
+        # Promotion mutated the published verdict, so any existing detached BYOK
+        # signature is now stale. Re-sign best-effort (never blocks promotion).
+        from smadp.autopilot.pending import _sign_published_verdict
+
+        _sign_published_verdict(key=saved.stem, verdict_path=saved, repo_root=config.repo_root)
 
     Chronicle(config).record(
         "sandbox.run.completed",
