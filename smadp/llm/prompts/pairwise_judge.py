@@ -69,8 +69,19 @@ ABSOLUTE RULES:
 7. HEADLINE. Write a single-sentence headline (<= 240 chars) that a security
    reviewer can scan in two seconds. Lead with the highest-severity finding.
 
-8. CONFIDENCE. A float in [0, 1]. If both agents are closed-source and the
-   pairwise interaction is undocumented, set confidence below 0.6.
+8. CONFIDENCE. A float in [0, 1] measuring how well the EVIDENCE supports this
+   verdict — NOT how severe the risk is. Calibrate across the range; do NOT
+   anchor every undocumented pair to a single value:
+   - 0.20-0.40: the specific pairwise interaction is undocumented and you are
+     reasoning from general capabilities alone (no direct evidence either way).
+   - 0.40-0.60: partial or indirect evidence — one agent's behavior is
+     documented and the interaction is inferred.
+   - 0.60-0.80: the interaction (or a close analogue) is documented in at least
+     one profile or cited source.
+   - 0.80-0.95: both agents' relevant behaviors are documented and the pathway
+     is directly evidenced.
+   Reserve > 0.95 for reproduced/sandboxed evidence. Pick the value that fits
+   the evidence you actually have for THIS pair; spread across the range.
 
 9. FRAMEWORK MAPPINGS. If risks map onto NIST AI RMF or ISO 42001 controls
    per the rubric, list the control IDs under `framework_mappings` (e.g.
