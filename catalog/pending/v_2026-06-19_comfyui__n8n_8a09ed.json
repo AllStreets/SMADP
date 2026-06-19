@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "comfyui",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-19_comfyui__n8n_8a09ed",
+  "generated_at": "2026-06-19T00:17:23Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default workflow: n8n can read/write shared files and execute commands, creating dangerous prompt-injection, leakage, and cascading-action paths with ComfyUI outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ComfyUI can expose files and outputs through its API and workflow artifacts, while n8n can read filesystem content and route it into workflow nodes. That creates a plausible shared-channel injection path if n8n ingests ComfyUI-generated text or metadata as instructions. The pair lacks explicit provenance controls in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows parse ComfyUI-generated text or metadata as instructions",
+        "IF a shared filesystem or API payload carries attacker-controlled prompt text between the agents"
+      ],
+      "mitigations": [
+        "Add a strict allowlist parser for any ComfyUI text fields before n8n uses them",
+        "Prefix all machine-generated content with non-executable delimiters",
+        "Route ComfyUI outputs through a human review step before workflow execution",
+        "Disable any n8n node that auto-prompts from file contents",
+        "requires-engineering: add provenance tags to every cross-agent payload"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "ComfyUI touches images, videos, audio, seeds, checkpoints, and embeddings, and n8n can read and write the server filesystem while using broad network egress. If n8n workflows move those artifacts into external integrations, sensitive media or model assets can leak beyond the local environment. The pair\u2019s default surfaces make this a realistic exfiltration path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows access ComfyUI model or output directories",
+        "IF any connected n8n integration sends those files or metadata to a third-party service"
+      ],
+      "mitigations": [
+        "Restrict n8n to a dedicated workspace with least-privilege file access",
+        "Block outbound network access for workflows handling ComfyUI artifacts",
+        "Move secrets, seeds, and checkpoints to a separate directory outside n8n reach",
+        "Review every integration node used on ComfyUI data before enabling it",
+        "requires-engineering: implement per-workflow data-class tagging and egress policy"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ComfyUI is offline and does not write the filesystem, but n8n has server filesystem write plus execute-shell capability. When n8n orchestrates ComfyUI artifacts in the same workspace, overlapping mutable state can be corrupted or overwritten, and command execution raises the blast radius. Because one side can mutate shared files and the other consumes them, the conflict is materially dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same server filesystem path",
+        "IF n8n workflows write or rename files that ComfyUI later reads"
+      ],
+      "mitigations": [
+        "Separate ComfyUI and n8n into distinct directories with OS permissions",
+        "Disable n8n Execute Command for workflows touching ComfyUI assets",
+        "Use per-run temp directories and atomic file moves",
+        "Add file-locking around shared artifact paths",
+        "requires-engineering: add orchestrator-level concurrency locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is an orchestrator that can treat upstream outputs as workflow inputs, and ComfyUI produces generated artifacts that may be treated as authoritative by downstream steps. If n8n acts on those outputs without verification, a bad generation can cascade into automated actions, including external API calls or file writes. The pair therefore supports unsafe automation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses ComfyUI outputs as triggers or decision inputs",
+        "IF downstream n8n nodes send emails, write files, or call APIs based on those outputs"
+      ],
+      "mitigations": [
+        "Insert a validation step before any downstream action node",
+        "Require human approval for workflows that consume ComfyUI outputs",
+        "Log and diff generated artifacts before execution",
+        "Disable auto-triggered workflows on new ComfyUI outputs",
+        "requires-engineering: add schema validation for all inter-agent handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ComfyUI is an image-generation tool with local model files, while n8n processes whatever workflow data it is given and can send it to many integrations. If regulated content such as EU PII or PHI enters n8n workflows, residency and retention obligations can diverge from ComfyUI\u2019s local/offline posture. The profiles do not prove a violation, but the mismatch is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is routed through n8n workflows",
+        "IF the connected integrations store or transfer that data outside the required jurisdiction"
+      ],
+      "mitigations": [
+        "Classify data before it enters n8n workflows",
+        "Block regulated data from workflows that call external integrations",
+        "Set retention limits on n8n execution logs and artifacts",
+        "Use separate n8n instances for regulated and unregulated workloads",
+        "requires-engineering: add jurisdiction-aware routing and deletion controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:66a79dea79050734c48cf0b721cbf43d2f5fd338ffc0ade48ff148dd69ef28e3",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
