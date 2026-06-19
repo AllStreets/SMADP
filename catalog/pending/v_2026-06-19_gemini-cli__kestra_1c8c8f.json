@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-06-19_gemini-cli__kestra_1c8c8f",
+  "generated_at": "2026-06-19T01:34:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt-injection and cascading errors: Gemini CLI can ingest shared files/MCP outputs, while Kestra can operationalize those outputs into workflows and notifications.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Gemini CLI reads/writes repo files and can use MCP; Kestra reads/writes /app/storage and /tmp and handles workflow inputs. A shared filesystem or copied artifacts create a plausible injection path where one agent\u2019s content is treated as instructions by the other. The pair is open-source, but the interaction is not documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or artifact directory",
+        "IF Kestra ingests files produced by Gemini CLI without content provenance checks"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable MCP servers unless explicitly needed",
+        "Require a human review step before Kestra consumes Gemini-generated files",
+        "Add filename allowlists for shared artifacts",
+        "requires-engineering: add provenance tags to all cross-agent files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Gemini CLI touches source code, cwd files, and shell environment; Kestra handles logs, inputs, variables, artifacts, database data, and cloud storage data. If they share a workspace or credentials, sensitive material can flow from Gemini into Kestra outputs or external notifications. This is not provably blocked by either profile, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory or mounted volume",
+        "IF secrets or database data are present in files Kestra can read or emit"
+      ],
+      "mitigations": [
+        "Use separate service accounts and credentials",
+        "Mount only the minimum required directories",
+        "Redact secrets before handing files to Kestra",
+        "Turn off unnecessary logging for shared artifacts",
+        "requires-engineering: enforce data-class labels at the workflow boundary"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell, spawn subprocesses, read/write filesystems, and modify mutable state; Gemini CLI also modifies git state. In a shared repo or workspace, concurrent writes and git operations can race and corrupt state by default unless locking is added. The overlap is broad enough that default coordination is unsafe.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout or shared directory",
+        "IF either agent writes without external locking or serialization"
+      ],
+      "mitigations": [
+        "Run agents in separate clones or directories",
+        "Serialize write operations with a lock file",
+        "Disable git mutation in one agent during shared runs",
+        "Keep one agent read-only for the shared path",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Gemini CLI can produce code, file edits, or analysis that Kestra may consume as workflow inputs; Kestra then has downstream action-taking authority over email, Slack, cloud, and database systems. If Kestra treats Gemini output as authoritative, a single mistaken or malicious output can cascade into real operational actions. That makes the pair dangerous in default automation flows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses Gemini-generated files, YAML, or text as workflow definitions or task parameters",
+        "IF downstream tasks send notifications or execute infrastructure actions without validation"
+      ],
+      "mitigations": [
+        "Insert a manual approval gate before execution",
+        "Validate Gemini output against a schema before Kestra runs it",
+        "Restrict Kestra to dry-run mode for shared outputs",
+        "Require signed artifacts from Gemini before ingestion",
+        "requires-engineering: add policy checks for destructive tasks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Gemini CLI handles source code, cwd files, and shell environment, while Kestra processes logs, inputs, variables, artifacts, database data, and cloud storage data. If regulated data is placed into shared workflows, retention and residency obligations can diverge across the two systems. The profiles do not show matching compliance controls, so the mismatch is plausible and material.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.vendor.type"
+        },
+        {
+          "profile_field": "agent_b.vendor.type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PII, secrets, or customer records is routed through both agents",
+        "IF retention or deletion requirements differ between the two systems"
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through the pair",
+        "Set explicit retention limits on shared artifacts",
+        "Document data residency for each workflow step",
+        "Purge temporary files after each run",
+        "requires-engineering: align compliance controls and audit logging"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
