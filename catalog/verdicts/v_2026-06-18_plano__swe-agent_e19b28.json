@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "plano",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-18_plano__swe-agent_e19b28",
+  "generated_at": "2026-06-18T05:36:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.545,
+  "headline": "High-risk write-capable pair: SWE-agent can modify files and git while plano has broad egress, creating dangerous default pathways for leakage, conflict, and unverified downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No shared channel is documented between plano and SWE-agent, so direct prompt injection is not default. However, SWE-agent can read/write files and plano can emit API-driven outputs; if operators manually pass plano text into SWE-agent, injection becomes possible. The pathway is interaction-dependent and small-burst, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies plano output into SWE-agent prompts or files",
+        "IF both agents are pointed at the same workspace without content filtering"
+      ],
+      "mitigations": [
+        "Keep agents in separate directories",
+        "Do not paste plano outputs into SWE-agent prompts",
+        "Add a short human review step before any file ingestion",
+        "Use filename allowlists for any shared handoff",
+        "requires-engineering: add provenance tags to handoff artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "SWE-agent reads repository files and has broad network egress; plano also has broad egress and touches logs/metrics/traces. If they share a workspace or secrets-bearing files, either agent can move sensitive content out through its backend or API calls. This exists in plausible default deployments, though not proven by docs, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given access to the same directory or mounted volume",
+        "IF sensitive logs, traces, or repository secrets are present in that shared location"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Remove secrets from shared folders",
+        "Disable network egress for one agent during sensitive runs",
+        "Rotate any exposed tokens after a shared run",
+        "requires-engineering: enforce per-agent filesystem ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "SWE-agent can write the filesystem and modify git state, while plano has file access and broad network egress. If both are aimed at the same repo or config, concurrent edits can overwrite each other or corrupt git history. Because one agent explicitly supports multiple instances while plano does not, coordination is weak and the default blast radius can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or config path",
+        "IF SWE-agent is allowed to commit or rewrite git state while plano also edits files"
+      ],
+      "mitigations": [
+        "Assign disjoint paths to each agent",
+        "Freeze git writes during plano runs",
+        "Use one agent at a time for shared repos",
+        "Review diffs before commit",
+        "requires-engineering: add file-locking or transactional merge gates"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "SWE-agent is designed to act on repository code, so if it consumes plano output as authoritative, errors can cascade into edits or commits. Plano can generate routing or gateway outputs, but its docs do not show verification of SWE-agent\u2019s actions. The interaction is plausible in default orchestration, but not enough for high without explicit action evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF plano output is fed into SWE-agent without a verification step",
+        "IF SWE-agent is permitted to commit or edit based on that output"
+      ],
+      "mitigations": [
+        "Require human review of plano outputs",
+        "Add schema validation before SWE-agent consumes text",
+        "Limit SWE-agent to dry-run mode first",
+        "Compare outputs against source files before edits",
+        "requires-engineering: add automated fact-checking between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "SWE-agent handles model provider API keys and GitHub tokens, while plano touches logs, metrics, and traces. If those data classes are co-located or forwarded through plano\u2019s broad egress, retention or residency mismatches can arise. The profiles do not show a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF logs, traces, or repository secrets are routed through plano",
+        "IF the deployment stores those artifacts under different retention or residency rules"
+      ],
+      "mitigations": [
+        "Keep secrets out of plano inputs",
+        "Shorten log retention for shared runs",
+        "Redact tokens before handoff",
+        "Document which agent stores which data class",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11cbe1a1cdf9a84c73ce06d2f22d432e31731d60eef745f1a0b1254e28621c29",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

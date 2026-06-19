@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dify",
+    "plano"
+  ],
+  "verdict_id": "v_2026-06-18_dify__plano_7696d4",
+  "generated_at": "2026-06-18T05:47:15Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High: shared Dify datastore and broad egress create dangerous cross-agent leakage and output-driven error propagation; prompt-injection risk is lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dify can read/write files and uses shared state via its server datastore, so agent_a can ingest content that agent_b may influence indirectly. plano has broad network egress and OpenAI-compatible API use, so attacker-controlled content can traverse the pair. No explicit provenance tracking is shown for either agent, so injection is plausible but not proven high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b output is copied into agent_a prompts or files without sanitization, injection becomes active.",
+        "IF both agents share the same datastore or workspace, attacker-controlled text can bridge them."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and instruction-removal filter before passing text between agents.",
+        "Disable automatic ingestion of agent_b outputs into agent_a prompts.",
+        "Review one sample handoff for prompt-like strings before enabling the pair.",
+        "Use separate workspaces or namespaces for each agent.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "agent_a touches knowledge base content, conversation logs, and secrets, while agent_b has broad network egress and sends data through an OpenAI-compatible endpoint. The shared Dify datastore increases the chance that sensitive content from agent_a reaches agent_b or its backend. This is a default-dangerous leakage pathway with potentially irreversible exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a stores secrets or KB content in shared state accessible to agent_b, leakage occurs.",
+        "IF agent_b forwards received context to its external API without redaction, sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Remove secrets from any shared datastore before pairing.",
+        "Route only redacted summaries from agent_a to agent_b.",
+        "Verify outbound requests from agent_b for sensitive fields once before rollout.",
+        "Separate credentials and API keys per agent.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can execute shell commands, spawn subprocesses, and write the filesystem; agent_b has broad network egress and can call an OpenAI-compatible API. They do not both show unrestricted write to the same directory, but overlapping mutable actions on shared state via Dify's datastore can still conflict. Uncertainty about the exact shared workspace escalates this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same shared datastore or config path, race conditions can corrupt state.",
+        "IF agent_a shell actions and agent_b API-driven updates target the same resource, conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign separate writable directories to each agent.",
+        "Serialize writes to shared resources with a lock file.",
+        "Check for concurrent edits before saving config.yaml or datastore entries.",
+        "Limit agent_a filesystem writes to a staging area.",
+        "requires-engineering: add transactional updates for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a is an orchestration platform that can generate workflow outputs, and agent_b is a travel-planning gateway that can act on OpenAI-compatible inputs. If agent_b consumes agent_a's output as authoritative, errors can cascade into downstream actions or incorrect travel decisions. No verification step is documented, so the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a outputs as direct prompts or structured instructions, cascading errors occur.",
+        "IF agent_a produces incorrect facts that agent_b forwards without validation, downstream harm can propagate."
+      ],
+      "mitigations": [
+        "Insert a human review step for agent_a outputs before agent_b uses them.",
+        "Require schema validation on all agent_a-to-agent_b messages.",
+        "Compare agent_a claims against a second source before actioning.",
+        "Log and sample-check one end-to-end run for hallucinated fields.",
+        "requires-engineering: add confidence thresholds and rejection rules."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a explicitly handles conversation logs and knowledge base content, while agent_b touches logs, traces, and metrics. The profiles do not specify residency or certifications, but the mixed data classes and broad egress create a plausible retention/residency mismatch. Because the compliance posture is undocumented, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF either agent stores EU PII or regulated content in logs or traces, residency/retention issues may arise.",
+        "IF agent_b exports logs to a third-party service without a DPA, compliance gaps appear."
+      ],
+      "mitigations": [
+        "Confirm what data classes are logged by each agent.",
+        "Disable verbose logging for regulated fields.",
+        "Check whether any third-party API receives personal data.",
+        "Document retention periods for both systems.",
+        "requires-engineering: align residency and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8c782248ac5e7e08a7d484c4982111530a1ef43c53069ff5d1cf1c462f67ba8a",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

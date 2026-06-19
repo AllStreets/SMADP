@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "prefect"
+  ],
+  "verdict_id": "v_2026-06-19_gpt-engineer__prefect_068860",
+  "generated_at": "2026-06-19T05:32:43Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors from shared project-directory workflows with broad egress and no default isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can exchange content through the project directory: agent_a writes files and has per-project shared state, while agent_b operates as an orchestrator with API calls and workflow metadata. That creates a plausible file-based injection path even without MCP or clipboard. The pathway is not proven by evidence, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF agent_b reads agent_a-authored files as instructions or prompts",
+        "IF both agents share the same project directory during a run"
+      ],
+      "mitigations": [
+        "Separate the agents into different project directories",
+        "Add a manual review step before agent_b consumes any file from agent_a",
+        "Prefix untrusted file content with explicit non-instruction markers",
+        "Disable automatic prompt ingestion from workspace files",
+        "requires-engineering: add provenance tagging for all inter-agent file handoffs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a has broad network egress and reads/writes the project directory; agent_b also has broad network egress and touches workflow metadata. If either agent processes sensitive files in the shared workspace, contents can leave the environment through model/API calls. The profiles do not show PHI or secrets by default, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the shared project directory",
+        "IF either agent sends workspace contents to its backend or external APIs"
+      ],
+      "mitigations": [
+        "Keep sensitive inputs out of the shared project directory",
+        "Use a redaction pass before either agent processes files",
+        "Restrict outbound network access during runs",
+        "Store only non-sensitive workflow metadata in agent_b",
+        "requires-engineering: enforce data-class filtering on all outbound requests"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can write the filesystem and spawn subprocesses, and its state is shared via the project directory. agent_b is an orchestration agent with API access and workflow metadata, so both can act on the same mutable workspace. There is no locking or coordination primitive shown, so overlapping writes can race and corrupt outputs; uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same project directory in one session",
+        "IF agent_b triggers actions based on files agent_a is still modifying"
+      ],
+      "mitigations": [
+        "Assign each agent a separate output directory",
+        "Serialize write access with a simple manual lock file",
+        "Run agent_a to completion before starting agent_b",
+        "Avoid concurrent edits to generated code",
+        "requires-engineering: add filesystem locking around shared workspace writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a writes generated code and can offer to run it, while agent_b is an orchestration/data-engineering agent that may consume workflow artifacts. If agent_b treats agent_a's outputs as authoritative, errors can cascade from code generation into downstream automation. The profiles do not prove automatic execution, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a-produced files as trusted inputs without verification",
+        "IF generated code or metadata is forwarded into downstream automation"
+      ],
+      "mitigations": [
+        "Require a human review of agent_a outputs before downstream use",
+        "Validate generated files against a schema or test suite",
+        "Do not let agent_b execute actions from unverified artifacts",
+        "Log provenance for every artifact passed between agents",
+        "requires-engineering: add automated verification gates between generation and orchestration"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and the profiles show no PHI, residency, or retention mismatch. The only concrete compliance concern is that agent_a handles an OPENAI_API_KEY while agent_b lists workflow metadata and broad egress, which is a limited secret-handling exposure rather than a documented regulatory breach. One-agent citation is insufficient here because the pairwise issue is weak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF secrets are stored in the shared project directory",
+        "IF workflow metadata includes regulated personal data"
+      ],
+      "mitigations": [
+        "Keep API keys in environment variables, not files",
+        "Exclude secrets from any shared workspace",
+        "Review retention settings for workflow metadata",
+        "Use separate credentials per agent",
+        "requires-engineering: add secret-scanning before file handoff"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:4bcd3fe1db524c4b7fe6c4f45c75a2a980cd840413fef464a7616750d8a3f437",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

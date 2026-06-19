@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-06-19_claude-code__kestra_12c2ea",
+  "generated_at": "2026-06-19T01:51:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk default interaction: Claude Code can write shared files and invoke MCP while Kestra can execute and exfiltrate workflow actions, creating prompt-injection, leakage, and cascading automation risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code reads and writes repo files and can use MCP; Kestra consumes files, YAML, logs, and workflow inputs. That shared filesystem bridge makes attacker-controlled content from either side plausible as instruction-bearing input. The pair lacks provenance tracking in the profiles, so the safer choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Claude Code writes untrusted content into a repo file that Kestra later parses as workflow input",
+        "IF Kestra emits logs or artifacts that Claude Code later treats as instructions"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Disable MCP endpoints that ingest free-form text",
+        "Require explicit human review before Kestra consumes files from Claude Code",
+        "Add provenance labels to files passed between agents",
+        "requires-engineering: enforce content-type validation on shared artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Claude Code touches source code, git history, shell environment, and secrets; Kestra touches inputs, variables, artifacts, database data, cloud storage data, and notifications. Because both have filesystem access and broad egress, sensitive material can flow from one agent\u2019s workspace into the other\u2019s outputs in default setups. The blast radius is multiple work products and secrets exposure.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or storage path",
+        "IF Claude Code reads secrets from the environment and Kestra writes them into logs, artifacts, or notifications"
+      ],
+      "mitigations": [
+        "Move secrets out of shared directories",
+        "Restrict Kestra logging for sensitive variables",
+        "Run each agent under separate OS users",
+        "Rotate any credentials already present in the shared workspace",
+        "requires-engineering: add redaction before notifications and artifact publication"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, read and write the filesystem, and modify mutable state; Claude Code also modifies git state while Kestra can operate on storage, databases, and external services. In a shared directory or repo, concurrent writes and state changes are dangerous by default and can corrupt work or overwrite each other. The profiles do not show locking, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout or shared output directory",
+        "IF Kestra tasks and Claude Code sessions run concurrently without external locking"
+      ],
+      "mitigations": [
+        "Use separate working directories",
+        "Serialize writes with a lock file",
+        "Disable git mutations from one agent during orchestration runs",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add transactional coordination around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Claude Code can generate code, patches, and explanations that Kestra may then operationalize through workflows, notifications, or cloud actions. If Kestra treats Claude Code output as authoritative, a mistaken or malicious suggestion can cascade into real actions such as emails, deployments, or data movement. The profiles show no verification gate, so high is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra ingests Claude Code output as workflow parameters or task definitions",
+        "IF Kestra triggers notifications or external actions without a human approval step"
+      ],
+      "mitigations": [
+        "Require a manual approval step before execution",
+        "Validate Claude Code output against a schema",
+        "Limit Kestra to dry-run mode for agent-generated workflows",
+        "Log and diff all generated workflow changes",
+        "requires-engineering: add policy checks before any external side effect"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Claude Code is documented as handling git credentials and running on the invoking user\u2019s host, while Kestra can route data to email, Slack, PagerDuty, and cloud services. That creates a plausible residency and retention mismatch for regulated data classes, especially if the same inputs flow through both systems. The profiles do not prove a specific violation, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace or workflow inputs",
+        "IF Kestra sends those inputs to third-party notifications or cloud services"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared runs",
+        "Disable notification steps for sensitive workflows",
+        "Review retention settings on logs and artifacts",
+        "Use region-restricted storage for workflow outputs",
+        "requires-engineering: map data classes to approved processing locations"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-3.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

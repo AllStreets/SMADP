@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__plandex_4c5b40",
+  "generated_at": "2026-06-19T01:51:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk write and network overlap: shared filesystem plus broad egress make prompt injection, leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files, so a shared workspace can let one agent\u2019s output be consumed as instructions by the other. Kestra\u2019s workflow/files surfaces and Plandex\u2019s project-directory sandbox create a plausible file-bridge even without MCP. This is not proven default ingestion, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or mounted workspace",
+        "IF one agent parses the other\u2019s generated files as instructions or workflow definitions"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable auto-import of generated files",
+        "Require manual review before any file from the other agent is executed",
+        "Use read-only mounts for cross-agent handoff",
+        "requires-engineering: add provenance tags to all inter-agent files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches logs, inputs, variables, artifacts, database data, cloud storage data, messages, and notifications, while Plandex touches source code and can send context to a model provider. If they share a workspace or secrets-bearing files, sensitive material can flow from A into B and then out via B\u2019s broad egress. The shared-data path is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Kestra artifacts or logs contain secrets or regulated data",
+        "IF Plandex is allowed to read the same project directory or sandbox contents",
+        "IF either agent forwards file contents to an external backend"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories",
+        "Redact logs and artifacts before handoff",
+        "Use separate service accounts and API keys",
+        "Restrict Plandex to non-sensitive repos",
+        "requires-engineering: enforce DLP on inter-agent file exchange"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have filesystem write and shell execution, and Plandex also modifies git state while Kestra can spawn subprocesses and write workflow storage. On a shared repo or directory, concurrent edits can overwrite each other or corrupt state; the blast radius includes irreversible code or workflow loss. No locking is documented here, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository or filesystem tree",
+        "IF edits are applied without an external lock or merge gate"
+      ],
+      "mitigations": [
+        "Assign disjoint directories",
+        "Serialize write access with a lock file",
+        "Disable auto-apply on one agent",
+        "Commit each agent\u2019s changes on separate branches",
+        "requires-engineering: add transactional coordination around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Plandex is a planner with review-then-apply, but it can still treat upstream outputs as plan inputs. Kestra can emit workflow artifacts, logs, and notifications that Plandex may reuse. That creates a plausible chain where A\u2019s output becomes B\u2019s action basis without verification; the review step lowers but does not eliminate the risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-generated artifacts or logs are fed into Plandex planning",
+        "IF Plandex auto-apply is enabled or review is bypassed"
+      ],
+      "mitigations": [
+        "Require human review of A-to-B handoffs",
+        "Pass only summarized outputs, not raw logs",
+        "Disable auto-apply",
+        "Add a verification checklist before execution",
+        "requires-engineering: add schema validation for handoff artifacts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, but the only explicit compliance-relevant mismatch visible is data-class breadth: Kestra handles logs, messages, notifications, and cloud data, while Plandex handles source code and model-provider secrets. No residency or certification conflict is documented, so compliance risk is limited and uncertain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Kestra workflows",
+        "IF Plandex is used with data subject to residency or retention rules not documented here"
+      ],
+      "mitigations": [
+        "Keep regulated data out of both tools",
+        "Document retention for workflow artifacts",
+        "Use separate environments for sensitive projects",
+        "Review vendor DPAs before deployment",
+        "requires-engineering: map data flows to residency controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__roo-cline_9389c4",
+  "generated_at": "2026-06-19T01:45:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-workspace pair: default filesystem overlap and broad egress create prompt-injection, leakage, and cascading-action hazards.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files, and B explicitly shares state with other instances via the filesystem while A uses /app/storage and /tmp. That creates a default content bridge where attacker-controlled workflow or code files from A can be consumed by B as instructions. No stronger isolation is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF A writes untrusted content into shared workspace files or /app/storage",
+        "IF B ingests workspace files as prompts or instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate A and B into distinct directories",
+        "Disable automatic file ingestion in B",
+        "Add provenance labels to shared files",
+        "Review any file-based prompts before execution",
+        "requires-engineering: enforce workspace ACL isolation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, while B can read workspace files and send data to configured model APIs and MCP servers. In a shared workspace, sensitive A outputs can flow into B and then out to third-party services by default configuration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF A stores sensitive workflow outputs in shared files",
+        "IF B forwards workspace contents to its configured model API or MCP server"
+      ],
+      "mitigations": [
+        "Keep sensitive A outputs out of shared folders",
+        "Use separate service accounts and API keys",
+        "Restrict B to local-only models",
+        "Redact secrets before B reads files",
+        "requires-engineering: add DLP controls on workspace egress"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, and subprocess spawning; B also modifies git state and shares state via filesystem. In a shared workspace, concurrent writes can corrupt files or git history, and A's orchestration plus B's editor actions can race without locking. This is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or git repository",
+        "IF either agent writes without external locking"
+      ],
+      "mitigations": [
+        "Assign separate worktrees",
+        "Pause one agent during git operations",
+        "Use file locks for shared artifacts",
+        "Limit B's git writes to reviewed branches",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A can generate workflow outputs, logs, and notifications, and B can act on files, run shells, and use MCP or browser tooling. If B treats A's outputs as authoritative, A's mistakes can cascade into code changes, commits, or external actions. The pair lacks a documented verification barrier, so the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-produced files, logs, or notifications as ground truth",
+        "IF B performs commits, package installs, or MCP actions based on A output"
+      ],
+      "mitigations": [
+        "Require human review before B acts on A output",
+        "Add a verification step against source systems",
+        "Mark A outputs as untrusted by default",
+        "Disable auto-commit paths in B",
+        "requires-engineering: implement signed handoff artifacts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A explicitly handles database data, cloud storage data, messages, and notifications, while B handles source code and browser screenshots and can transmit data to configured model APIs. If regulated data is placed into the shared workspace, B may export it to third-party services without a documented residency or retention boundary. The profiles do not prove a specific residency mismatch, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace",
+        "IF B sends that data to a non-compliant model API or MCP server"
+      ],
+      "mitigations": [
+        "Keep regulated data out of B-visible files",
+        "Use compliant model endpoints only",
+        "Review retention settings for both tools",
+        "Separate logs by data class",
+        "requires-engineering: document residency and DPA boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

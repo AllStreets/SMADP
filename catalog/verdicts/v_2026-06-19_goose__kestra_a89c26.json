@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-06-19_goose__kestra_a89c26",
+  "generated_at": "2026-06-19T01:57:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk default write/egress overlap: Goose can hand outputs to Kestra workflows, creating dangerous prompt-injection, leakage, and cascading-action paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can use MCP and reads/writes the user filesystem; Kestra can ingest files, stdin/stdout, and trigger workflows. That creates a plausible content-to-instruction bridge if Goose outputs attacker-controlled text into shared files or streams. The pair lacks documented provenance controls, so the safer choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes untrusted content into a file or stream that Kestra later parses as workflow input",
+        "IF Kestra consumes Goose-produced artifacts without provenance checks"
+      ],
+      "mitigations": [
+        "Use separate directories for Goose and Kestra inputs",
+        "Require a manual review step before Kestra ingests Goose output",
+        "Prefix Goose-generated files with a non-executable extension",
+        "Disable any Kestra trigger that watches Goose output paths",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code, files in cwd, and broad network egress; Kestra handles logs, inputs, variables, artifacts, database data, cloud storage data, and notifications. If they share a workspace or Goose passes files into Kestra, sensitive data can flow from Goose into Kestra outputs or external destinations. The shared-file path is enough to make this medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose and Kestra share any writable workspace path",
+        "IF Goose forwards files containing source code or secrets into Kestra workflows",
+        "IF Kestra sends those artifacts to email, Slack, cloud storage, or other external sinks"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Remove secrets from any shared directory before execution",
+        "Restrict Kestra notifications for workflows fed by Goose",
+        "Audit one sample Goose-to-Kestra artifact for sensitive fields",
+        "requires-engineering: enforce per-agent storage isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have filesystem write and shell execution, and Goose explicitly shares state via filesystem while Kestra supports multiple instances and writes to /app/storage and /tmp. Concurrent modification of the same directory can corrupt files, overwrite outputs, or race on git state; Goose also modifies git state directly. This is a default-dangerous overlap, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory",
+        "IF Goose modifies git state while Kestra writes artifacts in the same repo",
+        "IF Kestra runs multiple instances against shared storage without locking"
+      ],
+      "mitigations": [
+        "Assign distinct working directories",
+        "Pause one agent before the other writes shared files",
+        "Avoid running Goose and Kestra against the same git checkout",
+        "Check for lock files before starting either agent",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Goose can generate code, files, and MCP-driven outputs; Kestra can execute declarative workflows and send notifications or trigger cloud actions. If Kestra treats Goose output as authoritative, a mistaken or malicious Goose result can cascade into emails, deployments, or data jobs. Because the downstream action surface is broad and default workflows are automation-oriented, high fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses Goose output as workflow parameters without validation",
+        "IF Goose-produced text is mapped into Kestra tasks, notifications, or API calls",
+        "IF a Kestra workflow can act on Goose output without human approval"
+      ],
+      "mitigations": [
+        "Insert a validation step between Goose and Kestra",
+        "Require human approval for any Goose-derived workflow action",
+        "Limit Goose output to read-only reports",
+        "Test one workflow with a harmless dummy payload",
+        "requires-engineering: add schema validation for Goose outputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Goose handles model-provider keys and extension tokens on the user machine, while Kestra processes logs, notifications, cloud storage data, and database data. The profiles do not document residency or retention controls, so a compliance mismatch is plausible if regulated data is routed through Kestra or if Goose sends it to external model providers. Uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed from Goose into Kestra workflows",
+        "IF Kestra notifications or storage retain data longer than policy allows",
+        "IF Goose sends sensitive inputs to external model providers"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows",
+        "Review retention settings for Kestra logs and artifacts",
+        "Disable notifications for sensitive workflows",
+        "Confirm model-provider handling for Goose secrets",
+        "requires-engineering: document residency and retention boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

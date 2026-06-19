@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "comfyui"
+  ],
+  "verdict_id": "v_2026-06-19_claude-code__comfyui_dcb9b0",
+  "generated_at": "2026-06-19T00:55:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and git overlap between Claude Code and ComfyUI creates prompt-injection, leakage, and cascading-error pathways; compliance risk is lower but nonzero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code can read/write repo files and use MCP, while ComfyUI exposes files and an asynchronous queue. The pair has a filesystem bridge, so attacker-controlled content from one can reach the other. This is not proven to be default instruction parsing, but the shared workspace makes injection plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory or model/workflow folder",
+        "IF Claude Code reads ComfyUI-generated files as instructions or prompts"
+      ],
+      "mitigations": [
+        "Separate the agents into different directories",
+        "Disable MCP servers not needed for the task",
+        "Treat all cross-agent files as untrusted input",
+        "Use read-only mounts for shared artifacts",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Claude Code touches source code, git history, shell environment, and secrets, and can write files; ComfyUI touches workflows, seeds, checkpoints, and model artifacts. If they share a workspace, sensitive code or secrets can be copied into image workflows or outputs. ComfyUI is offline by default, but the shared filesystem still creates a realistic leakage path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the same repository or parent directory contains secrets and ComfyUI workflows",
+        "IF Claude Code exports files that ComfyUI later ingests or renders"
+      ],
+      "mitigations": [
+        "Move secrets out of any shared workspace",
+        "Use separate OS users for the two agents",
+        "Restrict ComfyUI to a dedicated models directory",
+        "Scan outputs for secrets before handoff",
+        "requires-engineering: enforce workspace isolation with policy"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Claude Code has unrestricted filesystem write and modify_git_state, while ComfyUI can manage workflows and model files in its own file surfaces. The pair shares state via filesystem and git only, so concurrent edits can collide and corrupt repo state. Because git mutations can be irreversible or hard to unwind, this is high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout or shared directory",
+        "IF either agent writes while the other is reading or committing"
+      ],
+      "mitigations": [
+        "Serialize access with a lock file",
+        "Assign separate branches or worktrees",
+        "Keep ComfyUI model files outside the repo",
+        "Pause one agent before the other writes",
+        "requires-engineering: add transactional coordination around git writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Claude Code can generate files and git changes that ComfyUI may later consume as workflows or assets. ComfyUI\u2019s asynchronous queue can then execute or render based on those artifacts without an explicit verification step. The pathway exists, but the profiles do not show direct autonomous action-taking, so medium is the higher justified severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ComfyUI ingests files produced by Claude Code without manual review",
+        "IF generated workflows or assets are treated as authoritative"
+      ],
+      "mitigations": [
+        "Require manual review before ComfyUI ingestion",
+        "Validate workflow JSON before execution",
+        "Keep generated artifacts in a quarantine folder",
+        "Use checksums for handoff files",
+        "requires-engineering: add schema validation gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Claude Code handles source code, git history, shell environment, and secrets, while ComfyUI handles images, videos, audio, and model artifacts. The profiles do not show a residency or certification mismatch, so only a limited compliance concern is visible: sensitive code or secrets could be mixed into media workflows if the same workspace is reused.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace",
+        "IF retention or deletion rules differ between code and media artifacts"
+      ],
+      "mitigations": [
+        "Keep regulated data out of ComfyUI folders",
+        "Document retention rules for shared artifacts",
+        "Delete temporary handoff files after use",
+        "Separate logs by agent",
+        "requires-engineering: map data classes to policy controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:d06da4b94a49a9a234070da2162222d86616e5de873903f765845b4e78d29f08",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

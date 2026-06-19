@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mineru",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-18_mineru__plandex_5214b1",
+  "generated_at": "2026-06-18T07:44:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.575,
+  "headline": "High-risk shared-file and action pipeline: MinerU can feed untrusted document content into Plandex, which has filesystem write and shell/network authority.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "MinerU ingests PDFs/DOCX/XLSX and exposes MCP/API surfaces, so its extracted text can be passed into Plandex. Plandex reads files and supports review-then-apply workflows, making prompt injection plausible if document content is treated as instructions. This is not provably blocked by either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF MinerU output is copied into Plandex prompts or plans without sanitization",
+        "IF Plandex auto-apply is enabled for content derived from MinerU"
+      ],
+      "mitigations": [
+        "Disable auto-apply in Plandex",
+        "Insert a manual review step for all MinerU-derived text",
+        "Strip instructions and code blocks from extracted documents",
+        "Use a fixed prompt template that labels MinerU output as untrusted",
+        "requires-engineering: add provenance tagging between MinerU and Plandex"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "MinerU processes sensitive document classes such as PDFs, images, DOCX, PPTX, and XLSX. Plandex has broad network egress and can read project files, so if MinerU outputs are placed in the shared workspace, document contents may flow into a third-party model provider. The pair lacks a documented isolation boundary that would make this impossible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF MinerU outputs are stored in the same project directory Plandex reads",
+        "IF Plandex sends those files or prompts to a remote model provider"
+      ],
+      "mitigations": [
+        "Keep MinerU outputs in a separate directory",
+        "Exclude sensitive documents from Plandex inputs",
+        "Use a local-only model backend for Plandex",
+        "Review Plandex file inclusion before each run",
+        "requires-engineering: enforce workspace-level access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "MinerU is read-only on filesystem but can use MCP and concurrent inference; Plandex can write the filesystem, modify git state, and spawn subprocesses. If both operate on the same project directory, Plandex can overwrite or commit artifacts derived from MinerU outputs, creating a dangerous write conflict in default developer workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same working directory",
+        "IF Plandex applies changes while MinerU is still producing outputs"
+      ],
+      "mitigations": [
+        "Run the agents in separate directories",
+        "Disable Plandex auto-apply",
+        "Serialize runs so MinerU finishes before Plandex edits",
+        "Use git branches for Plandex changes",
+        "requires-engineering: add file-locking around shared paths"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "MinerU produces extracted facts from documents, and Plandex is a planner that can turn file contents into code or edits. If Plandex treats MinerU output as authoritative, extraction errors can cascade into incorrect plans or commits. The profiles do not show a verification gate strong enough to rule this out.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Plandex uses MinerU extraction as direct input to planning",
+        "IF no human or automated verification checks the extracted facts"
+      ],
+      "mitigations": [
+        "Require human review of extracted facts before planning",
+        "Cross-check key fields against the source document",
+        "Limit MinerU output to quoted spans with page references",
+        "Keep Plandex in review-only mode until verification passes",
+        "requires-engineering: add structured validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "MinerU handles document classes that may include regulated content, while Plandex explicitly sends data to a model provider and handles API keys. If regulated documents are routed from MinerU into Plandex, retention and residency obligations can diverge. The profiles do not show matching compliance controls, so the mismatch is plausible rather than blocked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents from MinerU are forwarded into Plandex",
+        "IF the model provider or Plandex backend retains prompts beyond policy"
+      ],
+      "mitigations": [
+        "Do not route regulated documents into Plandex",
+        "Use a local/self-hosted Plandex backend",
+        "Confirm retention settings before processing sensitive files",
+        "Separate regulated and non-regulated workflows",
+        "requires-engineering: document a data-processing agreement and residency map"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d46444da1c6ab192bf5d8c6721200103334cbfae893d1a7ddfe56c465d237e43",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

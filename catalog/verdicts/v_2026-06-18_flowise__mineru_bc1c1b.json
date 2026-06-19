@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "mineru"
+  ],
+  "verdict_id": "v_2026-06-18_flowise__mineru_bc1c1b",
+  "generated_at": "2026-06-18T07:11:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.38,
+  "headline": "High-risk shared filesystem and server-datastore coupling make Flowise\u2192MinerU prompt injection, leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write the server filesystem and ingest uploaded files, while MinerU accepts local file inputs and exposes an MCP server. That creates a plausible bridge where Flowise outputs or uploaded content can be fed into MinerU and then reused as instructions. The interaction is documented only at profile level, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Flowise outputs are copied into MinerU inputs without provenance checks",
+        "IF MinerU MCP responses are treated as instructions by Flowise flows"
+      ],
+      "mitigations": [
+        "Add a provenance tag to every handoff file",
+        "Disable automatic ingestion of MinerU outputs into Flowise prompts",
+        "Use a separate folder for untrusted documents",
+        "Require manual review before any prompt reuse",
+        "requires-engineering: add content-sanitization and allowlist parsing"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and secrets, and can read/write the server filesystem; MinerU processes PDFs, DOCX, images, and OCR text. If both share a workspace or uploaded files, sensitive content can flow from Flowise into MinerU processing and back into outputs. MinerU is offline-oriented, but the shared-file path still makes leakage plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or upload bucket",
+        "IF Flowise chatflow inputs contain secrets or regulated documents"
+      ],
+      "mitigations": [
+        "Separate storage locations per agent",
+        "Restrict MinerU to non-sensitive documents",
+        "Rotate any exposed credentials immediately",
+        "Delete shared temp files after each run",
+        "requires-engineering: enforce per-agent access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Flowise has write_filesystem=true and shared_state_with_other_instances via server datastore, while MinerU is read-only on filesystem and does not write git state. Overlap exists mainly on shared inputs, not on the same mutable resource set, so direct write-write conflict is limited. The pair still needs coordination if they share a workspace, but the blast radius is small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write into the same directory",
+        "IF Flowise flows mutate shared datastore records that MinerU also reads"
+      ],
+      "mitigations": [
+        "Assign distinct output directories",
+        "Serialize access to any shared folder",
+        "Avoid concurrent runs on the same documents",
+        "Use file locks for shared artifacts",
+        "requires-engineering: add transactional coordination around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise can generate or transform content that MinerU then parses from documents or OCR text, and MinerU exposes MCP/API surfaces that may consume upstream outputs. If MinerU treats Flowise-produced text as authoritative, errors can cascade from one agent into the other without verification. The profiles do not show a built-in validation gate, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF MinerU ingests Flowise-generated text as source material",
+        "IF downstream automation acts on MinerU extractions without human review"
+      ],
+      "mitigations": [
+        "Insert a verification step between agents",
+        "Compare extracted fields against the original document",
+        "Flag low-confidence OCR or parsing results",
+        "Require human approval before any action-taking step",
+        "requires-engineering: add schema validation and confidence thresholds"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare conflicting residency, certification, or retention policies. Flowise handles chatflow inputs/outputs and secrets, while MinerU is documented as private/offline and processes document files, so a compliance issue is only plausible if regulated data is routed into MinerU or retained in Flowise logs. The other agent is not cited because no explicit mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in Flowise logs or chatflow outputs",
+        "IF MinerU processes data subject to a residency or retention rule"
+      ],
+      "mitigations": [
+        "Avoid sending regulated data through the pair",
+        "Set short log retention on Flowise",
+        "Delete processed documents after use",
+        "Document a data-handling policy for both tools",
+        "requires-engineering: implement retention and deletion controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:cd49ea0a247dc3089757cd83e2cf358aa2a43d1bab55355c097839f0dd11ccbb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

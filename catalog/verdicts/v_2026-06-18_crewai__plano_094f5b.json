@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "plano"
+  ],
+  "verdict_id": "v_2026-06-18_crewai__plano_094f5b",
+  "generated_at": "2026-06-18T05:47:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk shared filesystem and broad egress make CrewAI\u2192plano interactions prone to leakage, conflict, and unverified downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory among subagents; plano reads config.yaml and consumes OpenAI-compatible chat outputs. If CrewAI writes attacker-controlled content into files that plano or its operator later treats as instructions, injection is plausible. The pair lacks documented provenance controls, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted text into the shared working directory AND plano ingests that text as configuration or prompts, injection is possible.",
+        "IF the operator manually copies CrewAI output into plano inputs, prompt injection risk increases."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Treat all CrewAI output as untrusted text.",
+        "Add a manual review step before any plano ingestion.",
+        "Disable file-based handoff for prompts/configs.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI touches developer-passed crew data and API keys, and has broad network egress; plano handles logs, traces, metrics, and an OpenAI-compatible endpoint. A shared workspace or copied artifacts could expose sensitive crew data to plano\u2019s telemetry or outbound calls. The profiles do not show hard isolation, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or logs, CrewAI inputs can flow into plano artifacts.",
+        "IF plano forwards traces or prompts to its chat endpoint, sensitive CrewAI data may leave the host."
+      ],
+      "mitigations": [
+        "Use separate workspaces and log files.",
+        "Redact secrets before passing artifacts between agents.",
+        "Disable verbose tracing for shared runs.",
+        "Restrict plano to non-sensitive test data.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "CrewAI can write the filesystem and spawn subprocesses; plano exposes config.yaml and broad network egress. Even though plano does not advertise filesystem write, both can mutate shared mutable resources indirectly through files and network-backed state. Without locking or coordination primitives, overlapping writes or config churn are plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same config or working directory, concurrent edits can race.",
+        "IF CrewAI subprocesses and plano network calls target the same downstream resource, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign distinct directories per agent.",
+        "Serialize writes with a simple operator lock.",
+        "Avoid concurrent runs against the same backend.",
+        "Snapshot config.yaml before edits.",
+        "requires-engineering: add transactional coordination for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI is a multi-agent orchestration framework that can emit tool-driven outputs, while plano is a gateway/router style component that can act on chat-completion traffic. If plano consumes CrewAI-produced text without verification, erroneous or fabricated outputs can cascade into downstream actions or routing decisions. The interaction is undocumented, so uncertainty favors the higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        }
+      ],
+      "conditions": [
+        "IF plano routes or acts on CrewAI-generated text without validation, errors can propagate downstream.",
+        "IF CrewAI produces tool instructions that plano forwards to another system, the blast radius expands."
+      ],
+      "mitigations": [
+        "Insert a human review gate before downstream action.",
+        "Require schema validation on CrewAI outputs.",
+        "Log and compare outputs against source evidence.",
+        "Limit plano to read-only routing in paired runs.",
+        "requires-engineering: implement verification and rejection policies."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI explicitly handles developer-passed crew data and API keys, while plano touches logs, traces, metrics, and an OpenAI-compatible endpoint. If regulated or sensitive data is present, mismatched retention or logging policies can create compliance gaps. No residency or certification claims are documented for either profile, so the safest choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed through CrewAI and then recorded in plano logs or traces, retention obligations may be violated.",
+        "IF the operator relies on either agent for deletion/export guarantees, the profiles do not document them."
+      ],
+      "mitigations": [
+        "Avoid regulated data in paired runs.",
+        "Disable or minimize logging and tracing.",
+        "Set short retention on any shared logs.",
+        "Review data-handling notices before deployment.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

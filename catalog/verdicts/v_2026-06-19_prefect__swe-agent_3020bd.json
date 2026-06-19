@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "prefect",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-19_prefect__swe-agent_3020bd",
+  "generated_at": "2026-06-19T05:10:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High-risk write and network overlap: SWE-agent can modify shared files and use broad egress, while Prefect can ingest workflow metadata and call APIs, creating dangerous interaction and leakage pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "A direct prompt-injection bridge is not documented, but Prefect can emit workflow metadata and SWE-agent can read/write files in its sandbox. If operators manually copy Prefect outputs into SWE-agent inputs, malicious content could steer tool use. The pathway is weaker than shared-channel defaults, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Prefect output is manually pasted into SWE-agent prompts or task files",
+        "IF SWE-agent is configured to treat copied workflow text as instructions"
+      ],
+      "mitigations": [
+        "Sanitize copied text before pasting",
+        "Use a fixed prompt template with delimiters",
+        "Strip executable-looking markdown from handoffs",
+        "Review any copied Prefect logs before reuse"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Prefect has broad network egress and calls external APIs, while SWE-agent reads repository files and can handle model-provider keys. If both touch the same workspace or secrets are placed in workflow metadata, data can flow from Prefect into outbound requests or SWE-agent outputs. The profiles do not prove a shared workspace, so medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Prefect workflow metadata includes secrets or sensitive repository paths",
+        "IF SWE-agent is pointed at the same directory or copied artifacts from Prefect"
+      ],
+      "mitigations": [
+        "Keep secrets out of workflow metadata",
+        "Mount separate directories for each agent",
+        "Redact logs before passing them between agents",
+        "Disable unnecessary outbound API calls",
+        "Rotate any exposed tokens immediately"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "SWE-agent can write the filesystem, modify git state, and spawn subprocesses; Prefect can also act on workflow artifacts and broad network egress. If both are pointed at the same repo or working tree, concurrent writes and git mutations can clobber each other. The profiles do not show locking, so the conflict is dangerous by default once co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout or filesystem path",
+        "IF Prefect schedules writes while SWE-agent edits the same files"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize write phases with a lock file",
+        "Require one agent to be read-only",
+        "Commit changes from only one agent per task",
+        "Use branch-per-agent workflows"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Prefect can produce workflow metadata that SWE-agent may consume as task context, and SWE-agent can then act on that context with shell and git privileges. That creates a plausible chain where unverified Prefect output becomes operational input. Because no explicit verification step is shown, the interaction is medium-risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent uses Prefect-generated artifacts as authoritative task input",
+        "IF no human or automated verification step checks Prefect output before action"
+      ],
+      "mitigations": [
+        "Add a validation step before SWE-agent acts",
+        "Require checksums for transferred artifacts",
+        "Have SWE-agent quote and confirm assumptions",
+        "Limit SWE-agent to dry-run mode first",
+        "Review generated diffs before commit"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the visible data classes are limited, so no clear residency or regulated-data mismatch is shown. Prefect touches workflow metadata and SWE-agent touches repository code; absent evidence of PHI, EU PII, or retention conflicts, compliance risk is limited. The other agent is cited because the assessment is pairwise, but no mismatch is established.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into workflow metadata or repository code",
+        "IF one agent is configured with stricter retention than the other"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either agent",
+        "Document retention settings for both tools",
+        "Separate datasets by jurisdiction",
+        "Delete temporary artifacts after each run"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:308ff5bcba34c67a571c898b28eb8232a676bcd976ace74569cfbe109731a429",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
