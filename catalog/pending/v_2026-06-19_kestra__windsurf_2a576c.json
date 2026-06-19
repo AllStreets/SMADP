@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__windsurf_2a576c",
+  "generated_at": "2026-06-19T01:40:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.755,
+  "headline": "High-risk default overlap: shared filesystem, broad egress, and auto-execute-capable IDE workflows create dangerous prompt-injection, leakage, and cascading-action paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Agent A writes workflow artifacts and exposes files/stdin-stdout; Agent B uses clipboard, workspace files, and MCP, and its shared_state_with_other_instances is via local filesystem. That creates a default bridge where attacker-controlled content from A can be parsed by B as instructions. The interaction is documented enough to judge, but the shared filesystem plus MCP raises this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Agent A writes untrusted workflow output into shared workspace files",
+        "IF Agent B ingests workspace or clipboard content as instructions or tool context",
+        "IF an MCP server is connected to Agent B without provenance filtering"
+      ],
+      "mitigations": [
+        "Separate A and B into different workspaces",
+        "Disable clipboard-based handoff between agents",
+        "Require provenance tags on files before B reads them",
+        "Restrict B MCP servers to allowlisted tools",
+        "requires-engineering: add content-sanitization before B parses A outputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Agent A touches database, cloud storage, logs, messages, and notifications, while Agent B reads workspace files and sends context to a model proxy/MCP servers with broad egress. If A places sensitive data into shared files or outputs, B can forward it off-box by default. This is a realistic leakage path in the pair, not just an unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Agent A writes logs, database data, or cloud-storage data into the shared workspace",
+        "IF Agent B sends workspace content to its model proxy or an MCP server",
+        "IF both agents operate under the same local filesystem permissions"
+      ],
+      "mitigations": [
+        "Move sensitive A outputs out of B's workspace",
+        "Disable B access to shared files containing secrets",
+        "Use separate OS users for A and B",
+        "Audit MCP servers for outbound data handling",
+        "requires-engineering: enforce per-file data-class labels and blocking rules"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Agent A can write the filesystem and spawn subprocesses; Agent B can also write the filesystem, modify git state, and uses shared_state_with_other_instances via local filesystem. Both therefore have overlapping write authority on the same mutable surfaces, and B's git operations make conflicts and corruption plausible by default. Uncertainty is low because both profiles explicitly expose the overlap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF A and B target the same directory or repository",
+        "IF B modifies git state while A writes files concurrently",
+        "IF no external lock or transaction layer is present"
+      ],
+      "mitigations": [
+        "Assign disjoint directories to A and B",
+        "Pause one agent during git operations",
+        "Use file locks around shared mutable paths",
+        "Run B with git disabled for shared repos",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Agent A produces workflow artifacts, logs, and notifications; Agent B is an IDE agent with MCP and auto-execute opt-in, so A's outputs can become B's actionable input. Because B can execute commands and modify git state, a mistaken or malicious A output can cascade into irreversible code or repo changes. The pair lacks a built-in verification boundary in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF B treats A-generated files or messages as authoritative",
+        "IF B auto-execute is enabled or commands are approved without review",
+        "IF A emits malformed or adversarial workflow instructions"
+      ],
+      "mitigations": [
+        "Require human review before B acts on A outputs",
+        "Disable auto-execute in B",
+        "Route A outputs through a validation step",
+        "Limit B to read-only mode for A-produced artifacts",
+        "requires-engineering: add schema validation for A-to-B handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Agent A handles cloud storage data, database data, messages, and notifications, while Agent B handles source code and open files with broad egress and closed-source vendor processing. The profiles do not specify residency or retention controls, so a compliance mismatch is plausible but not proven. Because uncertainty remains, the higher plausible severity is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from A is written into B-opened files",
+        "IF B sends those files to its model proxy or MCP servers",
+        "IF the deployment requires residency or retention guarantees not documented here"
+      ],
+      "mitigations": [
+        "Keep regulated data out of B workspaces",
+        "Review vendor retention settings before use",
+        "Disable syncing of sensitive files into the IDE",
+        "Use redacted test data for shared workflows",
+        "requires-engineering: document residency and retention boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
