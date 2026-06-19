@@ -53,13 +53,34 @@ class CatalogRepo:
     def verdict_path(self, *participants: str) -> Path:
         """Path to a verdict for a set of 2-4 participating agents.
 
-        Length-2 callers can still write ``verdict_path(slug_a, slug_b)``;
-        the resulting filename matches the legacy ``pair_filename`` output.
+        Resolves an EXISTING verdict file if one is present, so callers find a
+        verdict regardless of which naming convention wrote it:
+          - canonical ``<a>__<b>.json`` (written by ``save_verdict``), or
+          - versioned ``v_<date>_<a>__<b>_<hash>.json`` (written by the
+            autopilot publisher).
+        Falls back to the canonical path when none exists (i.e. for new writes).
+        Without this, ``promote_from_run`` (and the API/CLI) miss the ~85% of
+        verdicts that use the versioned filename and wrongly treat the pair as
+        unseen.
         """
         if len(participants) == 2:
-            # Preserve identical bytes/path semantics for the 2-agent case.
-            return self.config.verdicts_dir / pair_filename(*participants)
-        return self.config.verdicts_dir / participants_filename(participants)
+            canonical = self.config.verdicts_dir / pair_filename(*participants)
+        else:
+            canonical = self.config.verdicts_dir / participants_filename(participants)
+        if canonical.exists():
+            return canonical
+        versioned = self._latest_versioned_verdict(participants)
+        return versioned if versioned is not None else canonical
+
+    def _latest_versioned_verdict(self, participants: tuple[str, ...]) -> Path | None:
+        """Newest ``v_<date>_<stem>_<hash>.json`` for a participant set, if any."""
+        stem = participants_filename(participants).removesuffix(".json")
+        matches = [
+            p
+            for p in self.config.verdicts_dir.glob(f"v_*_{stem}_*.json")
+            if not p.name.endswith(".sig.json")
+        ]
+        return max(matches) if matches else None
 
     def pending_path(self, *participants: str) -> Path:
         """Path to a pending (unreviewed) verdict for a set of 2-4 participants.

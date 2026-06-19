@@ -129,3 +129,16 @@ def test_judge_missing_profile_raises(rubric_path: Path) -> None:
     judge = DocsOnlyJudge(client=_fake_client(), model="gpt-5.4-mini", rubric_path=rubric_path)
     with pytest.raises(KeyError):
         judge.evaluate(_wi(), profiles={"aider": {}})  # cursor missing
+
+
+def test_clamp_headline_bounds_to_schema_max() -> None:
+    from smadp.autopilot.judges.docs_only import _HEADLINE_MAX, _clamp_headline
+
+    short = "short headline"
+    assert _clamp_headline(short) == short
+
+    long = "word " * 80  # ~400 chars, over the 240 cap
+    clamped = _clamp_headline(long)
+    assert len(clamped) <= _HEADLINE_MAX
+    assert clamped.endswith("…")
+    assert not clamped.endswith(" …")  # cut on a word boundary, no trailing space

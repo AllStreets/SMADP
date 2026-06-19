@@ -131,3 +131,25 @@ def test_evidence_path_strips_prefix(tmp_catalog: Path) -> None:
     p2 = repo.evidence_path(plain_sha)
     assert p1 == p2
     assert p1.name == f"sha256-{plain_sha}.json"
+
+
+def test_verdict_path_resolves_versioned_filename(tmp_catalog: Path) -> None:
+    """A verdict written under the versioned ``v_<date>_<a>__<b>_<hash>.json``
+    name must be discoverable, not just the canonical ``<a>__<b>.json``.
+    Regression: promote_from_run seeded a duplicate pending verdict instead of
+    promoting the existing versioned one."""
+    import json
+
+    repo = CatalogRepo(_config_for(tmp_catalog))
+    vdir = tmp_catalog / "verdicts"
+    assert not (vdir / "omega__zeta.json").exists()  # no canonical file
+    seed = next(p for p in vdir.glob("*__*.json") if not p.name.endswith(".sig.json"))
+    doc = json.loads(seed.read_text("utf-8"))
+    doc["pair"] = ["omega", "zeta"]
+    doc["participants"] = ["omega", "zeta"]
+    versioned = vdir / "v_2026-06-10_omega__zeta_abc123.json"
+    versioned.write_text(json.dumps(doc), encoding="utf-8")
+
+    assert repo.verdict_exists("omega", "zeta")
+    assert repo.verdict_path("omega", "zeta") == versioned
+    assert tuple(repo.load_verdict("omega", "zeta").pair) == ("omega", "zeta")

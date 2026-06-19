@@ -16,19 +16,16 @@ from smadp.autopilot.pending import (
 from smadp.config import Config
 from smadp.passport.publish_sign import verify_verdict_signature
 from smadp.tenancy import keys
-
-_VERDICT = {
-    "verdict_id": "v_2026-06-12_a__b_abcd1234",
-    "evidence_level": "docs-only",
-    "headline": "ok",
-}
+from tests.autopilot._verdict_factory import valid_verdict_json
 
 
 def _stage_pending(repo: Path) -> str:
     key = "v_2026-06-12_a__b_abcd1234"
     pending = repo / "catalog" / "pending"
     pending.mkdir(parents=True)
-    (pending / f"{key}.json").write_text(json.dumps(_VERDICT), encoding="utf-8")
+    (pending / f"{key}.json").write_text(
+        valid_verdict_json("alice", "bob", key=key), encoding="utf-8"
+    )
     return key
 
 

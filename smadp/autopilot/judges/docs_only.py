@@ -68,6 +68,20 @@ def _sha256_of(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+_HEADLINE_MAX = 240
+
+
+def _clamp_headline(headline: str) -> str:
+    """Bound a headline to the schema's 240-char max, cutting on a word boundary."""
+    headline = headline.strip()
+    if len(headline) <= _HEADLINE_MAX:
+        return headline
+    cut = headline[: _HEADLINE_MAX - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut.rstrip() + "…"
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -170,7 +184,9 @@ class DocsOnlyJudge:
             "evidence_level": "docs-only",
             "confidence": float(raw.get("confidence", 0.5)),
             "composite_score": score,
-            "headline": str(raw.get("headline", "")),
+            # Schema caps headline at 240 chars; the model occasionally exceeds
+            # it. Clamp at a word boundary so the verdict stays publishable.
+            "headline": _clamp_headline(str(raw.get("headline", ""))),
             "sub_verdicts": sub_verdicts_payload,
             "framework_mappings": top_fm,
             "reproducibility": reproducibility,

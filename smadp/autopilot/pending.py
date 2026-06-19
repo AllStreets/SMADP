@@ -21,6 +21,25 @@ class PendingError(RuntimeError):
     pass
 
 
+class PendingValidationError(PendingError):
+    """A pending verdict failed Verdict-schema validation and was NOT published.
+
+    Raised by ``approve_one`` before the pending→verdicts move so malformed
+    verdicts (corrupt sub_verdicts, over-long headlines, …) can never reach the
+    public catalog. ``approve_batch`` catches this and skips the offending key.
+    """
+
+
+def _validate_verdict_file(path: Path) -> None:
+    """Raise ``PendingValidationError`` unless ``path`` is a schema-valid Verdict."""
+    from smadp.schemas.verdict import Verdict
+
+    try:
+        Verdict.model_validate_json(path.read_text("utf-8"))
+    except Exception as exc:  # pydantic ValidationError, JSON errors, …
+        raise PendingValidationError(f"{path.name}: {exc}") from exc
+
+
 @dataclass(frozen=True)
 class PendingVerdict:
     """A verdict awaiting human review."""
@@ -114,6 +133,9 @@ def approve_one(*, key: str, repo_root: Path) -> Path:
     verdicts = repo_root / "catalog" / "verdicts" / f"{key}.json"
     if not pending.exists():
         raise PendingError(f"no pending verdict at {pending}")
+    # Gate: never publish a verdict that fails the schema (corrupt sub_verdicts,
+    # over-long headline, …). Raises PendingValidationError; batch callers skip.
+    _validate_verdict_file(pending)
     verdicts.parent.mkdir(parents=True, exist_ok=True)
     try:
         pending.rename(verdicts)
@@ -244,9 +266,20 @@ def approve_batch(
         target_keys = [v.key for v in chosen]
     else:
         target_keys = list(keys)
+    import structlog
+
+    log = structlog.get_logger(__name__)
     moved: list[Path] = []
+    skipped = 0
     for key in target_keys:
-        moved.append(approve_one(key=key, repo_root=repo_root))
+        try:
+            moved.append(approve_one(key=key, repo_root=repo_root))
+        except PendingValidationError as exc:
+            # Leave the invalid verdict in pending/ rather than publishing it.
+            skipped += 1
+            log.warning("pending.approve.skipped_invalid", key=key, error=str(exc))
+    if skipped:
+        log.warning("pending.approve.skipped_summary", skipped=skipped, approved=len(moved))
     return moved
 
 
