@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__langflow_80c623",
+  "generated_at": "2026-06-19T01:56:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible by default; Langflow\u2019s unsandboxed Python and server-side state amplify the pair.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra reads/writes files and emits workflow outputs; Langflow ingests flow inputs and intermediate outputs, with server-side state and stores. That creates a plausible file-based or output-based bridge where attacker-controlled content from one can be treated as instructions by the other. No shared MCP is shown, so medium is the higher justified level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes untrusted content into /app/storage or /tmp and Langflow later reads it as flow input",
+        "IF Langflow chains a node that interprets Kestra-produced text as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents onto different hosts or containers",
+        "Disable automatic ingestion of shared files between the two systems",
+        "Add provenance tags and reject untrusted instruction-like content",
+        "Use read-only mounts for any shared directory",
+        "requires-engineering: add content-sanitization and allowlist parsing at the handoff"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra touches logs, database data, cloud storage data, messages, and notifications, while Langflow handles flow inputs, intermediate outputs, uploaded files, and stored credentials. Both have broad network egress and filesystem access, so sensitive data can flow from Kestra into Langflow and then out through model providers or HTTP services. The default blast radius includes exfiltration and compliance breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Kestra workflows pass logs, database data, or cloud storage data into Langflow flows",
+        "IF Langflow components send those inputs to external model providers or arbitrary HTTP services"
+      ],
+      "mitigations": [
+        "Do not pass sensitive datasets between the agents",
+        "Restrict Langflow flows to local-only providers and endpoints",
+        "Redact logs and payloads before any handoff",
+        "Place both agents behind an egress allowlist",
+        "requires-engineering: enforce data-class policies at the workflow boundary"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and spawn subprocesses, and Kestra also requests root/docker.sock while Langflow runs Python code server-side by default. Even without modify_git_state on Langflow, overlapping unrestricted writes to shared paths plus privileged execution creates a strong conflict risk if they operate on the same workspace or deployment. Uncertainty about deployment isolation pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents are deployed against the same writable directory or volume",
+        "IF Kestra uses root or docker.sock while Langflow executes Python code on the same host"
+      ],
+      "mitigations": [
+        "Run the agents in separate containers with separate volumes",
+        "Remove root and docker.sock from Kestra unless strictly required",
+        "Disable or isolate Langflow Python code components",
+        "Use per-agent service accounts and distinct working directories",
+        "requires-engineering: add locking or transactional coordination on shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is explicitly a graph-based flow system that can chain multiple agents, and Kestra produces workflow outputs, logs, and notifications. If Langflow consumes Kestra output as authoritative input, errors or hallucinations can cascade into downstream actions without verification. Because both have action-taking surfaces and broad egress, the default risk is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uses Kestra-generated text as a node input without validation",
+        "IF a Langflow flow triggers external API calls or agent actions based on Kestra output"
+      ],
+      "mitigations": [
+        "Insert a human review step before downstream actions",
+        "Require schema validation on Kestra outputs before Langflow consumes them",
+        "Mark Kestra outputs as untrusted in the flow metadata",
+        "Limit Langflow nodes that can trigger side effects",
+        "requires-engineering: add verification gates and typed contracts between systems"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra touches database data, cloud storage data, messages, and notifications, while Langflow stores per-flow credentials and processes uploaded files and intermediate outputs. The profiles do not specify residency or certifications, but the shared handling of sensitive operational data plus stored secrets creates a plausible retention and subject-rights mismatch. Uncertainty prevents a lower rating.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through Kestra workflows into Langflow flows",
+        "IF Langflow retains uploaded files or intermediate outputs longer than Kestra\u2019s retention policy"
+      ],
+      "mitigations": [
+        "Avoid sending regulated data into the pair",
+        "Align retention settings across both systems",
+        "Document deletion and export procedures for shared data classes",
+        "Restrict Langflow secret storage to non-regulated credentials",
+        "requires-engineering: perform a residency and certification review before deployment"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
