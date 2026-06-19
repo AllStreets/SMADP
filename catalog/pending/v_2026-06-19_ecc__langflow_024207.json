@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ecc",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-19_ecc__langflow_024207",
+  "generated_at": "2026-06-19T02:52:21Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.635,
+  "headline": "High-risk shared filesystem and unsandboxed flow execution make prompt injection, leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC reads and writes local files, MCP configs, hooks, and session state, while Langflow can ingest uploaded files and chain tools in flows. That creates a plausible content-to-instruction bridge if ECC outputs are fed into Langflow or vice versa. The pair lacks a documented provenance barrier, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ECC outputs are copied into a Langflow flow node as prompt text",
+        "IF Langflow uploads a file that ECC later reads as trusted instructions"
+      ],
+      "mitigations": [
+        "Separate the two tools into different workspaces",
+        "Disable automatic file ingestion between them",
+        "Add a manual review step before any prompt-like content is reused",
+        "Use provenance tags on all shared artifacts",
+        "requires-engineering: enforce content-type filtering at the bridge"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ECC touches session summaries, skills, hooks, git history, and security findings, while Langflow stores flow inputs, intermediate outputs, and per-flow credentials on the server filesystem. If they share a workspace or files are moved between them, sensitive material can flow from ECC into Langflow outputs or stores. This is a default-configuration concern, not merely unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ECC session files or security findings are imported into Langflow",
+        "IF Langflow stores contain credentials or sensitive flow inputs that ECC can read from the same filesystem"
+      ],
+      "mitigations": [
+        "Keep ECC and Langflow on separate hosts or containers",
+        "Restrict shared directories to non-sensitive artifacts",
+        "Rotate any credentials copied into Langflow stores",
+        "Review file permissions on both runtimes",
+        "requires-engineering: add DLP scanning at import/export boundaries"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ECC can write the filesystem, modify git state, and use MCP; Langflow can also write the filesystem and run unsandboxed Python code by default. If both operate on the same repo or server directory, concurrent writes and state changes can corrupt files or overwrite each other's outputs. The overlap is broad and dangerous in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or server filesystem",
+        "IF Langflow flows execute Python components while ECC edits the same files or git branch"
+      ],
+      "mitigations": [
+        "Assign separate directories and git branches",
+        "Serialize writes with a lock file",
+        "Disable concurrent edits during shared runs",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is explicitly a flow orchestrator, so it can treat upstream outputs as inputs to later nodes. ECC produces code, docs, and security findings, which Langflow may then route into actions or model calls without verification. That makes erroneous ECC output likely to cascade into downstream automated steps.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF a Langflow node consumes ECC-generated text without validation",
+        "IF the flow uses ECC outputs to trigger API calls or code execution"
+      ],
+      "mitigations": [
+        "Insert a validation node before any action-taking step",
+        "Require human approval for destructive branches",
+        "Limit ECC output to structured schemas",
+        "Log and diff intermediate outputs",
+        "requires-engineering: add typed contracts between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ECC handles security findings, git history, and session artifacts, while Langflow stores flow inputs and credentials server-side. The profiles do not show a residency or certification mismatch, but they do show different retention and storage surfaces that can create compliance gaps if the same regulated data class is routed through both. Uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into ECC session artifacts and then persisted in Langflow stores",
+        "IF retention or deletion policies differ for the same data class across the two systems"
+      ],
+      "mitigations": [
+        "Classify data before routing it between tools",
+        "Avoid storing regulated data in either system",
+        "Align retention settings across both systems",
+        "Document deletion/export procedures",
+        "requires-engineering: implement policy enforcement for shared data classes"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0297dec71eb04aade46409d7c9ca933d5292409253842beae6fcdbd121454931",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
