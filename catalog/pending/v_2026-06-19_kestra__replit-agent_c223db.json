@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-19_kestra__replit-agent_c223db",
+  "generated_at": "2026-06-19T01:45:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High-risk shared filesystem and broad egress create prompt-injection, leakage, and write-conflict exposure; Replit Agent\u2019s closed-source defaults keep confidence moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can read/write files and emits workflow inputs, logs, and messages; Replit Agent reads/writes Repl workspace files and operates in a persistent shared workspace. That creates a plausible file-based bridge where one agent\u2019s content can be treated as instructions by the other. No direct parser hardening is documented, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes attacker-controlled content into /app/storage or /tmp and Replit Agent reads it as task input, injection is possible.",
+        "IF Replit Agent consumes workspace files produced by Kestra without provenance checks, prompt hijack risk increases."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces or containers.",
+        "Add a manual review step before either agent consumes files from the other.",
+        "Use allowlisted file paths for cross-agent handoff.",
+        "Strip instructions-like text from shared artifacts.",
+        "requires-engineering: add provenance tagging and content-signature checks."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, while Replit Agent touches source code, secrets, and deployment configuration. Both have broad network egress and filesystem access, and Replit\u2019s workspace persists across sessions. Sensitive data can therefore flow between them or out to third parties by default, making leakage materially dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Kestra processes logs, database data, or cloud storage data that include secrets and writes them into shared workspace files, Replit Agent can read them.",
+        "IF Replit Agent sends workspace contents to package registries or deployments while secrets are present, exfiltration occurs."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared files and logs.",
+        "Disable or restrict network egress for one agent during handoff.",
+        "Use separate credentials and storage roots.",
+        "Redact sensitive fields before passing artifacts across agents.",
+        "requires-engineering: enforce DLP and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write filesystems, and use broad network egress. Replit Agent also modifies git state, while Kestra can run workflows with elevated privileges including root and docker.sock. Overlapping write authority on shared mutable resources makes destructive conflicts and race conditions likely in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace directory, file clobbering can occur.",
+        "IF Replit Agent modifies git state while Kestra writes artifacts into the same tree, conflicts can corrupt history or outputs."
+      ],
+      "mitigations": [
+        "Assign each agent a separate writable directory.",
+        "Serialize writes with a lock file or orchestrator mutex.",
+        "Disable git writes for one agent during shared runs.",
+        "Limit Kestra\u2019s elevated privileges for paired execution.",
+        "requires-engineering: add transactional coordination around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Kestra produces workflow definitions, logs, inputs, variables, and artifacts that Replit Agent can plausibly consume as authoritative workspace content. Replit Agent then acts inside the Repl with user checkpoints, which reduces but does not eliminate propagation of bad upstream outputs. The chain exists by default, but the checkpoint model keeps this below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Replit Agent uses Kestra-generated artifacts or logs as source-of-truth without verification, errors cascade.",
+        "IF Kestra emits malformed workflow definitions that Replit Agent edits or deploys, downstream mistakes propagate."
+      ],
+      "mitigations": [
+        "Require a verification step before acting on Kestra outputs.",
+        "Compare generated artifacts against a schema or checksum.",
+        "Keep human approval for deployment-affecting actions.",
+        "Separate draft outputs from executable inputs.",
+        "requires-engineering: add automated validation gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra handles database data, cloud storage data, messages, and notifications, while Replit Agent handles source code, secrets, and deployment configuration in a Replit-managed cloud environment. The profiles do not specify residency or retention controls, so a compliance mismatch is plausible but not proven. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data is placed into Replit workspaces without a DPA or residency guarantee, residency risk exists.",
+        "IF Kestra workflows retain logs longer than the organization\u2019s policy while Replit retains workspace state, retention mismatch occurs."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces.",
+        "Confirm residency and retention settings before use.",
+        "Minimize logs and redact personal data.",
+        "Use separate environments for regulated workloads.",
+        "requires-engineering: document and enforce data-processing agreements and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
