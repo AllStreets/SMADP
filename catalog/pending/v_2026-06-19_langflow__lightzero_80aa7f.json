@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "lightzero"
+  ],
+  "verdict_id": "v_2026-06-19_langflow__lightzero_80aa7f",
+  "generated_at": "2026-06-19T04:48:21Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.84,
+  "composite_score": 0.38,
+  "headline": "High-risk shared-workspace orchestration: Langflow can write and execute server-side code, while LightZero is read-only and non-networked, so the main hazards are prompt injection, leakage, and cascading errors through shared flow state.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can ingest uploaded files and arbitrary HTTP content into flows, and its graph-based flows can chain multiple agents; if LightZero outputs are routed into Langflow nodes, attacker-controlled content could be treated as instructions. LightZero itself has no ingestion surfaces, so the pathway is one-way from Langflow-side inputs, but the shared flow/server state makes injection plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF LightZero outputs are copied into a Langflow node that parses text as instructions",
+        "IF Langflow flows fetch untrusted HTTP content and pass it to downstream agents"
+      ],
+      "mitigations": [
+        "Add a strict delimiter and schema check before any text from LightZero enters Langflow",
+        "Disable free-form instruction parsing on Langflow nodes handling external content",
+        "Use a human review step for any prompt-like content before execution",
+        "requires-engineering: add provenance tags to every inter-agent message"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Langflow touches flow inputs, intermediate outputs, uploaded files, and stored credentials, while LightZero touches no data classes and has no filesystem or network surfaces. If both run in a shared workspace or server-side store, Langflow can expose sensitive flow artifacts to the pair even though LightZero itself is not a leak source.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF Langflow and LightZero share the same server-side workspace or storage backend",
+        "IF uploaded files or flow inputs contain sensitive data"
+      ],
+      "mitigations": [
+        "Separate workspaces and storage buckets for the two agents",
+        "Remove sensitive files from Langflow uploads before running paired flows",
+        "Rotate any Langflow-stored credentials after the run",
+        "Restrict access to the shared server filesystem to the minimum operator group"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Langflow has shell, package-install, subprocess, and filesystem-write capabilities, but LightZero has none of those and cannot modify shared state. There is no overlapping write surface in the profiles, so direct capability conflict is limited unless the deployment adds an external shared mutable resource not shown here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF an external shared directory or database is added outside the profiles",
+        "IF Langflow flows are configured to write into a path also used by another process"
+      ],
+      "mitigations": [
+        "Keep LightZero read-only in the paired deployment",
+        "Point Langflow writes at an isolated directory",
+        "Avoid concurrent writes from multiple Langflow instances to the same path",
+        "requires-engineering: add file locks for any shared mutable resource"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Langflow can chain multiple agents and execute server-side Python, so if LightZero outputs are fed into a Langflow flow without verification, Langflow may treat them as authoritative and act on them. LightZero is not an action-taking agent, but its outputs can still become unverified inputs to Langflow, creating a realistic cascade.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF LightZero outputs are used as inputs to a Langflow flow without validation",
+        "IF Langflow nodes trigger downstream actions based on those outputs"
+      ],
+      "mitigations": [
+        "Insert a verification step between LightZero output and Langflow action nodes",
+        "Require structured output from LightZero before Langflow consumes it",
+        "Log and review any Langflow action triggered by LightZero-derived text",
+        "requires-engineering: add confidence thresholds before downstream execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Langflow stores per-flow credentials and processes flow inputs/intermediate outputs, while LightZero is a game-playing package with no declared data classes or residency constraints. The pair does not show a direct residency or regulated-data mismatch, but Langflow\u2019s storage and logging create a small compliance gap if sensitive flow data is introduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is entered into Langflow flows",
+        "IF Langflow storage or logs retain that regulated data"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data into Langflow flows",
+        "Purge flow logs after the run",
+        "Store credentials outside the default Langflow store where possible",
+        "Document retention settings for the shared deployment"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:4dac3b820cd8d8a41361ec1096abfa1a5e50e9418917bb8356a99df8ef3dc32b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
