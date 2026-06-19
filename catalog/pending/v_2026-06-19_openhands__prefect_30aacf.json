@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "openhands",
+    "prefect"
+  ],
+  "verdict_id": "v_2026-06-19_openhands__prefect_30aacf",
+  "generated_at": "2026-06-19T05:21:26Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and network overlap: OpenHands can write/egress broadly while Prefect can ingest API data, creating medium prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "OpenHands can read/write files, run browsers, and use MCP; Prefect can call APIs and orchestrate workflows. The pair has a mounted-volume bridge via OpenHands and no documented provenance or isolation between outputs and inputs, so prompt-like content in shared files or workflow metadata can steer OpenHands. This is not provably blocked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Prefect writes attacker-controlled text into a shared mounted volume or workflow artifact that OpenHands later reads as instructions",
+        "IF OpenHands consumes MCP/file content without provenance filtering"
+      ],
+      "mitigations": [
+        "Separate the agents onto different volumes",
+        "Disable MCP for the OpenHands session",
+        "Add a manual review step before OpenHands reads Prefect-produced artifacts",
+        "Prefix all Prefect outputs with non-executable metadata headers",
+        "requires-engineering: add provenance tagging and content-type enforcement"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "OpenHands touches files mounted into its runtime and handles model-provider API keys; Prefect touches workflow metadata and has broad network egress. If both share a workspace or mounted volume, file contents can flow from OpenHands into Prefect outputs or API calls. The profiles do not show local-only inference or a hard isolation boundary, so leakage is plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mounted workspace or artifact directory",
+        "IF Prefect serializes workflow metadata containing file-derived content to external services"
+      ],
+      "mitigations": [
+        "Use separate workspaces for each agent",
+        "Remove secrets from any shared directory before Prefect runs",
+        "Restrict Prefect tasks to metadata-only inputs",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-agent data-loss-prevention filters"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "OpenHands has write_filesystem, modify_git_state, and broad network egress; Prefect can also perform networked orchestration. If both operate on the same repo or mutable workspace, concurrent writes and git mutations can race and corrupt state. The profiles show no locking or coordination primitive, so the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git checkout or writable directory",
+        "IF Prefect triggers actions while OpenHands is editing the same files"
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout",
+        "Serialize writes with a lock file",
+        "Disable git mutation in one agent during shared runs",
+        "Run one agent read-only until the other finishes",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "OpenHands can generate code, browser-derived findings, and file edits; Prefect can orchestrate downstream workflows. If Prefect treats OpenHands output as authoritative without verification, errors can cascade into automated pipeline actions. The interaction is plausible but not documented as fully autonomous, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        }
+      ],
+      "conditions": [
+        "IF Prefect consumes OpenHands-produced artifacts or summaries without validation",
+        "IF Prefect triggers downstream jobs based on those artifacts"
+      ],
+      "mitigations": [
+        "Require human approval before Prefect acts on OpenHands output",
+        "Add schema validation to OpenHands-produced files",
+        "Compare outputs against a second source before execution",
+        "Limit Prefect to read-only ingestion of OpenHands artifacts",
+        "requires-engineering: implement confidence and provenance checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "OpenHands handles model-provider API keys and runtime files, while Prefect is documented here as touching workflow metadata only. No explicit residency, retention, or regulated-data mismatch is shown, so compliance risk is limited to documented gaps rather than a clear breach pathway. Prefect is not cited for a stronger claim because its profile lacks such controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into OpenHands runtime files and then exported through Prefect-managed workflows",
+        "IF the deployment stores workflow metadata in a jurisdiction with stricter residency rules"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Document retention for workflow metadata",
+        "Mask secrets before any Prefect export",
+        "Review deployment region settings",
+        "requires-engineering: add residency and retention policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8e5f9fc2307783e8ec6d9e0e159b14764298828689231c78e9b8293eca27f16e",
+    "profile_b_hash": "sha256:4bcd3fe1db524c4b7fe6c4f45c75a2a980cd840413fef464a7616750d8a3f437",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
