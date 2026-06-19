@@ -72,12 +72,15 @@ def test_atomic_write_no_partial_file_on_failure(tmp_catalog: Path) -> None:
 # ------------------------------------------------------------------ verdicts
 def test_verdict_filename_alphabetized(tmp_catalog: Path) -> None:
     repo = CatalogRepo(_config_for(tmp_catalog))
-    # Look up a known verdict in either pair order — both should resolve.
-    path_in = repo.verdict_path("cursor", "claude-code")
-    path_canon = repo.verdict_path("claude-code", "cursor")
-    assert path_in == path_canon
-    assert path_in.name == "claude-code__cursor.json"
-    assert path_in.exists()
+    # For a pair with no existing file, verdict_path returns the canonical
+    # alphabetized name, independent of input order.
+    p1 = repo.verdict_path("zebra-agent", "alpha-agent")
+    p2 = repo.verdict_path("alpha-agent", "zebra-agent")
+    assert p1 == p2
+    assert p1.name == "alpha-agent__zebra-agent.json"
+    # An existing verdict also resolves order-independently to the same file.
+    assert repo.verdict_path("cursor", "claude-code") == repo.verdict_path("claude-code", "cursor")
+    assert repo.verdict_path("claude-code", "cursor").exists()
 
 
 def test_load_verdict_from_either_order(tmp_catalog: Path) -> None:
@@ -91,11 +94,19 @@ def test_load_verdict_from_either_order(tmp_catalog: Path) -> None:
 
 def test_save_verdict_alphabetized_filename(tmp_catalog: Path) -> None:
     repo = CatalogRepo(_config_for(tmp_catalog))
-    v = repo.load_verdict("claude-code", "cursor")
+    # Re-key an existing verdict onto a fresh pair (no existing file) so the new
+    # write lands on the canonical alphabetized filename.
+    src = repo.load_verdict("claude-code", "cursor")
+    v = src.model_copy(
+        update={
+            "pair": ("alpha-agent", "zebra-agent"),
+            "participants": ["alpha-agent", "zebra-agent"],
+        }
+    )
     path = repo.save_verdict(v)
-    assert path.name == "claude-code__cursor.json"
+    assert path.name == "alpha-agent__zebra-agent.json"
     # Reload from disk to confirm round-trip.
-    v2 = repo.load_verdict("claude-code", "cursor")
+    v2 = repo.load_verdict("alpha-agent", "zebra-agent")
     assert v2.verdict_id == v.verdict_id
 
 
