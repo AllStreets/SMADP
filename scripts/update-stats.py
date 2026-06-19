@@ -26,6 +26,20 @@ def count_glob(rel: str) -> int:
     return len(list(REPO.glob(rel)))
 
 
+def count_verdicts() -> int:
+    """Published verdicts, excluding detached BYOK signature sidecars.
+
+    Each verdict can have a sibling ``<key>.sig.json`` signature sidecar in
+    catalog/verdicts/; those are not verdicts and must not be counted (a naive
+    ``*.json`` glob double-counts to 2x the real total).
+    """
+    return sum(
+        1
+        for p in (REPO / "catalog" / "verdicts").glob("*.json")
+        if not p.name.endswith(".sig.json")
+    )
+
+
 def count_profiles() -> int:
     """Total agents profiled: verified top-level + unverified seeds.
 
@@ -44,6 +58,8 @@ def count_sandbox_validated() -> int:
     needle = '"sandbox-validated"'
     n = 0
     for p in (REPO / "catalog" / "verdicts").glob("*.json"):
+        if p.name.endswith(".sig.json"):
+            continue  # detached BYOK signature sidecar, not a verdict
         try:
             if needle in p.read_text(encoding="utf-8"):
                 n += 1
@@ -154,7 +170,7 @@ def update_banner(verdicts: int) -> bool:
 
 def main() -> int:
     profiles = count_profiles()
-    verdicts = count_glob("catalog/verdicts/*.json")
+    verdicts = count_verdicts()
     sandbox = count_sandbox_validated()
     adapters = count_adapters()
 
