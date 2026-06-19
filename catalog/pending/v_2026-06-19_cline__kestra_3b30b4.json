@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-06-19_cline__kestra_3b30b4",
+  "generated_at": "2026-06-19T01:18:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.77,
+  "headline": "High-risk shared filesystem and broad egress create dangerous default interaction between Cline and Kestra; compliance and cascading-error risks are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline reads and writes workspace files and uses MCP, while Kestra reads/writes files and can ingest workflow inputs. That creates a plausible shared-file bridge where attacker-controlled content from one can influence the other. The pathway is not proven by evidence, so I avoid high, but the default shared filesystem makes injection realistic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or storage path",
+        "IF Kestra consumes files produced by Cline without content validation",
+        "IF Cline loads untrusted file content into prompts or tool instructions"
+      ],
+      "mitigations": [
+        "Separate workspaces and storage paths",
+        "Disable MCP servers that read shared files",
+        "Add content provenance tags before file handoff",
+        "Require manual review of any file-derived instructions",
+        "requires-engineering: add sandboxed, read-only handoff directories"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Cline touches source code and browser screenshots and has broad network egress; Kestra handles logs, inputs, variables, artifacts, database data, cloud storage data, and notifications. If they share a workspace or pipeline, sensitive data can flow from Cline into Kestra outputs or external services. The blast radius includes exfiltration and compliance breach, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Cline is given secrets, screenshots, or proprietary code in the same workspace Kestra can access",
+        "IF Kestra forwards workflow data to Slack, email, cloud, or other APIs",
+        "IF shared files are mounted into both agents without redaction"
+      ],
+      "mitigations": [
+        "Remove secrets from shared folders",
+        "Restrict Kestra connectors to non-sensitive destinations",
+        "Turn off Cline network egress for sensitive sessions",
+        "Use separate service accounts and storage buckets",
+        "requires-engineering: enforce DLP/redaction on shared artifacts"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write filesystems, and Cline also modifies git state. With shared filesystem-based concurrency and no documented locking between them, concurrent writes can corrupt worktrees, workflows, or generated artifacts. Because the overlap is broad and defaults are unsafe, high fits better than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository or output directory",
+        "IF Kestra tasks and Cline sessions run concurrently",
+        "IF no external lock or lease mechanism serializes writes"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Pause one agent during the other's write phase",
+        "Use git locks or a single committer",
+        "Make Kestra outputs append-only where possible",
+        "requires-engineering: add distributed locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Cline can generate code, browser-derived findings, and file edits; Kestra can trigger downstream tasks, notifications, and cloud actions. If Kestra treats Cline output as authoritative, a mistaken or malicious suggestion can cascade into emails, deployments, or data moves. The pair therefore has a default path from generated content to action-taking authority.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Kestra ingests Cline-produced files or text as workflow inputs",
+        "IF downstream tasks act on those inputs without verification",
+        "IF notifications or cloud actions are enabled in the workflow"
+      ],
+      "mitigations": [
+        "Insert a human approval step before execution",
+        "Validate Cline outputs against schemas",
+        "Limit Kestra to dry-run mode for generated artifacts",
+        "Require checksum or signature checks on handoffs",
+        "requires-engineering: add policy gates before action tasks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "Cline handles source code and browser screenshots, while Kestra processes logs, inputs, variables, artifacts, database data, cloud storage data, messages, and notifications. If regulated or EU personal data enters the shared workflow, Kestra's broad API integrations and storage surfaces can move it across services or regions without a documented DPA/residency control. That creates a compliance-breach pathway in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data, PHI, or other regulated data is processed by both agents",
+        "IF Kestra routes that data to third-party APIs or cloud services",
+        "IF retention or residency settings are not explicitly constrained"
+      ],
+      "mitigations": [
+        "Classify data before handing it to either agent",
+        "Disable nonessential external connectors",
+        "Set explicit retention limits in Kestra",
+        "Keep regulated data out of Cline screenshots and workspaces",
+        "requires-engineering: document residency and DPA controls per workflow"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
