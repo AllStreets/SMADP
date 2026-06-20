@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "openhands"
+  ],
+  "verdict_id": "v_2026-06-20_authelia__openhands_9bf462",
+  "generated_at": "2026-06-20T01:58:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.425,
+  "headline": "High: OpenHands can write/browse/network inside a Docker runtime while Authelia exposes OAuth/OIDC/ForwardAuth, creating dangerous shared-resource and trust-boundary risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "A does not show a direct ingestion channel from B by default, but B can use MCP, read files, and browse, so if Authelia outputs are copied into B\u2019s runtime or MCP inputs, prompt injection is plausible. The pair lacks a documented shared channel, so this is lower than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Authelia output is pasted into OpenHands prompts or MCP inputs",
+        "IF a shared file or message channel is mounted into OpenHands without provenance checks"
+      ],
+      "mitigations": [
+        "Disable copy-paste of untrusted Authelia output into OpenHands",
+        "Add a provenance prefix to any Authelia-generated text before reuse",
+        "Restrict MCP servers to allowlisted, read-only endpoints",
+        "Use a separate workspace for Authelia logs and OpenHands inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Authelia handles OAuth/OIDC and broad network egress, while OpenHands reads and writes mounted files and can send data to a configured model provider. If sensitive files or tokens enter the shared runtime, OpenHands can exfiltrate them through its inference path. The pairwise leak path is plausible in default OpenHands deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files or tokens are mounted into the OpenHands runtime",
+        "IF OpenHands is configured with a third-party model provider",
+        "IF Authelia logs or OIDC artifacts are written into the shared volume"
+      ],
+      "mitigations": [
+        "Mount only the minimum necessary files into OpenHands",
+        "Rotate any secrets that may have been exposed in the runtime",
+        "Store Authelia logs outside the OpenHands-mounted volume",
+        "Use a local model provider for OpenHands where possible",
+        "Review runtime mounts for tokens before starting the pair"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Authelia has broad network egress and OAuth/OIDC-facing APIs, while OpenHands can write the filesystem, modify git state, and install packages inside its runtime. If both touch the same mounted volume or repo, their writes can conflict and corrupt state. The concurrency model only mentions mounted-volume sharing, so coordination is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same mounted directory",
+        "IF OpenHands modifies git state in a repo that Authelia also writes to",
+        "IF no external locking is used on shared files"
+      ],
+      "mitigations": [
+        "Give each agent a separate working directory",
+        "Avoid concurrent git operations on the same repo",
+        "Add a simple file lock around shared writes",
+        "Snapshot the volume before running both agents"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "OpenHands can act on files and git state, so if it consumes Authelia-generated outputs as authoritative configuration or instructions, errors can cascade into incorrect edits or deployments. Authelia\u2019s outputs are not documented as verified facts, and OpenHands\u2019 agent loop can execute them without an explicit validation step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands uses Authelia output as direct input to shell or git actions",
+        "IF no human or automated verification step checks Authelia-derived instructions"
+      ],
+      "mitigations": [
+        "Require a review step before OpenHands executes Authelia-derived changes",
+        "Limit OpenHands to dry-run mode for Authelia-related tasks",
+        "Compare Authelia output against a second source before acting",
+        "Log all Authelia-to-OpenHands handoffs for audit"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Authelia is an authentication service and OpenHands can handle model-provider API keys and mounted files, so compliance risk exists if regulated data is placed into the runtime. However, no specific residency or certification mismatch is documented for this pair, so the issue is limited to documented gaps and handling discipline.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is mounted into OpenHands",
+        "IF Authelia logs contain personal data and are retained in the runtime volume"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the OpenHands workspace",
+        "Set short retention on runtime volumes",
+        "Separate authentication logs from agent workspaces",
+        "Document which data classes may enter the pair"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:0345cd7b3df6bba823b893f8ad14411216e1ed73428db3bb44ba121b9768c380",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
