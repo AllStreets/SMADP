@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-20_authelia__langflow_5091c3",
+  "generated_at": "2026-06-20T02:26:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: Langflow\u2019s default server-side file, code, and network surfaces can amplify Authelia-fed inputs into prompt injection, leakage, and cascading action errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Authelia can expose OAuth/ForwardAuth outputs and broad network egress, while Langflow ingests files and chains tools in graph flows. A shared filesystem or copied outputs can let attacker-controlled content from Authelia-adjacent flows be treated as instructions by Langflow. This is plausible in default deployments, though not directly documented as a bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Authelia outputs are copied into Langflow file inputs or flow variables",
+        "IF Langflow nodes parse those inputs as instructions or prompts"
+      ],
+      "mitigations": [
+        "Restrict Langflow inputs to plain data schemas",
+        "Add a provenance label to all Authelia-derived content",
+        "Disable any node that executes free-form text as instructions",
+        "Use separate workspaces for the two systems",
+        "requires-engineering: add content-sanitization and allowlists at the flow boundary"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Authelia handles authentication traffic and has broad network egress; Langflow stores per-flow credentials and reads/writes server filesystem files. If the same workspace or secrets are exposed to both, Langflow can surface intermediate outputs and credentials while Authelia-related data may traverse networked components. The pair creates a realistic leakage path, though the exact shared-data flow is not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are deployed on the same host or shared volume",
+        "IF sensitive flow inputs or credentials are placed into Langflow files or stores"
+      ],
+      "mitigations": [
+        "Separate storage volumes for each agent",
+        "Move secrets out of Langflow stores where possible",
+        "Rotate any credentials that were imported into flows",
+        "Limit Authelia logs to non-sensitive fields",
+        "requires-engineering: enforce per-agent data segregation and retention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Authelia has broad network egress, and Langflow can execute shell, install packages, spawn subprocesses, and write the filesystem. If they share a writable directory or deployment host, Langflow can overwrite artifacts while Authelia serves traffic, creating direct conflict and possible irreversible state corruption. The profiles show overlapping mutable surfaces and no locking mechanism.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a writable directory or container volume",
+        "IF Langflow flows modify files that Authelia reads or serves"
+      ],
+      "mitigations": [
+        "Place each agent in its own filesystem namespace",
+        "Mount Authelia config read-only",
+        "Disable Langflow write access to shared paths",
+        "Run both under separate service accounts",
+        "requires-engineering: add locking around any shared mutable resource"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is a graph-based orchestrator that can chain multiple agents and tools, while Authelia can emit authentication decisions and related outputs. If Langflow treats Authelia-derived outputs as authoritative, it can propagate a mistaken auth or policy result into downstream actions without verification. That creates a default-dangerous cascade with potentially irreversible operational impact.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uses Authelia outputs as flow inputs without validation",
+        "IF downstream nodes take actions based on those outputs"
+      ],
+      "mitigations": [
+        "Insert a verification step before any action node",
+        "Require structured, typed outputs from Authelia",
+        "Add human approval for sensitive downstream actions",
+        "Log and diff intermediate decisions before execution",
+        "requires-engineering: implement policy checks between flow nodes"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Authelia is an authentication service and Langflow stores flow inputs, intermediate outputs, and per-flow credentials. Even without a named residency mismatch, the pair can place sensitive identity and workflow data under different retention and logging regimes. The compliance risk is therefore a policy mismatch on shared data classes, not a proven jurisdictional violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF authentication logs or flow inputs contain regulated personal data",
+        "IF Authelia and Langflow retention or deletion policies differ for the same records"
+      ],
+      "mitigations": [
+        "Align retention settings across both systems",
+        "Minimize identity data stored in flows",
+        "Document which system is system-of-record for each data class",
+        "Review logs for regulated fields",
+        "requires-engineering: implement unified deletion/export handling"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
