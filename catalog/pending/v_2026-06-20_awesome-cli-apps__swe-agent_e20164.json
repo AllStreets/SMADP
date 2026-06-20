@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "awesome-cli-apps",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-20_awesome-cli-apps__swe-agent_e20164",
+  "generated_at": "2026-06-20T05:37:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High: shared filesystem and broad egress make prompt-injection, leakage, and cascading-error pathways plausible; compliance risk is limited by lack of sensitive-data evidence.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A is a content-writing source with no isolation fields, while agent B can read/write the filesystem and execute shell commands. That creates a plausible shared-file bridge where A\u2019s text could be treated as instructions by B. The pair lacks direct documentation of a bridge, so I choose medium rather than low because the pathway exists in default-style file handoff workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF agent A\u2019s output is saved into a file that agent B reads without provenance checks, injection is possible.",
+        "IF the orchestrator passes A-generated text to B via shared workspace or stdin/stdout, B may follow attacker-controlled instructions."
+      ],
+      "mitigations": [
+        "Add a provenance banner to A outputs before B consumes them.",
+        "Require B to treat A text as untrusted data, not instructions.",
+        "Use separate directories for A and B work products.",
+        "Insert a manual review step before B acts on A output."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent B explicitly touches repository code and has broad network egress plus access to model-provider API keys and GitHub tokens; agent A is a content-writing agent with broad egress but no declared data classes. If A\u2019s outputs or B\u2019s workspace contain sensitive repository material, B can transmit it outward. The evidence is indirect, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF repository secrets or tokens are present in B\u2019s sandbox, they can be exfiltrated over B\u2019s broad egress.",
+        "IF A writes sensitive content into a shared workspace that B reads, B may upload it to its model provider or other network destinations."
+      ],
+      "mitigations": [
+        "Remove secrets from the task workspace before launch.",
+        "Disable network egress for B when handling sensitive repositories.",
+        "Keep A and B in separate containers with no shared filesystem.",
+        "Rotate any exposed API keys after the run."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Agent B can write the filesystem and modify git state; agent A has no explicit write surface, but its content-writing role can still generate artifacts that B may overwrite or commit. There is no documented locking or shared-state control between them, so conflict is plausible but not proven. I choose medium because overlapping mutable workflows can corrupt work products even without a direct same-dir guarantee.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository checkout, B can overwrite files or git state produced by A.",
+        "IF the orchestrator does not serialize writes, concurrent edits can corrupt the working tree."
+      ],
+      "mitigations": [
+        "Assign separate working directories to A and B.",
+        "Serialize write phases with a simple lock file.",
+        "Have B commit only after diff review.",
+        "Disable git mutation unless explicitly needed."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A is a content-writing agent, so its outputs may be treated as facts or drafts by B, which can execute shell commands and modify git state. That makes a classic cascade possible: A\u2019s text becomes B\u2019s action input without verification. Because no direct handoff is documented, I keep this at medium rather than high, but uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A\u2019s output as authoritative without a verification step, incorrect content can become code or commits.",
+        "IF A produces malformed instructions or summaries, B may operationalize them into repository changes."
+      ],
+      "mitigations": [
+        "Require B to verify A outputs against source files before acting.",
+        "Use a checklist for any shell or git action derived from A.",
+        "Limit B to read-only mode until review is complete.",
+        "Log every A-to-B handoff for auditability."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No PHI, EU PII, or regulated data class is declared for either agent, so a concrete residency or certification mismatch is not evidenced. Agent B does handle model-provider API keys and GitHub tokens, but that is a security concern rather than a compliance breach by itself. I therefore rate this low, with the caveat that undisclosed regulated data would raise it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is introduced into B\u2019s sandbox, compliance review is required.",
+        "IF A or B is deployed under a residency policy not reflected in the profiles, the mismatch may become material."
+      ],
+      "mitigations": [
+        "Confirm the task contains no regulated data.",
+        "Document the data residency policy before use.",
+        "Keep secrets out of the analyzed repository.",
+        "Add a pre-run compliance checklist."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fefdbb6d8c032e38c48d27d194c4a1fff45a12be910c383d2e8b084c5be049a",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
