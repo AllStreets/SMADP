@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "devin"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__devin_d63675",
+  "generated_at": "2026-06-20T04:01:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.54,
+  "composite_score": 0.68,
+  "headline": "High-risk default workspace overlap: Devin can write and exfiltrate while Argo Workflows can ingest and route artifacts, creating prompt-injection, leakage, and compliance exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Devin can use MCP, browsers, and shared integrations, so it may pass attacker-controlled content into Argo-managed artifacts or APIs. Argo Workflows consumes artifacts/parameters and calls REST/gRPC, but its profile does not show provenance filtering. The bridge is plausible, though not directly documented for this pair, so I choose medium over low due to uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Devin forwards untrusted web or repo content into Argo parameters or artifacts",
+        "IF Argo templates render or execute those parameters without provenance checks"
+      ],
+      "mitigations": [
+        "Add a manual review step before any Devin-produced artifact is passed to Argo",
+        "Restrict Devin MCP servers to read-only sources for this workflow",
+        "Use allowlisted parameter schemas in Argo",
+        "Tag all inbound content with source metadata",
+        "requires-engineering: add provenance enforcement between Devin outputs and Argo inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters, while Devin reads files, handles repo clones, and has broad network egress plus integration tokens. If they share a workspace or repo, Devin can expose data through GitHub/Slack/Jira/Notion or external APIs. The pairwise leakage path is plausible in default cloud workflows, but the exact shared storage is not documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts or parameters contain secrets, credentials, or sensitive parameters",
+        "IF Devin has access to the same repo clone, cloud workspace files, or integration tokens"
+      ],
+      "mitigations": [
+        "Remove secrets from Argo artifacts before Devin can access them",
+        "Limit Devin to a separate repo clone or workspace",
+        "Rotate any integration tokens exposed to Devin",
+        "Disable outbound posting from Devin for sensitive runs",
+        "requires-engineering: enforce workspace isolation and secret redaction"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Devin has write_filesystem, modify_git_state, and broad network egress; Argo Workflows can also affect artifacts and parameters in the same delivery pipeline. If both operate on the same repo or workspace, concurrent writes and git mutations can corrupt state or overwrite each other. Because Devin explicitly supports parallel sessions and shared integrations, the conflict is dangerous by default enough to rate high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository, artifact directory, or cloud workspace",
+        "IF Devin and Argo runs overlap without locking or branch isolation"
+      ],
+      "mitigations": [
+        "Assign separate branches or directories per agent",
+        "Pause one agent while the other writes",
+        "Use lock files or CI serialization",
+        "Review git diffs before merge",
+        "requires-engineering: add orchestrator-level concurrency locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Devin is an autonomous planner-executor, and Argo Workflows can consume its outputs as artifacts or parameters. If Devin produces incorrect facts or commands and Argo treats them as authoritative, the error can cascade into automated workflow actions. The profiles show no built-in verification boundary between them, so the safer high severity is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Argo uses Devin-generated artifacts or parameters as direct workflow inputs",
+        "IF no human or automated verification step checks Devin output before execution"
+      ],
+      "mitigations": [
+        "Require approval before Argo consumes Devin outputs",
+        "Validate Devin outputs against schemas",
+        "Add checksum or signature checks on handoff files",
+        "Limit Argo actions to dry-run mode first",
+        "requires-engineering: implement verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "Devin requests Slack, Jira, Notion, and GitHub write scopes and handles integration tokens, while Argo touches artifacts and parameters in a workflow context. If regulated or residency-bound data flows from Argo into Devin's third-party integrations, compliance breaches can occur without user awareness. The profiles do not show matching residency or retention controls, so high is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated, EU, or retention-sensitive data is present in Argo artifacts or parameters",
+        "IF Devin posts or stores that data in Slack, Jira, Notion, GitHub, or other external integrations"
+      ],
+      "mitigations": [
+        "Exclude regulated data from handoffs to Devin",
+        "Use redacted copies of artifacts",
+        "Restrict Devin integrations for sensitive projects",
+        "Document retention and residency for each integration",
+        "requires-engineering: add policy-based data routing and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:e49e95b9aded59a67a94b951be82c9070b8d5751d563fd2b8f4c52390b7c18f2",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

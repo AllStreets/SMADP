@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__langgraph_95f371",
+  "generated_at": "2026-06-20T04:02:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: LangGraph\u2019s writable, networked orchestration can amplify Argo Workflows outputs into unsafe actions and compliance exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can emit artifacts/parameters over REST/gRPC, and LangGraph can ingest application-defined files and developer-defined tools with no self-isolation. That creates a plausible default path where attacker-controlled workflow output becomes prompt content or tool instructions. The pairwise bridge is indirect, so I rate it medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Argo outputs are copied into LangGraph node inputs without sanitization",
+        "IF LangGraph tools parse workflow artifacts as instructions"
+      ],
+      "mitigations": [
+        "Add a strict content filter before LangGraph consumes Argo outputs",
+        "Separate workflow artifacts from prompt text in distinct files",
+        "Disable automatic tool execution on imported content",
+        "Log and review any prompt-like tokens in workflow outputs",
+        "requires-engineering: add provenance tags from Argo to LangGraph inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters, while LangGraph reads/writes application-defined files and sends data to model providers with broad egress. If the pair shares a workspace or checkpointer-backed state, sensitive artifacts can flow from Argo into LangGraph and then out to third-party inference. The profiles do not prove a shared workspace, so this is medium, not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts are stored in the same workspace or checkpointer state used by LangGraph",
+        "IF LangGraph forwards those files or state into model-provider calls"
+      ],
+      "mitigations": [
+        "Store Argo artifacts in a separate directory from LangGraph state",
+        "Redact secrets before any LangGraph tool call",
+        "Restrict LangGraph model-provider access to non-sensitive runs",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-run data classification gates"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo can call APIs and LangGraph can execute shell, spawn subprocesses, read/write files, and use broad network egress. Even without modify_git_state, both can mutate shared filesystem-backed application state or external services, and LangGraph\u2019s checkpointer enables shared state across instances. That overlap makes conflicting writes and race conditions dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or external API resource",
+        "IF LangGraph instances share the same checkpointer store while Argo writes related artifacts"
+      ],
+      "mitigations": [
+        "Assign disjoint directories and resource IDs per agent",
+        "Serialize writes through a single owner process",
+        "Turn off concurrent runs against the same state store",
+        "Add file-locking or optimistic concurrency checks",
+        "requires-engineering: redesign shared-state access around leases"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Argo produces artifacts/parameters, and LangGraph is a stateful orchestration layer that can route those outputs into developer-defined tools and model-provider calls. If LangGraph treats Argo output as authoritative, a bad upstream result can cascade into downstream actions or generated decisions without verification. The interaction is plausible in default orchestration patterns, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph uses Argo-produced parameters as node inputs without validation",
+        "IF downstream LangGraph nodes take actions based on those inputs"
+      ],
+      "mitigations": [
+        "Insert a verification step between Argo and LangGraph",
+        "Require schema validation on all upstream outputs",
+        "Mark Argo outputs as untrusted in LangGraph prompts",
+        "Add human approval before any irreversible downstream action",
+        "requires-engineering: implement provenance-aware routing"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo handles artifacts and parameters, while LangGraph handles model-provider API keys and application-defined files with broad egress. That combination can create retention and residency mismatches if workflow artifacts contain regulated data and LangGraph forwards them to external providers. The profiles do not specify a concrete jurisdiction mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Argo artifacts or parameters",
+        "IF LangGraph sends that data to a provider with different retention or residency terms"
+      ],
+      "mitigations": [
+        "Classify regulated inputs before orchestration",
+        "Block regulated data from model-provider calls",
+        "Set explicit retention limits on LangGraph logs and checkpoints",
+        "Review provider DPAs and residency settings",
+        "requires-engineering: add policy enforcement for data-class routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

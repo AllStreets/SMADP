@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__windsurf_22716c",
+  "generated_at": "2026-06-20T04:01:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High: shared filesystem and permissive tool use make prompt injection, leakage, and write conflicts plausible by default; compliance risk is lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Windsurf reads workspace files, clipboard, and MCP inputs, and can act on them with tool use; Argo Workflows emits artifacts/parameters over REST/GRPC. If Argo outputs are copied into Windsurf or surfaced through a shared workspace/MCP channel, attacker-controlled content can steer the agent. The pair lacks provenance controls in the profiles, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Argo outputs are pasted or synced into Windsurf clipboard/workspace inputs, prompt injection becomes reachable.",
+        "IF an MCP server relays Argo-produced text into Windsurf without provenance tagging, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Disable clipboard-based transfer between the tools.",
+        "Route Argo outputs through a plain-text sanitizer before Windsurf reads them.",
+        "Require provenance labels on any MCP-fed content.",
+        "Keep Argo artifacts in a separate directory from Windsurf workspaces.",
+        "requires-engineering: add content-trust checks before Windsurf tool execution."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters and has allowlisted egress; Windsurf reads workspace files, open files, and can send data through its model proxy/MCP with broad egress. A shared workspace or copied files can therefore expose sensitive code or parameters to a third-party backend. This is not proven by direct pair evidence, but the documented surfaces make leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts or parameters contain secrets and are opened in Windsurf, those contents can leave the local boundary.",
+        "IF both agents operate on the same workspace directory, file contents may flow into Windsurf's inference path."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared workspaces.",
+        "Use separate directories for Argo outputs and Windsurf inputs.",
+        "Redact parameters before opening files in Windsurf.",
+        "Restrict Argo egress to the minimum allowlist.",
+        "requires-engineering: enforce DLP on workspace files before model upload."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo can call APIs and run workflows, while Windsurf can write the filesystem, modify git state, spawn subprocesses, and use MCP. Windsurf also shares state via the local filesystem across instances. If both touch the same repo or workspace, concurrent writes and git mutations can collide without locking. The overlap is directly documented, so this is a default-dangerous conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Argo and Windsurf target the same repository or workspace, concurrent file writes can race.",
+        "IF Windsurf auto-executes commands while Argo is updating artifacts, git state can diverge or be corrupted."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Disable Windsurf auto-execute for shared repos.",
+        "Serialize writes with a lock file.",
+        "Pause one agent during the other's commit or artifact phase.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Argo produces artifacts and parameters that Windsurf can read from files or MCP inputs, and Windsurf can then act on them with shell, git, or network tools. If Windsurf treats Argo output as authoritative, a bad upstream artifact can cascade into incorrect code changes or commands. The pairwise pathway is plausible but not directly evidenced, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes Argo-generated artifacts without verification, upstream errors can propagate into edits or commits.",
+        "IF Argo emits malformed parameters and Windsurf uses them in shell commands, the error can cascade into execution."
+      ],
+      "mitigations": [
+        "Require human review of Argo outputs before Windsurf acts.",
+        "Validate artifact schemas before import.",
+        "Separate generation and execution steps.",
+        "Disable auto-commit on Windsurf for Argo-derived changes.",
+        "requires-engineering: add typed contracts between workflow outputs and IDE actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Argo is open-source and documented as touching artifacts/parameters, while Windsurf is closed-source and handles workspace files plus model-provider keys. The profiles do not show a specific residency or certification mismatch, so only a general compliance gap is visible: sensitive workspace data may enter a vendor-managed editor. Because the other agent is not clearly implicated in a distinct policy breach, this stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in Windsurf workspaces, vendor-managed processing may trigger policy review.",
+        "IF organizational policy forbids closed-source tooling on workflow artifacts, the pair violates that policy."
+      ],
+      "mitigations": [
+        "Keep regulated data out of Windsurf workspaces.",
+        "Review vendor terms for model-provider key handling.",
+        "Use synthetic data for shared workflows.",
+        "Document data-flow boundaries for Argo artifacts.",
+        "requires-engineering: perform a formal residency and retention assessment."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
