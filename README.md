@@ -8,7 +8,7 @@
 
 <a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C250-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-1%2C350-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-8-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-9-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-381-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
@@ -47,7 +47,12 @@ You install Claude Code. Then Cursor. Then a calendar agent. Then a notes agent.
 - A **multi-agent chain analysis** for 3+-agent compositions (linear, star, loop).
 - A **transcript-grounded sandbox grading** when the pair has been run end-to-end in a Docker sandbox under our five-scenario suite.
 
-Every verdict is **evidence-grounded** — each sub-verdict's *Grounded in* row names the exact agent-profile fields the claim rests on (e.g. *Agent A · IO surfaces · Files*), expanding to a verbatim quote wherever the content-addressed evidence store under `catalog/_evidence/` has one — **risk-typed** (five risk categories evaluated independently), and **reproducible** (deterministic temperature=0 LLM calls).
+Every verdict is **evidence-grounded** — each sub-verdict's *Grounded in* row names the exact agent-profile fields the claim rests on (e.g. *Agent A · IO surfaces · Files*), expanding to a verbatim quote wherever the content-addressed evidence store under `catalog/_evidence/` has one — and **risk-typed** (five risk categories evaluated independently).
+
+> ### Two classes of verdict — and we label which is which
+> Most verdicts are **heuristic estimates**: an LLM reads two agents' public-docs profiles and reasons about how they'd interact. **No code runs.** These carry an evidence level of `docs-only` (or lower) and are best read as risk *priors*, not proof.
+>
+> A verdict becomes **`sandbox-validated`** only when the pair is *actually executed* together in a Docker sandbox under a scenario and an LLM grades the real transcript — reproducible and signed. Today that's a small, deliberately-curated set (the `sandbox-validated` badge above is the honest count), growing one hand-authored real adapter at a time (e.g. `aider`, `goose`, `gptme`). The site's evidence badge shows **`▶ executed · sandbox`** for these and flags the rest as not-executed.
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
 
@@ -184,6 +189,7 @@ Every verdict file is a single JSON object with this shape (truncated for clarit
 ### Evidence levels
 
 ```
+        └────────── HEURISTIC (no code ran) ──────────┘   └─ EXECUTED ─┘
 unverified-profile   ──▶   docs-only   ──▶   profile-verified   ──▶   sandbox-validated
        │                       │                     │                          │
    stub seeded            LLM read the          human-curated +           ran in docker,
@@ -191,7 +197,7 @@ unverified-profile   ──▶   docs-only   ──▶   profile-verified   ─�
     catalog                cited it                                         transcripts
 ```
 
-Stubs live at the bottom of the ladder and don't make claims about safety; sandbox-validated verdicts have **transcripts** (literal stdout/stderr from real container runs) that the LLM judge analyzed for the five risks.
+The first four rungs are **heuristic** — an LLM reasoning over public docs; no code is executed. Only **`sandbox-validated`** verdicts have **transcripts** (literal stdout/stderr from real container runs) that the LLM judge analyzed for the five risks. Stubs at the bottom of the ladder don't make safety claims at all.
 
 ---
 
