@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "awesome-cli-apps"
+  ],
+  "verdict_id": "v_2026-06-20_aider__awesome-cli-apps_3a2cb6",
+  "generated_at": "2026-06-20T06:00:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.53,
+  "headline": "High: Aider can write and commit to a shared git repo while the paired content writer has broad egress, creating dangerous default paths for prompt injection, leakage, and cascading bad actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files and shares state via a shared git repo, so attacker-controlled content in repo files can influence its prompts. The paired content-writing agent has broad network egress, so if it consumes Aider-produced text or repo content, the interaction can propagate instructions. No direct shared clipboard/MCP is shown, so this is medium, not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_b ingests repo text or Aider output as instructions without provenance checks, injection is possible.",
+        "IF both agents operate on the same shared git repo, attacker-controlled file content can bridge them."
+      ],
+      "mitigations": [
+        "Add a provenance banner to all repo-derived text before B consumes it.",
+        "Restrict B to read-only summaries, not raw file content.",
+        "Use separate repos or branches per agent.",
+        "Require explicit human review before any instruction-like text is acted on.",
+        "requires-engineering: add content provenance tagging in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history and can send data to configured model providers; the paired agent has broad network egress, so sensitive repo content can leave the workspace through either path. The profiles do not show PHI or secrets beyond API keys, so this is a medium leakage risk rather than high or critical.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the shared repo contains secrets or proprietary source code, Aider can read them and transmit them to a model provider.",
+        "IF agent_b is given repo content and uses its network egress, that content can leave the local environment."
+      ],
+      "mitigations": [
+        "Remove secrets from the repo before either agent runs.",
+        "Use a redaction preprocessor on files passed to Aider.",
+        "Disable network egress for B during sensitive tasks.",
+        "Limit Aider to a scrubbed branch with no secrets.",
+        "requires-engineering: enforce DLP on outbound prompts and outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider has unrestricted filesystem write and modify_git_state, and its concurrency model says shared state is via a shared git repo. The paired agent's capabilities are sparse, but broad network egress plus content-writing means it can still act on shared mutable artifacts. Because the shared write surface is explicit and uncertainty must escalate, the conflict is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repo or working tree, concurrent edits can overwrite each other.",
+        "IF agent_b persists generated content back into the shared repo, git state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Serialize writes with a lock file.",
+        "Require pull/rebase before commit.",
+        "Keep B read-only on the shared repo.",
+        "requires-engineering: add optimistic concurrency control around repo writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate and commit code changes, and the paired content-writing agent can turn Aider's outputs into further text or actions. The profiles do not show autonomous downstream actions like email or deployment, so the cascade is present but not high. Still, Aider's committed outputs can become authoritative inputs for B without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_b treats Aider's committed changes as ground truth, errors can propagate.",
+        "IF Aider's generated code or notes are reused by B without verification, downstream mistakes can cascade."
+      ],
+      "mitigations": [
+        "Require B to cite source lines before reusing Aider output.",
+        "Add a verification step against the repo diff.",
+        "Limit Aider to draft-only commits.",
+        "Have a human approve any cross-agent handoff.",
+        "requires-engineering: add automated diff validation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider explicitly handles model-provider API keys via env vars and may send code to third-party providers, while the paired content-writing agent has no documented data classes or residency controls. The only concrete compliance issue is a potential policy mismatch on source code and secrets; no PHI or EU residency flow is evidenced, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF the repo contains regulated data or secrets, Aider's provider calls may violate local policy.",
+        "IF B is used to generate or store content subject to retention rules, the lack of documented controls becomes relevant."
+      ],
+      "mitigations": [
+        "Exclude regulated data from the shared repo.",
+        "Use a provider with an approved DPA.",
+        "Turn off logging where possible.",
+        "Document retention expectations for both agents.",
+        "requires-engineering: add policy-based routing for sensitive files."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:2ba0225ae7e681a9f8e1b400053e952e63bf462ca82bfe6d6e3b3dc66bedebe7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
