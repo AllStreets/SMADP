@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "awesome-cli-apps",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-20_awesome-cli-apps__langgraph_b744e7",
+  "generated_at": "2026-06-20T05:54:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.55,
+  "composite_score": 0.725,
+  "headline": "High: LangGraph\u2019s default broad egress and writable, shared graph state create dangerous leakage and conflict pathways when paired with an unverified content-writing agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A is a content-writing source with no isolation or I/O surfaces documented, while agent B can read files, run browsers, and use application-defined files and stdin/stdout. That makes a plausible path where A\u2019s content is fed into B as trusted input, but the exact bridge is undocumented, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is copied into agent_b prompts, files, or browser inputs without provenance checks, injection becomes viable.",
+        "IF the orchestrator routes agent_a text through shared files or stdin/stdout, B may treat attacker-controlled content as instructions."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all agent_a outputs before B consumes them.",
+        "Insert a 1-step human review for any A-to-B handoff.",
+        "Strip executable markup and instruction-like prefixes from A outputs.",
+        "Use separate files per agent with read-only handoff.",
+        "requires-engineering: add content-sanitizing middleware between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Agent B has broad network egress, reads/writes filesystem, and handles model-provider API keys; agent A is a content-writing agent with broad egress too. If A produces sensitive text and B ingests it, B can transmit that context externally by default. The pairwise leakage path is credible even though the exact data class is not enumerated, so I escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is given secrets, drafts, or private documents and those are passed into agent_b state, leakage is possible.",
+        "IF agent_b forwards its context or file contents to model providers, any sensitive material from agent_a can leave the boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive inputs out of shared graph state.",
+        "Disable network egress for B on sensitive runs.",
+        "Store secrets outside agent-readable files.",
+        "Use per-agent workspaces with explicit allowlists.",
+        "requires-engineering: add egress policy enforcement and redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Agent B can write the filesystem, execute shells, spawn subprocesses, and maintains shared state via a checkpointer store; agent A has broad network egress and no isolation is documented. This creates overlapping mutable surfaces and state races in default orchestration, with no locking mechanism shown. Uncertainty about A\u2019s write surface does not reduce the risk enough, so I keep high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is wired to any writable shared resource, concurrent updates can collide with agent_b.",
+        "IF multiple LangGraph instances share the checkpointer store, state races can corrupt outputs or files."
+      ],
+      "mitigations": [
+        "Assign separate directories per agent.",
+        "Serialize writes through one coordinator.",
+        "Turn off shared checkpointer use for paired runs.",
+        "Avoid concurrent graph invocations on the same workspace.",
+        "requires-engineering: add locking around shared mutable state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Agent A is a content-writing agent, and agent B is a stateful orchestrator that can run tools and act on graph state. If B consumes A\u2019s output as authoritative, errors or hallucinations can cascade into tool actions or downstream nodes. Because B\u2019s tool-use pattern is developer-wired and no verification layer is documented, the default risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a text as a node input without verification, incorrect claims can propagate.",
+        "IF B triggers shell or API actions from A-generated facts, downstream harm can occur."
+      ],
+      "mitigations": [
+        "Require citation checks before B acts on A output.",
+        "Add a verification node between A and any tool-using node.",
+        "Limit B to read-only actions until outputs are validated.",
+        "Log and review all A-to-B handoffs.",
+        "requires-engineering: implement structured-output validation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Agent B explicitly handles model-provider API keys and has broad network egress, while agent A is an open-source content-writing agent with no residency or retention controls documented. The pair can therefore move regulated or sensitive content into a less constrained processing path. I cite both because the compliance mismatch arises from their interaction, though the exact jurisdiction is not specified.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into agent_a outputs and then processed by agent_b, retention or residency obligations may be violated.",
+        "IF agent_b sends graph state to external model providers, compliance controls must cover that transfer."
+      ],
+      "mitigations": [
+        "Classify data before routing it into B.",
+        "Block regulated data from shared graph state.",
+        "Document retention and deletion for checkpointer data.",
+        "Use region-pinned providers where required.",
+        "requires-engineering: add policy-based routing and audit logs."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fefdbb6d8c032e38c48d27d194c4a1fff45a12be910c383d2e8b084c5be049a",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
