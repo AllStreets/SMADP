@@ -71,6 +71,20 @@ def test_every_verdict_matches_schema(
     assert not failures, "schema violations:\n" + "\n".join(failures)
 
 
+def test_verdict_schema_allows_stale_reason(
+    all_verdict_paths: list[Path], verdict_validator: Draft202012Validator
+) -> None:
+    """stale_reason is a real Verdict model field (drift tracking) and is emitted
+    by save_verdict (model_dump). The JSON schema must allow it (null or
+    'capability_drift'); regression for promote-written verdicts failing lint."""
+    doc = json.loads(all_verdict_paths[0].read_text(encoding="utf-8"))
+    for value in (None, "capability_drift"):
+        doc["stale_reason"] = value
+        assert _iter_errors(verdict_validator, doc) == []
+    doc["stale_reason"] = "bogus"
+    assert _iter_errors(verdict_validator, doc) != []
+
+
 def test_every_evidence_matches_schema(
     all_evidence_paths: list[Path], evidence_validator: Draft202012Validator
 ) -> None:
