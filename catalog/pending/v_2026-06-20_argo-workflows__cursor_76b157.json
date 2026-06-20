@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "cursor"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__cursor_76b157",
+  "generated_at": "2026-06-20T03:33:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High: Cursor\u2019s default filesystem, clipboard, and MCP access can conflict with Argo Workflows\u2019 workflow outputs, creating prompt-injection, leakage, and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor reads workspace files, open buffers, clipboard, and MCP outputs by default, so it can ingest content produced by Argo Workflows if the workflow writes into a shared workspace. Argo itself exposes REST/GRPC and allowlisted egress, but no direct parser is documented. The interaction is plausible, not proven, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Argo writes attacker-controlled text into a workspace file that Cursor opens",
+        "IF Cursor ingests MCP or clipboard content originating from Argo outputs"
+      ],
+      "mitigations": [
+        "Disable shared workspace handoff between Argo outputs and Cursor inputs",
+        "Require provenance labels on files before Cursor opens them",
+        "Turn off clipboard-based transfer for workflow artifacts",
+        "Restrict MCP servers to trusted, read-only sources",
+        "requires-engineering: add content-sanitization before any Argo output reaches Cursor"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters and can egress over allowlisted network paths; Cursor reads open files and sends data to model providers and MCP servers. If both operate on the same workspace, sensitive artifacts can flow from Argo into Cursor\u2019s outbound context. The shared-workspace path is documented on Cursor, while Argo\u2019s artifact handling makes the leak plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts or parameters contain secrets or regulated data",
+        "IF Cursor opens the same workspace files and forwards them to model providers or MCP servers"
+      ],
+      "mitigations": [
+        "Keep Argo artifacts in a separate directory from Cursor workspaces",
+        "Redact secrets from workflow parameters before writing files",
+        "Disable or narrow Cursor model-provider access for sensitive projects",
+        "Use per-project credentials with least privilege",
+        "requires-engineering: enforce workspace isolation at the orchestrator level"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo can write workflow outputs through its API-driven workflows, while Cursor can write the filesystem, modify git state, and spawn subprocesses. Cursor\u2019s concurrency model explicitly shares state via the local filesystem, so both agents can race on the same mutable repo or workspace. That overlap makes destructive conflicts and git corruption plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Argo and Cursor target the same repository or workspace directory",
+        "IF Cursor Yolo mode or auto-run is enabled while Argo is updating files"
+      ],
+      "mitigations": [
+        "Assign separate working directories to Argo and Cursor",
+        "Pause Cursor auto-run while Argo jobs are active",
+        "Serialize git writes with a lock file",
+        "Use branch-per-agent workflows",
+        "requires-engineering: add orchestrator-level mutual exclusion"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Cursor can act on files and tool outputs, and Argo can produce artifacts that Cursor may treat as inputs. If Cursor accepts Argo-generated content as authoritative, a bad workflow output can cascade into edits, commits, or commands. Because Cursor has execution capability and Argo can emit machine-generated artifacts, the blast radius is broader than a simple read-only handoff.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Cursor uses Argo-produced artifacts as source-of-truth without verification",
+        "IF Cursor executes shell commands or commits based on those artifacts"
+      ],
+      "mitigations": [
+        "Require human review before Cursor acts on Argo outputs",
+        "Add schema validation for workflow artifacts",
+        "Mark Argo outputs as untrusted in Cursor prompts",
+        "Limit Cursor to read-only review mode for workflow-generated files",
+        "requires-engineering: implement signed artifact verification"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Argo is open-source and docs-only here, while Cursor is a closed-source editor that sends data to model providers and MCP servers. The profiles do not specify a concrete residency or certification mismatch, so only a general compliance gap is visible. The risk is limited to policy alignment rather than a proven breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Cursor workspaces or prompts",
+        "IF organizational policy forbids sending that data to external model providers"
+      ],
+      "mitigations": [
+        "Avoid regulated data in Cursor projects",
+        "Review Cursor privacy and retention settings",
+        "Use a local-only workflow for sensitive repositories",
+        "Document data-class handling for Argo artifacts",
+        "requires-engineering: add a compliance gate before external API calls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:e5464d86b47cc64845805e9bb61b05cedde8f40fe7c68320df079b8a4377195f",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
