@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "pathway"
+  ],
+  "verdict_id": "v_2026-06-20_flowise__pathway_06c03b",
+  "generated_at": "2026-06-20T02:43:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.71,
+  "composite_score": 0.455,
+  "headline": "Highest risk is medium data leakage: Flowise can read/write shared files and use broad egress, while pathway is local-only and non-file-accessing, so the pair can expose chatflow inputs/outputs if deployed on the same workspace.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read and write the server filesystem and process uploaded files, so attacker-controlled content can reach its flows. Pathway has no file or clipboard surfaces, so direct bidirectional injection is limited; however, if Flowise writes outputs into a shared datastore or file that Pathway later ingests, the pathway exists in default deployments. Uncertainty about deployment isolation pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Flowise writes attacker-controlled content into a shared file or datastore that Pathway later reads, injection is possible.",
+        "IF deployment isolation is absent and both agents share the same workspace, prompt-like content can cross the boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable shared file handoff between agents.",
+        "Add content provenance tags before Pathway ingests Flowise outputs.",
+        "Require manual review of Flowise-generated text before reuse.",
+        "requires-engineering: add sandboxed, read-only transfer channels."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs, model provider keys, and tool credentials, and it has broad network egress plus filesystem access. Pathway is documented as not reading files and having no network egress, so it is less likely to leak directly. The pair still creates a default leakage path if Flowise stores sensitive inputs in shared files or sends them to external model providers.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Flowise receives sensitive chatflow inputs and persists them to shared storage, those data can be exposed to Pathway-adjacent consumers.",
+        "IF Flowise forwards context to external model providers, sensitive inputs may leave the local boundary."
+      ],
+      "mitigations": [
+        "Restrict Flowise inputs to non-sensitive data.",
+        "Store secrets only in a dedicated secret manager.",
+        "Disable shared filesystem access between the agents.",
+        "Turn off external model providers for sensitive flows.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Flowise can write the server filesystem and use broad egress, while Pathway is a document-processing agent with no filesystem write or network egress. That reduces direct write-write conflict, but shared server datastore state and overlapping access to files can still create contention or overwrite risk if both are deployed against the same mutable workspace. The lack of explicit locking makes this a default-config concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory or datastore, one can overwrite the other's artifacts.",
+        "IF the orchestrator does not provide locking, concurrent Flowise instances can race on shared state."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Make shared artifacts read-only.",
+        "Serialize writes through one coordinator.",
+        "Avoid concurrent mutation of the same datastore.",
+        "requires-engineering: add advisory locking around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise is a graph-based agent flow builder, so its outputs can become structured inputs for downstream processing. Pathway is a document-processing system, so if it consumes Flowise output without verification, errors can cascade into incorrect documents or pipelines. Because Pathway is not documented as critically validating upstream content, the interaction is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF Pathway ingests Flowise-generated text or records without validation, upstream mistakes propagate downstream.",
+        "IF Flowise emits malformed tool outputs, Pathway may process them as authoritative data."
+      ],
+      "mitigations": [
+        "Insert a validation step between agents.",
+        "Require schema checks on Flowise outputs.",
+        "Reject malformed or low-confidence records.",
+        "Log and sample downstream transformations for review.",
+        "requires-engineering: add typed contracts between the agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Flowise explicitly handles model provider keys and tool credentials, while Pathway's profile shows no touched data classes or residency constraints. There is no documented compliance mismatch in the pair, but Flowise's secret handling means a deployment could still create policy obligations if those secrets are mixed with regulated data. Because Pathway lacks documented sensitive-data handling, the risk is limited and mostly configuration-dependent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through Flowise and stored alongside tool credentials, local policy violations may occur.",
+        "IF Pathway is later configured to process regulated records, retention and access policies must be rechecked."
+      ],
+      "mitigations": [
+        "Keep regulated data out of Flowise flows.",
+        "Separate secrets from content storage.",
+        "Document retention for any shared artifacts.",
+        "Review vendor/data-processing policies before deployment.",
+        "requires-engineering: implement policy-based routing for regulated data."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:eaef39af73acc5229ecbbb59c213556fee585e106f9ec5cd68afc55ca4668ba4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
