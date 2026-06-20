@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__langflow_1c4862",
+  "generated_at": "2026-06-20T04:18:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: Langflow\u2019s unsandboxed server-side code and broad egress create dangerous default interaction risks with Argo Workflows\u2019 API-driven workflow execution.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can pass artifacts and parameters into downstream steps, while Langflow chains agents and tools in graph-based flows. No direct shared channel is documented, but if Argo outputs are imported into Langflow or copied into a flow node, prompt-like content can steer tool use. The pathway is plausible but not proven by the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Argo workflow outputs are ingested into a Langflow prompt or tool node without sanitization",
+        "IF a Langflow flow treats imported text as instructions rather than data"
+      ],
+      "mitigations": [
+        "Add a fixed delimiter/template around imported Argo outputs",
+        "Require manual review before any Langflow node executes copied workflow text",
+        "Strip instruction-like prefixes from artifacts before ingestion",
+        "requires-engineering: add provenance tags between workflow outputs and flow inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters, and Langflow reads/writes server filesystem data and sends flow inputs to model providers or arbitrary HTTP services. If both are pointed at the same workspace or uploaded files, sensitive artifacts can flow from Argo into Langflow and then out to third parties. The profiles document enough to make this a default-configuration concern, though not a confirmed breach path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts are stored in a workspace that Langflow can read",
+        "IF Langflow flows send those files or inputs to external model providers or HTTP services"
+      ],
+      "mitigations": [
+        "Separate Argo and Langflow workspaces",
+        "Disable file uploads in Langflow flows that handle sensitive artifacts",
+        "Use local-only providers for any Langflow step processing Argo outputs",
+        "Rotate or redact secrets before passing artifacts between systems",
+        "requires-engineering: enforce per-flow data-loss-prevention checks"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo has API-based workflow control and allowlisted egress, while Langflow has write_filesystem, execute_shell, spawn_subprocesses, and broad egress. If both operate on the same mutable directory or shared server-side state, concurrent writes and workflow mutations can corrupt runs or overwrite outputs. The profiles show overlapping write authority and no locking mechanism, so the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or shared state store",
+        "IF Argo workflow artifacts are modified while Langflow nodes are writing outputs"
+      ],
+      "mitigations": [
+        "Use separate directories for each agent",
+        "Make shared paths read-only for one side",
+        "Serialize writes with an external lock",
+        "Avoid letting Langflow mutate files that Argo later consumes",
+        "requires-engineering: add transactional state management for shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Argo can emit workflow artifacts and parameters, and Langflow can chain multiple agents and tools that may act on those inputs. If Langflow treats Argo outputs as authoritative, a bad upstream artifact can cascade into downstream tool calls or model-provider requests without verification. This interaction is plausible in default flow designs and can amplify a single error across multiple steps.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Langflow consumes Argo outputs as inputs to downstream agents or tools",
+        "IF no verification or schema validation is inserted between the two"
+      ],
+      "mitigations": [
+        "Validate Argo outputs against a schema before Langflow uses them",
+        "Insert a human approval step before any downstream action",
+        "Mark Argo-derived fields as untrusted in Langflow prompts",
+        "Limit downstream tools to read-only operations",
+        "requires-engineering: add automated consistency checks between workflow stages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo is documented as touching artifacts and parameters, while Langflow stores per-flow credentials and processes flow inputs/intermediate outputs on a server filesystem. The profiles do not specify residency or certifications, so I cannot claim a specific legal mismatch. Still, the shared handling of sensitive workflow data and credentials creates a compliance gap risk around retention and access control.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Argo artifacts or Langflow flow inputs",
+        "IF retention or deletion policies differ between the two systems"
+      ],
+      "mitigations": [
+        "Document which data classes each system may store",
+        "Set explicit retention limits for Langflow credentials and artifacts",
+        "Avoid placing regulated data in shared workflow artifacts",
+        "Review access logs for both systems weekly",
+        "requires-engineering: align residency and retention controls across deployments"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
