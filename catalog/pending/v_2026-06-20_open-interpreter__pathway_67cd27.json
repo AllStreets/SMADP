@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "pathway"
+  ],
+  "verdict_id": "v_2026-06-20_open-interpreter__pathway_67cd27",
+  "generated_at": "2026-06-20T03:28:23Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.38,
+  "headline": "High: Open Interpreter can write the shared filesystem and run shell commands, while pathway is read-only/local-only, making prompt injection and data leakage plausible but not dominant.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the filesystem, use the clipboard, and execute shell commands; its state is shared via filesystem. Pathway has no file or network I/O, so it is not an active injector, but it can still consume files produced by Open Interpreter if the operator bridges them. That makes instruction smuggling through shared files plausible in default desktop workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter writes a file that Pathway later parses as instructions or config, injection is possible.",
+        "IF the operator copies Open Interpreter output into a Pathway-ingested document, the bridge exists."
+      ],
+      "mitigations": [
+        "Keep the agents on separate directories.",
+        "Disable clipboard-based handoff between agents.",
+        "Require a human review step before Pathway ingests any Open Interpreter output.",
+        "Use read-only mounts for Pathway inputs.",
+        "requires-engineering: add provenance tagging to files passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can access the entire local filesystem and broad network egress, so it may expose sensitive local data if pointed at shared inputs. Pathway itself has no filesystem read or network egress, which limits direct exfiltration from B, but the pair still creates a default path where A can surface local secrets into outputs that B may process or store. The shared filesystem makes leakage plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter is given access to sensitive local files, those contents can appear in its outputs.",
+        "IF Pathway is configured to ingest files produced by Open Interpreter, sensitive data can be retained or transformed downstream."
+      ],
+      "mitigations": [
+        "Restrict Open Interpreter to a narrow working directory.",
+        "Do not feed secrets-bearing files into Pathway.",
+        "Use separate OS users for the two agents.",
+        "Scan outputs for secrets before handoff.",
+        "requires-engineering: enforce data-loss-prevention filters on the transfer path."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Open Interpreter has broad write and git-modifying capabilities, while Pathway has no write, shell, or network capabilities. There is little direct write-write conflict because B cannot mutate shared state, so the main risk is limited to A overwriting files that B reads. The pair therefore has a small conflict surface rather than a symmetric race condition.",
+      "citations": [
+        {
+          "profile_field": "agent_a.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Pathway is configured to read files in the same directory Open Interpreter writes to, A can clobber B's inputs.",
+        "IF the operator runs multiple Open Interpreter instances against the same workspace, file races can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate workspace.",
+        "Avoid concurrent Open Interpreter sessions on the same repo.",
+        "Use git branches with manual merge review.",
+        "Make Pathway inputs read-only.",
+        "requires-engineering: add file locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate arbitrary text and code-like outputs, and Pathway is a document-processing system that may ingest those outputs if the operator connects them. Because Pathway has no built-in verification surface in the profile, A's mistakes can cascade into B's downstream processing or stored documents. The interaction is inferred from the profiles, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Pathway ingests Open Interpreter output without validation, errors can propagate downstream.",
+        "IF Open Interpreter produces incorrect facts that Pathway indexes or transforms, the error becomes persistent."
+      ],
+      "mitigations": [
+        "Insert a human verification step before ingestion.",
+        "Require schema validation on all Open Interpreter outputs.",
+        "Keep Pathway from auto-executing any derived content.",
+        "Log source provenance alongside transformed records.",
+        "requires-engineering: add confidence/verification metadata to the pipeline."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Open Interpreter explicitly handles model provider API keys and can touch anything reachable on the local machine, while Pathway is documented here as a local document-processing component with no network or filesystem access. The main compliance issue is limited to Open Interpreter's handling of local sensitive data; there is no documented cross-border or regulated-data transfer from Pathway, so only a narrow residency/retention concern is evident.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present on the local machine and Open Interpreter processes it, retention and logging obligations apply.",
+        "IF Pathway is later configured to store or export those records, compliance scope expands."
+      ],
+      "mitigations": [
+        "Exclude regulated data from Open Interpreter sessions.",
+        "Review provider-side logging settings for Open Interpreter.",
+        "Keep Pathway inputs free of secrets and personal data.",
+        "Document retention for any transformed outputs.",
+        "requires-engineering: add policy-based routing for regulated datasets."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:eaef39af73acc5229ecbbb59c213556fee585e106f9ec5cd68afc55ca4668ba4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
