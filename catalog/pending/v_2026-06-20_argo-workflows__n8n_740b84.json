@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__n8n_740b84",
+  "generated_at": "2026-06-20T03:39:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High: n8n\u2019s default server-side execution and broad egress can leak or act on Argo outputs unless the workflow is tightly isolated.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo can emit workflow artifacts over REST/gRPC, and n8n can ingest files and API outputs into workflow nodes. That creates a plausible instruction-smuggling path if n8n treats Argo-produced content as trusted. The pairwise bridge is documented only indirectly, so I choose medium over low because the shared workflow surface exists by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflow nodes parse Argo-generated artifacts as instructions or prompts",
+        "IF Argo outputs are copied into n8n without provenance checks"
+      ],
+      "mitigations": [
+        "Add a fixed delimiter/schema for Argo outputs before n8n parses them",
+        "Require manual review for any prompt-like text from Argo",
+        "Strip executable directives from workflow artifacts",
+        "Use a separate staging file for untrusted content",
+        "requires-engineering: add provenance tagging between Argo and n8n"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Argo touches artifacts and parameters, while n8n reads and writes the server filesystem and has broad network egress. If Argo outputs sensitive artifacts into n8n\u2019s workspace, n8n can transmit them through integrations or external APIs. The blast radius includes exfiltration and compliance breach, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts or parameters contain sensitive data",
+        "IF n8n workflows send those files or fields to external integrations"
+      ],
+      "mitigations": [
+        "Restrict n8n workflows to a dedicated non-sensitive workspace",
+        "Disable or gate outbound integrations for sensitive runs",
+        "Mask secrets before handing artifacts to n8n",
+        "Review credential scopes for each integration node",
+        "requires-engineering: enforce data-loss-prevention checks on workflow inputs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Argo can call APIs and n8n can execute shell commands, spawn subprocesses, and write the server filesystem. Even without modify_git_state, both can mutate shared external systems through overlapping API and filesystem actions. The conflict is real in default deployments, but not as severe as same-dir unrestricted write plus git locking failures.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or external API resource",
+        "IF n8n Execute Command writes files that Argo later consumes"
+      ],
+      "mitigations": [
+        "Assign separate working directories per agent",
+        "Serialize writes to shared resources with a lock file",
+        "Disable Execute Command for shared-state workflows",
+        "Use idempotent API operations where possible",
+        "requires-engineering: add orchestrator-level resource locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Argo can produce artifacts and parameters that n8n workflows may consume as inputs, and n8n can then trigger downstream integrations or commands. If n8n treats Argo output as authoritative, a bad upstream value can cascade into irreversible external actions. The interaction is inferred from documented workflow chaining, so high is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses Argo-produced fields as decision inputs without validation",
+        "IF downstream n8n nodes send emails, update systems, or execute commands"
+      ],
+      "mitigations": [
+        "Insert a validation step between Argo and n8n",
+        "Require human approval before action nodes run",
+        "Constrain n8n to read-only inspection for Argo outputs",
+        "Log and diff upstream values before execution",
+        "requires-engineering: add typed contracts for inter-agent handoff"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo\u2019s docs-only profile does not specify residency or retention, while n8n stores credentials on its server and processes whatever the workflow handles. That creates a plausible retention and residency mismatch for regulated data classes, but the evidence is indirect and not enough for high. I cite both because the compliance risk arises from their combined handling model.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both agents",
+        "IF n8n retention or credential storage exceeds the policy applied to Argo artifacts"
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through the pair",
+        "Set explicit retention limits in n8n",
+        "Purge workflow execution logs after use",
+        "Store secrets only in approved credential stores",
+        "requires-engineering: document residency and retention boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
