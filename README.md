@@ -7,8 +7,8 @@
 &nbsp;
 
 <a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C250-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-1%2C349-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-7-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-1%2C350-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-8-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-381-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
@@ -133,7 +133,7 @@ For the autopilot loop (launchd plist + 5-min ticks), see [`docs/autopilot.md`](
 | Path | What it is |
 |---|---|
 | **`catalog/profiles/<slug>.json`** | One Safety Profile per agent. ~6,250 today. |
-| **`catalog/verdicts/<...>.json`** | Public catalog. Pairwise + N-ary verdicts that an operator has approved. ~1,349 today. |
+| **`catalog/verdicts/<...>.json`** | Public catalog. Pairwise + N-ary verdicts that an operator has approved. ~1,350 today. |
 | **`catalog/pending/<...>.json`** | Operator review queue. Autopilot writes here first; nothing is posted to the public site until approved. |
 | **`catalog/_rejected/<...>.json`** | Verdicts the operator rejected, preserved with `<key>.reason.json` sidecar. Never deleted. |
 | **`catalog/_evidence/sha256-<hash>.json`** | Content-addressed evidence chunks every citation resolves against. |
@@ -291,7 +291,7 @@ Got an agent we should know about? Two paths:
 SMADP/
 ├── catalog/                     # the product
 │   ├── profiles/                #   6,250 Safety Profiles
-│   ├── verdicts/                #     1349 approved verdicts
+│   ├── verdicts/                #     1350 approved verdicts
 │   ├── pending/                 #         operator review queue
 │   ├── _rejected/               #         preserved with reasons
 │   ├── _evidence/sha256-*.json  #         content-addressed citations
