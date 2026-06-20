@@ -35,6 +35,8 @@ PAIRS: list[tuple[str, str]] = [
     ("double-chat", "cursor"),
     ("qodo", "github-copilot"),
     ("goose", "cursor"),
+    ("aider", "gptme"),
+    ("goose", "gptme"),
     # Web/app builders
     ("bolt-new", "v0-by-vercel"),
     ("v0-by-vercel", "lovable"),
