@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "pathway"
+  ],
+  "verdict_id": "v_2026-06-20_langflow__pathway_7be7d7",
+  "generated_at": "2026-06-20T03:22:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.455,
+  "headline": "Highest risk is Langflow\u2019s unsandboxed server-side execution and shared server state; Pathway adds little direct risk but the pair can still create medium prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can ingest uploaded files and chain multiple agents, and its Python code component is unsandboxed by default. Pathway has no input/output surfaces listed, so direct injection into it is not evidenced; however, if Langflow feeds Pathway through shared files or server-side state, attacker-controlled content could be treated as instructions. The pathway exists, but the bridge is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.python code component is unsandboxed by default"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Langflow outputs are written to a shared file or store that Pathway later parses as instructions, injection is possible.",
+        "IF Pathway is extended to consume Langflow-generated text without provenance checks, attacker content can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Add a provenance tag to every Langflow output before Pathway reads it.",
+        "Restrict Langflow file uploads to trusted sources only.",
+        "Insert a manual review step before Pathway consumes Langflow text.",
+        "Disable or isolate Langflow Python code components for untrusted flows.",
+        "requires-engineering: add content-sanitization and instruction/data separation between the two systems."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Langflow touches flow inputs, intermediate outputs, uploaded files, and stored secrets, with broad network egress. Pathway lists no filesystem or network surfaces, so it is not itself a leak sink in the profile, but if the pair shares a workspace or Langflow forwards file contents to external model providers, sensitive flow data can leave the boundary. The interaction is plausible but only indirectly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Langflow processes sensitive flow inputs or uploaded files and sends them to external model providers, leakage occurs.",
+        "IF the two agents share a workspace or server-side store, Pathway may observe Langflow intermediate outputs."
+      ],
+      "mitigations": [
+        "Limit Langflow flows to non-sensitive data.",
+        "Remove external model-provider calls from flows handling sensitive inputs.",
+        "Store secrets outside Langflow-managed flow state where possible.",
+        "Separate the agents onto different workspaces or volumes.",
+        "requires-engineering: enforce per-flow data-loss-prevention and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Langflow has server-side filesystem write, shell execution, subprocess spawning, and broad egress; Pathway has no write or network capabilities listed. There is no direct write-write conflict in the profiles, but Langflow\u2019s shared server-side state and multiple-instance model can still collide with any Pathway-managed mutable resources if those are introduced. Because Pathway\u2019s mutable surfaces are undocumented, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Pathway is connected to a shared mutable directory or database, concurrent writes can conflict with Langflow server-side actions.",
+        "IF both agents are granted write access to the same deployment volume, state corruption becomes possible."
+      ],
+      "mitigations": [
+        "Assign separate directories or volumes to each agent.",
+        "Run Langflow and Pathway under distinct OS users.",
+        "Avoid concurrent writes to shared mutable resources.",
+        "Serialize any handoff through a queue or lock file.",
+        "requires-engineering: add transactional locking around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Langflow can chain multiple agents and tools, so its outputs may become downstream inputs. Pathway is a document-processing system with no verification behavior documented, so if it consumes Langflow-produced text or facts, errors can cascade into later processing. The pairwise pathway is inferred rather than directly documented, but the default Langflow orchestration makes this plausible enough for medium severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF Pathway consumes Langflow-generated outputs without an independent validation step, upstream hallucinations can propagate.",
+        "IF Langflow routes tool outputs directly into Pathway pipelines, a single bad step can affect multiple downstream artifacts."
+      ],
+      "mitigations": [
+        "Add a validation gate between Langflow and Pathway.",
+        "Require schema checks on all Langflow outputs before Pathway ingests them.",
+        "Use human review for high-impact downstream actions.",
+        "Log and diff intermediate outputs before propagation.",
+        "requires-engineering: implement automated fact-checking or rule-based verification."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Langflow explicitly stores per-flow component credentials and handles flow inputs/intermediate outputs, while Pathway\u2019s profile shows no touched data classes or residency/compliance constraints. No specific residency mismatch is evidenced, so only a low, documentation-gap-based compliance concern remains. The lack of Pathway compliance detail prevents a higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        }
+      ],
+      "conditions": [
+        "IF Langflow is used with regulated data and Pathway is deployed in a jurisdiction or retention regime not documented here, compliance review is required.",
+        "IF Langflow stores credentials or intermediate outputs containing regulated data, retention obligations may apply."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in Langflow flows.",
+        "Review retention settings for Langflow stores.",
+        "Document Pathway\u2019s data residency before deployment.",
+        "Separate regulated and non-regulated workflows.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:eaef39af73acc5229ecbbb59c213556fee585e106f9ec5cd68afc55ca4668ba4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
