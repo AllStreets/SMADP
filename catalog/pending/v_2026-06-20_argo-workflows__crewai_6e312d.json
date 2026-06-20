@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "crewai"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__crewai_6e312d",
+  "generated_at": "2026-06-20T03:50:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High risk of prompt-injection, data leakage, and cascading errors because CrewAI writes/reads shared files while Argo Workflows can pass artifacts and parameters into downstream steps.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can pass artifacts and parameters between steps, and CrewAI reads/writes the host working directory with stdin/stdout and file I/O. That creates a plausible content-to-instructions bridge where attacker-controlled workflow outputs could be interpreted by CrewAI as directives. The interaction is inferred from docs, not directly reproduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Argo outputs untrusted text into an artifact or parameter consumed by CrewAI",
+        "IF CrewAI agents parse file or stdout content as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Add a strict instruction/data delimiter in workflow outputs",
+        "Whitelist only structured JSON inputs to CrewAI",
+        "Disable automatic tool execution on file contents",
+        "Review one sample handoff for prompt-like strings",
+        "requires-engineering: add provenance tagging between workflow artifacts and agent prompts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters, while CrewAI reads and writes the host working directory and sends data to model providers and tool integrations. If both run on the same host or workspace, sensitive artifacts can flow from Argo into CrewAI and then out to third-party APIs. This is a default-path concern, though the exact deployment is not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a host directory or mounted workspace",
+        "IF CrewAI forwards file contents or crew context to model providers or tools"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Restrict CrewAI to redacted inputs only",
+        "Rotate and scope API keys used by CrewAI",
+        "Inspect one workflow for secret-bearing artifacts",
+        "requires-engineering: enforce per-agent storage isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Argo can orchestrate workflows over APIs and artifacts, while CrewAI can execute shell commands, spawn subprocesses, and write files in the host working directory. Overlapping write authority on shared resources can cause races or clobbered outputs even without git modification. The profiles do not show locking, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or artifact path",
+        "IF Argo and CrewAI run concurrently without external locking"
+      ],
+      "mitigations": [
+        "Assign disjoint output paths",
+        "Serialize writes with a lock file",
+        "Run one agent per container",
+        "Check for path collisions in one workflow run",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Argo can emit artifacts and parameters that CrewAI may consume as inputs, and CrewAI can then act via shell, subprocess, or external tools. If CrewAI treats upstream outputs as authoritative, a single bad Argo step can cascade into incorrect downstream actions or irreversible side effects. Because the pair lacks built-in verification in the profiles, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI uses Argo-produced artifacts as authoritative task inputs",
+        "IF downstream CrewAI tools can send emails, modify systems, or trigger deployments"
+      ],
+      "mitigations": [
+        "Insert a human review gate before action steps",
+        "Require schema validation on all upstream outputs",
+        "Mark Argo outputs as untrusted by default",
+        "Test one end-to-end run with a benign payload",
+        "requires-engineering: add verification and rollback controls"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo is an open-source workflow engine with allowlisted egress, while CrewAI handles developer-passed crew data plus API keys and broad egress. If regulated data is placed into a crew or workflow artifact, the pair can create retention and residency mismatches through model-provider calls and host-file storage. The profiles do not document matching compliance controls, so medium is the prudent choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed into CrewAI crews or Argo artifacts",
+        "IF the deployment requires residency, retention, or deletion guarantees not enforced by both agents"
+      ],
+      "mitigations": [
+        "Classify data before handing it to either agent",
+        "Block regulated data from crew inputs",
+        "Set short retention on workflow artifacts",
+        "Review provider/data-processing terms once",
+        "requires-engineering: implement residency and deletion controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:52bc459e0a34a4e3cedc6c8caa4c45906efe0c9588579344983feb1684ab2056",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
