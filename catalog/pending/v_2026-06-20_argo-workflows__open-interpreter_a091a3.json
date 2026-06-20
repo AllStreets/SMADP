@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__open-interpreter_a091a3",
+  "generated_at": "2026-06-20T04:29:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.725,
+  "headline": "High: Open Interpreter\u2019s default filesystem and shell access can conflict with Argo Workflows\u2019 artifact/workspace handling, creating data leakage and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can pass artifacts/parameters into jobs, and Open Interpreter reads local files and clipboard content by default. If Argo-produced content is later pasted or mounted into Open Interpreter, malicious instructions can be executed. The pair lacks a documented provenance barrier, so the interaction is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Argo outputs are copied into Open Interpreter via clipboard or mounted files",
+        "IF Open Interpreter is run with default confirmation prompts or --auto_run"
+      ],
+      "mitigations": [
+        "Disable clipboard-based transfer between the agents",
+        "Use a dedicated read-only handoff directory for Argo outputs",
+        "Require manual review of any text before Open Interpreter executes it",
+        "Run Open Interpreter in Docker or another isolated environment",
+        "requires-engineering: add provenance tagging to all Argo artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Argo Workflows touches artifacts and parameters, while Open Interpreter can read the entire local filesystem and has broad network egress. If sensitive artifacts land on the same machine, Open Interpreter can ingest them and transmit context to model providers. This is a default-dangerous pairwise leakage path, though the exact deployment is not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Argo artifacts or parameters contain sensitive data on the local machine",
+        "IF Open Interpreter is configured with a remote model provider"
+      ],
+      "mitigations": [
+        "Store Argo outputs outside Open Interpreter\u2019s readable workspace",
+        "Restrict Open Interpreter to a sanitized directory only",
+        "Remove sensitive fields from artifacts before handoff",
+        "Use a local-only model provider for Open Interpreter",
+        "requires-engineering: enforce OS-level sandboxing and per-directory ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo Workflows can write workflow outputs and Open Interpreter can write the filesystem and modify git state. Their shared-state path is via filesystem, so concurrent access can corrupt files or git history without locking. The overlap is explicit in the profiles and dangerous by default when both operate on the same workspace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or git repository",
+        "IF Open Interpreter is allowed to modify files while Argo is producing artifacts"
+      ],
+      "mitigations": [
+        "Assign separate working directories per agent",
+        "Use file locks around shared outputs",
+        "Make Argo outputs immutable before Open Interpreter reads them",
+        "Pause one agent while the other writes to the workspace",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Argo can emit artifacts and parameters that Open Interpreter may treat as actionable input, while Open Interpreter can execute shell commands and subprocesses. If Open Interpreter consumes Argo output without verification, a bad upstream result can cascade into destructive local actions. The pair therefore has a strong default pathway from generated output to execution.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter is instructed to act on Argo-produced text or files",
+        "IF no human verification step is inserted before shell execution"
+      ],
+      "mitigations": [
+        "Require manual approval for every command derived from Argo output",
+        "Validate Argo outputs against a schema before use",
+        "Limit Open Interpreter to dry-run mode for workflow-derived tasks",
+        "Log and review all command plans before execution",
+        "requires-engineering: add typed contracts between workflow outputs and agent inputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo Workflows is a workflow engine with artifacts/parameters, while Open Interpreter can access the full local machine and model-provider APIs. If regulated data is processed in Argo and then exposed to Open Interpreter, residency and retention obligations can diverge. The profiles do not show a specific certification mismatch, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Argo artifacts or parameters",
+        "IF Open Interpreter forwards that data to a third-party model provider"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared artifacts",
+        "Use a local model provider for Open Interpreter",
+        "Redact identifiers before handoff",
+        "Set explicit retention limits for workflow outputs",
+        "requires-engineering: document residency and retention boundaries per agent"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

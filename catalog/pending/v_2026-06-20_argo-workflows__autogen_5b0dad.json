@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "autogen"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__autogen_5b0dad",
+  "generated_at": "2026-06-20T04:29:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and code-execution defaults create prompt-injection, leakage, and cascading-action risk; compliance gaps are possible but not directly evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write configured working directories and exchange stdin/stdout, while Argo Workflows processes artifacts and parameters. That creates a plausible content-to-instruction bridge if Argo outputs are fed into AutoGen without sanitization. No shared channel is explicit, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Argo outputs are copied into AutoGen prompts or files without provenance checks, injection is possible.",
+        "IF both agents share the same working directory, file-based prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Separate working directories per agent.",
+        "Strip instructions from Argo-produced artifacts before ingestion.",
+        "Add provenance labels to files and prompts.",
+        "Disable automatic prompting from file contents.",
+        "requires-engineering: enforce content-type validation at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo touches artifacts and parameters, and AutoGen reads/writes configured files while sending context to model providers configured by the user. If they share a workspace, sensitive artifacts can flow from Argo into AutoGen and then out to third-party inference. The pairwise leakage path is plausible in default-style deployments, though not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace, file contents can cross from Argo to AutoGen.",
+        "IF AutoGen is configured with external model providers, workspace data may leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate workspaces.",
+        "Redact secrets from artifacts before handoff.",
+        "Restrict AutoGen to local-only models for sensitive runs.",
+        "Rotate any exposed API keys.",
+        "requires-engineering: add DLP scanning on shared files."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo can orchestrate workflows over artifacts, and AutoGen can execute shell commands, spawn subprocesses, and write files. If both are aimed at the same directory or mutable resource, concurrent writes and race conditions can corrupt outputs or overwrite each other. The profiles do not show locking, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file races are possible.",
+        "IF either agent mutates shared state without locks, one agent can overwrite the other's outputs."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize writes through one orchestrator.",
+        "Use lock files for shared resources.",
+        "Disable AutoGen filesystem writes for shared jobs.",
+        "requires-engineering: add transactional state management."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen is a multi-agent framework with code execution, so it can act on upstream outputs. Argo produces workflow artifacts and parameters that AutoGen may treat as inputs; if those outputs are wrong, AutoGen can propagate them into shell actions or downstream agent decisions. Because the pair lacks a documented verification barrier, the blast radius can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF Argo-generated artifacts are consumed as authoritative inputs, AutoGen may act on incorrect data.",
+        "IF AutoGen agents are allowed to execute code from those inputs, downstream actions can be wrong or destructive."
+      ],
+      "mitigations": [
+        "Require human review before execution.",
+        "Validate Argo outputs against schemas.",
+        "Add a verification step between agents.",
+        "Disable code execution for untrusted inputs.",
+        "requires-engineering: implement signed artifact handoff."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo is open-source workflow infrastructure with artifacts/parameters, while AutoGen handles model-provider API keys and configurable external model providers. If regulated data is placed into shared workflows, AutoGen may transmit it to third-party providers, creating a retention/residency mismatch risk. No specific residency certification gap is documented, so I keep this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through AutoGen with external model providers, residency or retention obligations may be violated.",
+        "IF the workflow stores artifacts longer than policy allows, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows.",
+        "Use providers with approved residency terms.",
+        "Shorten artifact retention windows.",
+        "Mask identifiers before handoff.",
+        "requires-engineering: add policy-aware routing and retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:9e3f34db92422dd7062d95fc575990aad5198b2f19dfe7e001d56d9038e588ac",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
