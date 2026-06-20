@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "crewai"
+  ],
+  "verdict_id": "v_2026-06-20_authelia__crewai_2c5b04",
+  "generated_at": "2026-06-20T01:53:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.56,
+  "headline": "High: CrewAI\u2019s default shared workspace and broad egress create data-leak and cascading-error risk when paired with Authelia\u2019s OAuth/ForwardAuth outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI reads and writes the host working directory and uses stdin/stdout, so it can ingest Authelia-produced files or text if wired together. Authelia exposes OAuth2/OpenID Connect and ForwardAuth outputs, which could be treated as trusted instructions by CrewAI in a shared workspace. No direct shared-channel proof exists, so uncertainty stays medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Authelia output is copied into CrewAI prompts or task files",
+        "IF both agents share the same working directory without provenance labels"
+      ],
+      "mitigations": [
+        "Separate the agents into different directories",
+        "Prefix all Authelia-derived text with non-executable markers",
+        "Disable automatic ingestion of task files",
+        "Add a manual review step before CrewAI consumes Authelia output"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI has broad network egress, reads the filesystem, and handles API keys; Authelia handles OAuth/OpenID flows and ForwardAuth. If Authelia artifacts or credentials are placed in CrewAI\u2019s workspace, CrewAI can transmit them to model providers or tools. The pairwise leak path is plausible in default crew setups, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Authelia configuration, tokens, or logs are stored in CrewAI\u2019s working directory",
+        "IF CrewAI tools or model providers receive those files as context"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace",
+        "Mount a read-only redacted input directory",
+        "Rotate any exposed credentials immediately",
+        "Restrict CrewAI tool access to non-sensitive paths",
+        "Use separate service accounts for each agent"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Authelia has broad network egress and OAuth/OIDC-facing behavior, while CrewAI can execute shell commands, spawn subprocesses, write files, and use broad egress. Even though Authelia is not marked writable, CrewAI can still contend over shared mutable resources such as files, configs, or downstream services. Lack of explicit locking makes conflict plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or downstream service",
+        "IF CrewAI tasks mutate files that Authelia also reads during auth flows"
+      ],
+      "mitigations": [
+        "Assign disjoint directories and service endpoints",
+        "Serialize writes through a single operator-controlled queue",
+        "Disable CrewAI write access where not needed",
+        "Add file locks around shared artifacts",
+        "Use separate credentials per agent"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI\u2019s role-playing, shared-memory orchestration can treat upstream outputs as task inputs, and Authelia emits authentication/authorization decisions that are often authoritative. If CrewAI acts on those outputs without verification, a mistaken or manipulated auth result can cascade into incorrect downstream actions. This is a default-dangerous interaction because CrewAI is built to automate actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI uses Authelia decisions as authoritative task inputs",
+        "IF downstream CrewAI tools execute actions based on those decisions without human review"
+      ],
+      "mitigations": [
+        "Require explicit verification of Authelia outputs",
+        "Insert a human approval gate before action tools",
+        "Log and diff all auth-derived inputs",
+        "Limit CrewAI to read-only analysis for auth data",
+        "Add schema validation for Authelia-derived fields"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Authelia is an authentication layer that may process identity data, while CrewAI explicitly touches developer-passed crew data and can send it to model providers and tools. The profiles do not prove a residency or certification mismatch, but they do show a compliance-sensitive data flow with different handling surfaces and retention risks. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF identity or access logs from Authelia are passed into CrewAI tasks",
+        "IF CrewAI forwards those logs to external model providers or tools"
+      ],
+      "mitigations": [
+        "Minimize identity data sent into CrewAI",
+        "Redact logs before task submission",
+        "Set explicit retention limits for crew outputs",
+        "Review provider DPAs and residency settings",
+        "Keep auth data in a separate compliance boundary"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:52bc459e0a34a4e3cedc6c8caa4c45906efe0c9588579344983feb1684ab2056",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

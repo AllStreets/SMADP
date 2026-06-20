@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-20_authelia__mentat_c56a87",
+  "generated_at": "2026-06-20T01:53:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem plus broad egress makes prompt-injection, data leakage, and write-conflict pathways plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Authelia can expose content through OIDC/ForwardAuth flows and Mentat reads files and uses stdin/stdout, so a shared workspace or copied output could carry attacker-controlled instructions into Mentat. No direct shared channel is documented, so this is inferred rather than observed. The pair is not provably isolated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Authelia output is copied into files or stdin that Mentat processes as trusted text, injection is possible.",
+        "IF both agents share a filesystem workspace, attacker-controlled content can bridge them."
+      ],
+      "mitigations": [
+        "Separate Authelia and Mentat workspaces.",
+        "Treat Authelia-generated text as untrusted input in Mentat.",
+        "Require manual review before Mentat acts on copied content.",
+        "Use a provenance tag or prefix for machine-generated text.",
+        "requires-engineering: add content-sanitization and instruction-stripping before handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Mentat reads selected files and writes diffs, while Authelia has broad network egress and handles OIDC/ForwardAuth traffic. If sensitive files are present in a shared workspace, Mentat can ingest them and Authelia can move related identity data over the network. The profiles do not show PHI or secrets in Authelia, so this is a workspace-level leakage risk, not a confirmed exfiltration path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are placed in the same workspace Mentat can read, those contents may enter its model context.",
+        "IF Authelia is configured to process identity traffic for sensitive users, network egress can carry related metadata off-host."
+      ],
+      "mitigations": [
+        "Keep sensitive files out of Mentat's workspace.",
+        "Restrict Authelia to non-sensitive test tenants.",
+        "Use separate OS users or containers for each agent.",
+        "Disable network access for Mentat when not needed.",
+        "requires-engineering: enforce workspace ACLs and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Mentat can read and write the filesystem and modify git state, with shared state explicitly via filesystem across instances. Authelia is not writable from its profile, but the pair still has overlapping mutable filesystem access through Mentat plus broad egress, so concurrent edits and repository corruption are plausible by default. Uncertainty about Authelia's local write surface pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Authelia and Mentat operate on the same repository or workspace, concurrent file edits can conflict.",
+        "IF multiple Mentat instances run against the same filesystem, git state can be corrupted without locking."
+      ],
+      "mitigations": [
+        "Run only one Mentat instance per workspace.",
+        "Use separate clones for each agent.",
+        "Pause Authelia while Mentat writes repository state.",
+        "Add a pre-commit lock or file lock around shared paths.",
+        "requires-engineering: implement transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals and can act on files it reads, while Authelia can emit authentication-related outputs that may be copied into those files or prompts. That creates a plausible chain where one agent's output becomes the other's input without verification. The pair does not show autonomous downstream actions, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Authelia-generated text is pasted into Mentat prompts or files, Mentat may treat it as authoritative.",
+        "IF Mentat applies diffs derived from unverified Authelia output, errors can cascade into code changes."
+      ],
+      "mitigations": [
+        "Require a human review step between agents.",
+        "Mark Authelia output as untrusted in the workflow.",
+        "Have Mentat cite source files for every proposed change.",
+        "Use a checklist to verify claims before editing.",
+        "requires-engineering: add automated validation of agent-to-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show no explicit residency, certification, or retention mismatch. Authelia handles identity traffic and Mentat handles source code, so compliance concerns are possible only if the operator routes regulated data through both. The profiles do not document a concrete mismatch, so this remains a low, conditional risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated identity data is routed through Authelia and then into Mentat-managed files, policy review is required.",
+        "IF the deployment imposes residency or retention rules not reflected in either profile, a mismatch can arise."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through the pair.",
+        "Document retention and residency settings before deployment.",
+        "Use synthetic data in tests.",
+        "Review vendor policies for both agents.",
+        "requires-engineering: add policy enforcement for data-class routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
