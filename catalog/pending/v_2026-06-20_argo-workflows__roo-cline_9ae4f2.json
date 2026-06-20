@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-20_argo-workflows__roo-cline_9ae4f2",
+  "generated_at": "2026-06-20T04:07:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: Roo Code\u2019s broad filesystem/MCP/write powers can conflict with Argo Workflows\u2019 API-driven workflow outputs, creating default-path data leakage and cascading errors; prompt-injection risk is lower but present via shared workspace\u2026",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can emit artifacts and parameters, and Roo Code reads workspace files and uses MCP/browsers, so Argo-produced content can be re-ingested as instructions through shared files or MCP-like bridges. This is not proven by direct pair evidence, but the shared filesystem path makes injection plausible. Uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Argo workflow outputs are written into the VS Code workspace that Roo Code reads",
+        "IF Roo Code parses artifact or parameter files as instruction-bearing text",
+        "IF an MCP server exposes Argo outputs without provenance labels"
+      ],
+      "mitigations": [
+        "Separate workflow output directories from the coding workspace",
+        "Add a provenance header to generated artifacts",
+        "Disable automatic instruction-following on workspace files",
+        "Require manual review before Roo Code consumes workflow outputs",
+        "requires-engineering: add content-type and trust metadata to shared files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Argo Workflows touches artifacts and parameters and has allowlisted egress, while Roo Code reads workspace files, handles model-provider keys, and has broad network egress. In default use, sensitive workspace content can flow into Roo Code and then out to external model APIs or MCP servers. The blast radius includes exfiltration, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the workspace contains secrets, credentials, or regulated artifacts",
+        "IF Roo Code sends file contents to a configured model API or MCP server",
+        "IF Argo outputs are copied into the same workspace or mounted volume"
+      ],
+      "mitigations": [
+        "Remove secrets from shared workspaces",
+        "Use a separate non-sensitive workspace for Roo Code",
+        "Restrict Roo Code model endpoints to approved internal services",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce DLP/redaction before model upload"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Argo Workflows can write artifacts via APIs, while Roo Code can write the filesystem, modify git state, and spawn shell processes in the same VS Code workspace. The concurrency model explicitly shares state via filesystem, so simultaneous mutation of the same repo or workspace can corrupt files or git state by default. This matches the high-risk overlap indicator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same workspace or repository",
+        "IF Argo writes artifacts into paths Roo Code edits",
+        "IF Roo Code performs git operations while Argo is updating files"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Pause one agent during the other\u2019s write phase",
+        "Use branch-per-agent workflows",
+        "Lock shared files before mutation",
+        "requires-engineering: add workspace-level concurrency locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Argo produces workflow artifacts and parameters that Roo Code can read from the workspace, and Roo Code can then act on them with shell, git, or browser tools. That creates a default path where one agent\u2019s output becomes the other\u2019s input without a documented verification step. The downstream actions are not guaranteed, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code consumes Argo-generated artifacts as authoritative inputs",
+        "IF Roo Code uses those inputs to edit code, commit changes, or run commands",
+        "IF no human or automated verification step checks the artifact before action"
+      ],
+      "mitigations": [
+        "Require a review gate before acting on workflow outputs",
+        "Mark generated files as untrusted by default",
+        "Use checksum or schema validation on inputs",
+        "Limit Roo Code to read-only mode for generated artifacts",
+        "requires-engineering: add explicit verification workflows"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Argo Workflows is open-source and only documented here as touching artifacts and parameters, while Roo Code handles source code, browser screenshots, and model-provider API keys with broad egress. If regulated data or secrets are placed in the shared workspace, Roo Code can transmit them to external APIs, creating a compliance mismatch. The evidence is indirect, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are present in the shared workspace",
+        "IF Roo Code sends those files to an external model provider or MCP server",
+        "IF retention or residency rules require local-only handling"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use a local-only model endpoint for Roo Code",
+        "Document retention and deletion rules for generated artifacts",
+        "Restrict browser screenshots from containing sensitive data",
+        "requires-engineering: implement residency-aware routing and logging controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

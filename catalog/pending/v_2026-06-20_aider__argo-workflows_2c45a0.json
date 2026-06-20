@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "argo-workflows"
+  ],
+  "verdict_id": "v_2026-06-20_aider__argo-workflows_2c45a0",
+  "generated_at": "2026-06-20T04:07:23Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: Aider\u2019s shared git-repo writes can collide with Argo Workflows\u2019 API-driven automation, creating default-path prompt-injection, data-leakage, and cascading-action risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files in a shared repo, so attacker-controlled content can enter its context. Argo Workflows exposes REST/GRPC APIs and handles artifacts/parameters, so if its outputs are placed into the repo or copied into Aider, instructions can be smuggled across the pair. The bridge is plausible but not directly documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Argo-generated artifacts or parameters are written into the shared repo before Aider reads them, prompt injection is possible.",
+        "IF Aider is asked to edit files that contain untrusted workflow output, it may follow embedded instructions."
+      ],
+      "mitigations": [
+        "Keep workflow outputs in a separate directory from Aider\u2019s working tree.",
+        "Add a manual review step before Aider reads any Argo-produced file.",
+        "Strip instructions/comments from artifacts before copying them into the repo.",
+        "Use a dedicated repo branch per workflow run.",
+        "requires-engineering: add provenance tagging for files passed between systems."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider can read the filesystem and has broad network egress, while Argo Workflows handles artifacts and parameters over REST/GRPC. If sensitive source code or git history is present in the shared repo, Aider can ingest it and potentially send it to configured model providers. Argo\u2019s side is less direct, but the pair still creates a default-path leakage risk through shared workspace content.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF sensitive code or secrets are stored in the shared git repo, Aider can read them.",
+        "IF Aider forwards repository context to a configured model provider, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Remove secrets from the repo before running Aider.",
+        "Use a repo with redacted fixtures for workflow inputs.",
+        "Limit Aider\u2019s context to the minimum file set.",
+        "Run Argo on non-sensitive artifacts only.",
+        "requires-engineering: enforce DLP/redaction on files before model submission."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider has write_filesystem, modify_git_state, and shared-state via a shared git repo; Argo Workflows can mutate artifacts and parameters through API-driven workflow execution. That overlap creates a real write/write conflict on shared mutable resources, and the repo-based coordination is not described as locked. Uncertainty is limited, but the default shared-repo pattern is enough to treat this as high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both systems write to the same repository or artifact path, concurrent edits can clobber each other.",
+        "IF Argo updates parameters while Aider rewrites tracked files, state divergence can occur."
+      ],
+      "mitigations": [
+        "Assign separate write paths for Aider and Argo.",
+        "Serialize writes with a lock file or queue.",
+        "Use branch-per-run for Aider edits.",
+        "Have Argo write to immutable artifact storage.",
+        "requires-engineering: add optimistic concurrency checks before commits."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate code changes and git commits, while Argo Workflows can consume artifacts and parameters as inputs to downstream steps. If Argo treats Aider-produced files as authoritative, an error in Aider can cascade into workflow execution or deployment-like actions. The pairwise pathway is plausible from the profiles, but not directly evidenced, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Argo consumes Aider-edited files without validation, Aider mistakes can propagate downstream.",
+        "IF a workflow step acts on Aider-generated parameters, incorrect edits can trigger incorrect execution."
+      ],
+      "mitigations": [
+        "Require human approval before Argo consumes Aider output.",
+        "Validate Aider-produced files against schema or tests.",
+        "Pin workflow inputs to reviewed commits only.",
+        "Add a diff review step before triggering Argo.",
+        "requires-engineering: add automated verification gates between edit and execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider explicitly handles model-provider API keys and source code/git history, while Argo Workflows handles artifacts and parameters. No residency, certification, or retention mismatch is documented in either profile, so only a low compliance concern remains: if regulated data is placed into the shared repo or workflow artifacts, it may traverse different retention and logging regimes. The evidence is sparse, so I keep this low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared repo or workflow artifacts, retention and logging differences may matter.",
+        "IF either system is used for data subject requests or regulated records, policy review is required."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo.",
+        "Document retention for workflow artifacts.",
+        "Review provider logging settings for Aider.",
+        "Use synthetic data for development runs.",
+        "requires-engineering: align residency and retention policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:06840430357a016410eec86be493bcc8802f9dc9fe1e5d2b41ecef34fc604407",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
