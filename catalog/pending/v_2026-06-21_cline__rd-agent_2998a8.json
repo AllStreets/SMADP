@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "rd-agent"
+  ],
+  "verdict_id": "v_2026-06-21_cline__rd-agent_2998a8",
+  "generated_at": "2026-06-21T00:19:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.65,
+  "headline": "High-risk workspace and API-credential overlap: Cline can write/execute in a VS Code workspace while RD-Agent uploads to external LLM/Kaggle APIs, creating leakage and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline reads and writes workspace files and uses MCP/browser surfaces, while RD-Agent also touches files and browser/API outputs. A shared filesystem or copied outputs could let attacker-controlled content from one agent influence the other, but no direct shared channel is documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or log directory, content from one can be consumed by the other.",
+        "IF either agent treats file contents or browser output as instructions, prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP servers that ingest untrusted content.",
+        "Require manual review before copying outputs between agents.",
+        "Use read-only mounts for shared artifacts.",
+        "requires-engineering: add provenance tagging on inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Cline handles workspace files, browser screenshots, and model-provider API keys; RD-Agent sends data to OpenAI/Azure/DeepSeek/Kaggle APIs and writes logs. If they share a workspace or logs, sensitive source code or research data can flow into third-party inference or API calls, making leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the agents share a filesystem or log directory, files touched by Cline can be read into RD-Agent runs.",
+        "IF RD-Agent processes those files through external APIs, the data leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep separate directories for code and research artifacts.",
+        "Remove secrets from shared folders immediately.",
+        "Disable automatic ingestion of workspace files into API prompts.",
+        "Rotate any exposed API keys.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Cline can write the filesystem, modify git state, and execute shell commands; RD-Agent can also use files and broad network egress. Their write surfaces overlap on shared resources, but RD-Agent is Docker-isolated and no shared lock/checkout mechanism is documented, so conflict is real but not maximal.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout, concurrent commits or file edits can race.",
+        "IF RD-Agent writes logs into a directory Cline edits, last-writer-wins corruption can occur."
+      ],
+      "mitigations": [
+        "Assign separate git branches.",
+        "Use per-agent output directories.",
+        "Pause one agent during the other's write phase.",
+        "Add a manual merge step for shared files.",
+        "requires-engineering: introduce file locks or workspace leasing."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Cline can generate code and browser-derived outputs, and RD-Agent is a research automation agent that can consume files and act through APIs. If RD-Agent treats Cline's outputs as authoritative, mistakes can cascade into API-driven actions or incorrect research artifacts; no verification gate is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF RD-Agent ingests Cline-produced files without validation, errors propagate downstream.",
+        "IF RD-Agent uses those outputs to generate reports or API calls, the blast radius expands beyond one document."
+      ],
+      "mitigations": [
+        "Require human review of Cline outputs before RD-Agent consumes them.",
+        "Add schema validation on exchanged files.",
+        "Keep a checksum of handoff artifacts.",
+        "Limit RD-Agent to read-only analysis of Cline outputs.",
+        "requires-engineering: add confidence/provenance scoring before action-taking."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Cline handles model-provider API keys and workspace code, while RD-Agent sends data to multiple external APIs and handles Kaggle credentials. The pair can create retention/residency mismatches across third-party services, but the profiles do not show a specific regulated data class like PHI or EU PII, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent's workspace, it may be transmitted to external model providers.",
+        "IF the operator relies on a single retention policy across both agents, policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents.",
+        "Review vendor DPAs before use.",
+        "Separate credentials by environment.",
+        "Delete logs after each run.",
+        "requires-engineering: implement retention controls per agent."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:dcac0f32242d47240abbde7e5d1b193e371ea4745fcd98e94481d0e716682f97",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
