@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "rd-agent"
+  ],
+  "verdict_id": "v_2026-06-21_claude-code__rd-agent_972459",
+  "generated_at": "2026-06-21T00:59:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High: shared filesystem and broad egress create default data-leak and prompt-injection pathways; RD-Agent\u2019s API use amplifies cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code reads and writes repo/user files and can use MCP; RD-Agent can read/write log files and run browser/API workflows. That creates a plausible content-to-instruction bridge through shared files or logs, even though no direct shared channel is documented. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or log directory, injected text can cross from one agent to the other.",
+        "IF either agent treats file contents as instructions, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate workspaces and log directories per agent.",
+        "Disable MCP servers unless explicitly needed.",
+        "Review and sanitize any file content before one agent hands it to the other.",
+        "Use read-only mounts for shared artifacts.",
+        "requires-engineering: add provenance tagging on inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Claude Code touches source code, git history, shell environment, and user-provided directories; RD-Agent touches logs and can call external APIs. If they share a workspace, sensitive code or secrets can flow into RD-Agent outputs or third-party model calls. The pair\u2019s default broad egress makes leakage materially dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same repository or directory, files readable by Claude Code can be exposed to RD-Agent.",
+        "IF RD-Agent sends those contents to OpenAI/Azure/DeepSeek/LiteLLM, leakage leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep secrets and source code out of any shared directory.",
+        "Run RD-Agent with redacted inputs only.",
+        "Disable outbound API calls for sensitive runs.",
+        "Rotate any credentials present in the shared workspace.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Claude Code can modify git state and write the filesystem; RD-Agent can also write logs and operate concurrently. The profiles do not show locking or coordination between them, so overlapping writes can corrupt shared working state. This is a real default-path conflict, but the blast radius is usually recoverable.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, concurrent commits or edits can race.",
+        "IF RD-Agent writes logs into a directory Claude Code also edits, file clobbering can occur."
+      ],
+      "mitigations": [
+        "Assign separate branches per agent.",
+        "Use separate output directories.",
+        "Serialize write access with a simple lock file.",
+        "Commit or stash before handing work between agents.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Claude Code can generate code, shell actions, and git changes; RD-Agent is a research automation agent that can consume outputs and call APIs. If RD-Agent treats Claude Code\u2019s artifacts as authoritative, a bad suggestion can cascade into API-driven research, logs, or downstream actions without verification. The pair lacks an explicit verification boundary.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF RD-Agent ingests Claude Code output without validation, errors propagate into subsequent research steps.",
+        "IF Claude Code writes code or configs that RD-Agent later executes or reports on, the mistake compounds."
+      ],
+      "mitigations": [
+        "Require human review before RD-Agent consumes Claude Code output.",
+        "Add a checksum or review step for transferred artifacts.",
+        "Limit RD-Agent to read-only analysis on handoff files.",
+        "Keep action-taking disabled until outputs are verified.",
+        "requires-engineering: implement schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Claude Code handles source code, git history, shell environment, and secrets; RD-Agent handles financial reports, competition datasets, logs, and multiple external APIs. The profiles do not document residency or retention alignment, so mixed-data workflows can create policy mismatches. Because the compliance surface is broader on RD-Agent, the risk is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as financial reports or secrets are placed into the shared workflow, retention and residency rules must match.",
+        "IF either agent logs sensitive inputs longer than the other, deletion/export obligations can fail."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared runs.",
+        "Document retention settings for both agents.",
+        "Purge logs after each run.",
+        "Use separate credentials per agent.",
+        "requires-engineering: add residency and retention policy enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:dcac0f32242d47240abbde7e5d1b193e371ea4745fcd98e94481d0e716682f97",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
