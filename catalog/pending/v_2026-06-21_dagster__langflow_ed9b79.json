@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__langflow_ed9b79",
+  "generated_at": "2026-06-21T07:47:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: Langflow\u2019s default server-side write/network capabilities can amplify Dagster outputs into unsafe actions, while Dagster itself is read-only and non-runnable.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Dagster has no clipboard, filesystem, MCP, or stdin/stdout bridge, so direct injection into it is blocked. Langflow can chain multiple agents and wire tools into flow nodes, but the pair lacks a documented automatic content bridge. Any prompt-injection pathway would require unusual manual copy/paste or an external shared channel.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF an operator manually copies Dagster-generated text into a Langflow prompt node, injection becomes possible.",
+        "IF a shared filesystem or message queue is added between the two, attacker-controlled content can traverse the pair."
+      ],
+      "mitigations": [
+        "Keep Dagster outputs out of Langflow prompt fields.",
+        "Disable any manual copy-paste bridge for untrusted text.",
+        "Use a separate review step before Langflow consumes Dagster text.",
+        "requires-engineering: add provenance tags to all inter-agent payloads.",
+        "requires-engineering: isolate the two agents with separate workspaces."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dagster touches no data classes and has no filesystem or network egress, but Langflow reads/writes server files, uploads flow files, and sends data to model providers and arbitrary HTTP services. If Dagster artifacts are placed into Langflow\u2019s shared flow workspace, sensitive inputs or intermediate outputs can leak through Langflow\u2019s default outbound paths.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dagster artifacts are stored in Langflow\u2019s server filesystem or uploaded flow files, Langflow can transmit them to external services.",
+        "IF the flow uses a third-party model provider or HTTP tool, copied Dagster content may leave the environment."
+      ],
+      "mitigations": [
+        "Do not place Dagster artifacts in Langflow upload directories.",
+        "Restrict Langflow flows to local-only components.",
+        "Remove third-party model and HTTP connectors from shared flows.",
+        "Review and redact any Dagster output before import into Langflow.",
+        "requires-engineering: segregate storage and credentials per agent."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Dagster cannot write files or modify git state, so it cannot contend on those surfaces. Langflow can write the server filesystem and run unsandboxed Python code by default, creating overlap only if both are pointed at the same mutable directory or store. The conflict is plausible but not inherent in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write the same server directory, file clobbering can occur.",
+        "IF Langflow flows mutate shared state while Dagster reads from it, race conditions can corrupt pipeline inputs."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Avoid shared git or filesystem targets.",
+        "Serialize writes through one owner process.",
+        "Use read-only mounts for Dagster inputs.",
+        "requires-engineering: add locking around any shared mutable store."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Dagster is an orchestrator, and Langflow is a graph-based flow builder that can chain multiple agents and tools. That makes it plausible for Dagster-produced outputs to be treated as authoritative inputs inside Langflow, which can then trigger downstream actions or API calls without a verification gate. The interaction is not directly documented, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dagster output is fed into a Langflow node without validation, downstream tool calls may act on incorrect facts.",
+        "IF a Langflow flow uses those inputs to call external APIs, errors can cascade into real-world actions."
+      ],
+      "mitigations": [
+        "Insert a validation step between Dagster and Langflow.",
+        "Require human approval before any Langflow action node runs.",
+        "Limit Langflow to read-only summarization of Dagster outputs.",
+        "Log and diff all Dagster-to-Langflow payloads.",
+        "requires-engineering: add schema validation and provenance checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dagster is open-source and shows no touched data classes, while Langflow stores per-flow credentials, server files, and intermediate outputs. If regulated data is routed through Langflow, its storage and outbound integrations can create retention or residency mismatches. The pair itself does not prove a violation, but the default Langflow surfaces make compliance drift plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed in Langflow flows, its server-side storage and credentials store become compliance-relevant.",
+        "IF the deployment requires strict residency or retention controls, Langflow\u2019s default stores may violate them."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through shared Langflow flows.",
+        "Set explicit retention limits on Langflow stores.",
+        "Disable unnecessary credential persistence.",
+        "Document data residency for every flow component.",
+        "requires-engineering: add policy enforcement for storage and export."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.7.4",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
