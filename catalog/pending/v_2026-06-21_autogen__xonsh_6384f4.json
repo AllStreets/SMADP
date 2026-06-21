@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_autogen__xonsh_6384f4",
+  "generated_at": "2026-06-21T03:11:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High-risk shared filesystem and shell execution create prompt-injection, leakage, and cascading-error pathways; AutoGen\u2019s configurable isolation is not enabled by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write working directories and xonsh can read/write the filesystem, so a shared workspace can carry attacker-controlled instructions from agent_a into agent_b. No MCP or clipboard bridge is shown, so this is not high, but the interaction exists in default-style shared-file workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b are configured to share the same working directory, prompt injection via files is possible.",
+        "IF agent_b parses file contents as commands or instructions, attacker-controlled text can steer execution."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Disable automatic execution of file contents in agent_b.",
+        "Add a manual review step before agent_b consumes agent_a outputs.",
+        "Prefix agent_a outputs with a non-executable delimiter format.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch filesystem contents and both have broad network egress, so sensitive application data passed to agent_a can be exposed through shared files or outbound requests from either side. AutoGen\u2019s isolation is configurable rather than default-enforced, while xonsh also reads environment and notebook content, increasing leakage surface.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents can access the same workspace, file-based leakage is possible.",
+        "IF agent_a or agent_b sends workspace contents to configured model providers or APIs, sensitive data can leave the environment."
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive workspaces.",
+        "Restrict outbound network access for one agent during shared tasks.",
+        "Redact secrets before passing files between agents.",
+        "Review environment variables before launching xonsh.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, so concurrent edits to the same directory can overwrite each other or corrupt state. AutoGen supports multiple instances and developer-defined shared state, while xonsh does not support multiple instances, making coordination weaker and conflict risk high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b write to the same directory, file clobbering can occur.",
+        "IF both agents modify the same scripts or notebooks without locking, race conditions can corrupt work products."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize writes with a simple lock file.",
+        "Have only one agent perform edits at a time.",
+        "Use git patches instead of direct writes where possible.",
+        "requires-engineering: add transactional workspace locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen is a multi-agent orchestrator that can emit tool-driven outputs, and xonsh can execute shell commands and Python expressions. If agent_b treats agent_a\u2019s output as authoritative, a mistaken plan or malformed command can cascade into real actions or destructive shell execution.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF agent_b executes commands derived from agent_a output without verification, errors can cascade into system changes.",
+        "IF agent_a produces incorrect file paths or commands, agent_b may act on them directly."
+      ],
+      "mitigations": [
+        "Require human review before execution.",
+        "Validate commands against an allowlist.",
+        "Have agent_b summarize and restate agent_a output before acting.",
+        "Run a dry-run mode first.",
+        "requires-engineering: add schema validation for inter-agent messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles show broad filesystem and network access, but only agent_a explicitly lists model-provider API keys and configurable isolation; agent_b is unverified and its compliance posture is undocumented. The main issue is a likely retention/residency mismatch for application data, but the evidence is indirect rather than direct.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, retention and residency obligations may be violated.",
+        "IF agent_b forwards notebook or filesystem contents to external services, compliance controls may be bypassed."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Confirm retention settings for both agents.",
+        "Disable external API calls for regulated tasks.",
+        "Document data flow ownership before use.",
+        "requires-engineering: perform a formal compliance review."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
