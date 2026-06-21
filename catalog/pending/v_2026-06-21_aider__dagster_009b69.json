@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "dagster"
+  ],
+  "verdict_id": "v_2026-06-21_aider__dagster_009b69",
+  "generated_at": "2026-06-21T07:30:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.55,
+  "composite_score": 0.305,
+  "headline": "Highest risk is medium: Aider can write/commit shared git state while Dagster is non-runnable and read/write isolated, so prompt-injection, leakage, and cascading-error pathways are limited but not absent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Aider can read and write git-tracked files and uses stdin/stdout, so malicious content in shared repo files could influence it. Dagster has no file or stdin/stdout surface, so there is no direct automated bridge; the pathway is mainly manual or repo-mediated, which keeps blast radius small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git repository, file content from Aider can be re-read by later runs.",
+        "IF an operator copies Aider-generated text into Dagster configuration or docs, prompt-like content can propagate manually."
+      ],
+      "mitigations": [
+        "Keep Dagster and Aider on separate repos for the session.",
+        "Review Aider-edited files before any downstream reuse.",
+        "Disable copy-paste of model output into pipeline definitions.",
+        "Use a throwaway branch for Aider edits.",
+        "requires-engineering: add provenance tags to generated files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "Aider touches source code and git history and can egress to configured model providers, while Dagster exposes no filesystem or network surfaces here. That makes direct leakage from Dagster to Aider unlikely; the main risk is Aider sending repo contents to third-party inference, not cross-agent exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive source code is present in the shared repo, Aider may transmit it to configured model providers.",
+        "IF Dagster is later given access to the same repository through another integration, repo contents could be exposed indirectly."
+      ],
+      "mitigations": [
+        "Exclude secrets from the repo before running Aider.",
+        "Use a local-only model provider for Aider if available.",
+        "Rotate any credentials found in git history.",
+        "Keep Dagster disconnected from the repo during the session.",
+        "requires-engineering: enforce secret scanning on commits."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Aider has shell, filesystem write, and git-state modification; Dagster has no write or shell capability in this profile. There is no direct write-write conflict with Dagster, but Aider can still mutate the shared git repo that Dagster may consume, so coordination failures are plausible in default repo-sharing setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Dagster is configured to read the same repository that Aider edits, uncoordinated changes can race at the git layer.",
+        "IF multiple Aider sessions target the same repo, commits can overwrite each other's intent."
+      ],
+      "mitigations": [
+        "Use one writer per branch.",
+        "Pull/rebase before each Aider session.",
+        "Lock the repo during automated Dagster reads.",
+        "Review git diffs before merge.",
+        "requires-engineering: add distributed locking around shared worktrees."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate and commit code changes, and Dagster is a data orchestrator that may later act on repository contents. Even though Dagster is not runnable here, the pair still creates a plausible chain where Aider's output becomes downstream input without verification, so errors can cascade into pipelines or metadata.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.onexus.runnable"
+        }
+      ],
+      "conditions": [
+        "IF Dagster jobs consume the repository or metadata produced by Aider, unverified code changes can propagate downstream.",
+        "IF operators treat Aider commits as authoritative, later pipeline steps may execute incorrect logic."
+      ],
+      "mitigations": [
+        "Require human review of Aider commits.",
+        "Add tests before Dagster consumes changed code.",
+        "Pin Dagster to reviewed branches only.",
+        "Annotate generated commits clearly.",
+        "requires-engineering: add validation gates before orchestration."
+      ]
+    },
+    "E_compliance": {
+      "severity": "none",
+      "rationale": "No compliance mismatch is evidenced in the profiles: Aider handles source code and git history, while Dagster touches no data classes and requests no secrets or OAuth scopes. With no PHI, EU PII, residency, or retention differences documented, a compliance breach pathway is not established.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF Dagster is later configured to process regulated data classes, reassess residency and retention.",
+        "IF Aider is pointed at a regulated repository, compliance controls must be rechecked."
+      ],
+      "mitigations": [
+        "Document data classes before pairing.",
+        "Keep regulated data out of the repo.",
+        "Review retention settings for any connected services.",
+        "Separate environments for regulated and non-regulated work.",
+        "requires-engineering: add policy checks for sensitive repositories."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:89912b1aad28b8729e1a4a72ba94eeb03a9a7658c8f425ea104650d59557971b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
