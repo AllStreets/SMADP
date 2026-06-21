@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "devin",
+    "rd-agent"
+  ],
+  "verdict_id": "v_2026-06-21_devin__rd-agent_904c7d",
+  "generated_at": "2026-06-21T00:35:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk pair: Devin\u2019s broad workspace and write privileges can collide with RD-Agent\u2019s API-driven research workflows, creating default data-leakage, conflict, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Devin ingests files, browser content, MCP, Slack, and repo artifacts by default, so attacker-controlled text can reach its instruction context. RD-Agent also consumes web/API content and logs, creating a plausible bridge if its outputs are copied into Devin\u2019s workspace or integrations. No direct shared channel is documented, so this is inferred rather than observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF RD-Agent outputs are copied into Devin-managed files, Slack, or MCP inputs without sanitization, injection becomes actionable.",
+        "IF Devin parses repo or browser content as instructions, attacker-controlled text can steer tool use."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of RD-Agent outputs into Devin tasks.",
+        "Require a human review step before Devin acts on any RD-Agent-generated text.",
+        "Strip instructions from logs and reports before sharing between agents.",
+        "Use separate workspaces and separate integration tokens.",
+        "requires-engineering: add provenance tagging for all inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Devin has broad cloud-workspace access, writes to GitHub/Slack/Jira/Notion, and handles deploy keys and integration tokens; RD-Agent touches logs, execution traces, and external APIs with API keys. If they share a workspace or exchange artifacts, sensitive code, traces, or secrets can leak through either agent\u2019s outputs. The pairwise path is plausible from profiles alone, but not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Devin and RD-Agent operate on the same repository, logs, or ticket payloads, sensitive material can cross between them.",
+        "IF either agent is given secrets-bearing inputs, its outputs may expose them to the other agent\u2019s backend or integrations."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared workspaces and tickets.",
+        "Use distinct service accounts and API keys per agent.",
+        "Redact logs and traces before passing them between agents.",
+        "Restrict Devin\u2019s write access to only the target repo paths.",
+        "requires-engineering: enforce workspace-level isolation and DLP scanning."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Devin can write the filesystem, modify git state, and use broad network egress; RD-Agent also writes logs and uses external APIs. If both operate on the same repo or workspace, concurrent writes and git mutations can overwrite each other or corrupt state. Because Devin\u2019s shared-state integrations and RD-Agent\u2019s multi-instance support are documented, the conflict pathway is credible and dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git checkout or log directory, concurrent writes can race.",
+        "IF Devin commits while RD-Agent is generating artifacts, repository state can be corrupted or overwritten."
+      ],
+      "mitigations": [
+        "Assign separate directories or branches per agent.",
+        "Serialize git writes with a lock or single-writer policy.",
+        "Pause one agent while the other is mutating shared files.",
+        "Use read-only mounts for RD-Agent outputs consumed by Devin.",
+        "requires-engineering: add orchestrator-level locking and conflict detection."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Devin is an autonomous planner-executor that can act on browser, shell, and integrations, while RD-Agent produces research artifacts, logs, and execution traces. If Devin treats RD-Agent outputs as authoritative, errors can cascade into commits, tickets, or external messages. The profiles show no built-in verification boundary between them, so the unsafe default is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Devin uses RD-Agent outputs as facts without independent verification, incorrect research can drive downstream actions.",
+        "IF either agent is allowed to send emails, commits, or tickets based on the other\u2019s output, errors propagate outward."
+      ],
+      "mitigations": [
+        "Require explicit verification before Devin acts on RD-Agent outputs.",
+        "Separate research generation from action execution.",
+        "Add a checklist for source validation on every handoff.",
+        "Limit downstream actions to draft-only mode.",
+        "requires-engineering: implement provenance and confidence gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Devin touches team chat, issue trackers, docs, and source code in a vendor-managed cloud workspace, while RD-Agent handles financial reports, competition datasets, execution traces, and logs with third-party API calls. If regulated or sensitive data flows from one into the other, retention, residency, or processor obligations can diverge. The profiles do not prove a specific violation, so this is a medium compliance mismatch risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF EU PII, PHI, or contractual secrets are placed into both agents\u2019 workflows, residency and retention obligations may diverge.",
+        "IF one agent\u2019s logs are retained longer than the other\u2019s, deletion requests may not propagate consistently."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair\u2019s shared workflow.",
+        "Document retention and deletion rules for each agent.",
+        "Use region-matched deployments where possible.",
+        "Review vendor DPAs before enabling sensitive datasets.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3",
+      "GOVERN-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1d97574bb7982fc1717d4bef5ab11836bf78e14703fff89e823dac3311cba4ee",
+    "profile_b_hash": "sha256:dcac0f32242d47240abbde7e5d1b193e371ea4745fcd98e94481d0e716682f97",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
