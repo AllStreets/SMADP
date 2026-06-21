@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-21_dbt-core__n8n_6bc7a9",
+  "generated_at": "2026-06-21T08:03:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High-risk data leakage and cascading-error pathways exist by default; n8n can read/write and execute workflows while dbt-core touches warehouse data.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "dbt-core has no documented shared channel to n8n beyond warehouse/API outputs, so direct prompt injection is not inherent. However, n8n can ingest workflow inputs and file contents, and if dbt artifacts or SQL are manually bridged into n8n, malicious content could steer downstream steps. The pathway is interaction-dependent, not default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core outputs are manually copied into an n8n workflow node as text or files, THEN injected instructions can influence later steps.",
+        "IF n8n workflows parse dbt-generated artifacts as trusted instructions, THEN prompt injection becomes feasible."
+      ],
+      "mitigations": [
+        "Restrict any manual copy-paste bridge between dbt outputs and n8n nodes.",
+        "Add a fixed delimiter/template for any dbt artifact passed into n8n.",
+        "Require human review before n8n executes text derived from dbt outputs.",
+        "Use separate workspaces for dbt artifacts and n8n workflow inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, and n8n has broad network egress plus server filesystem read/write, so sensitive warehouse data can flow into n8n workflows and then out through integrations. This is a default-capable leakage path even though dbt-core itself is allowlisted on egress; the pair creates a broader exfiltration surface through n8n.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF a dbt model or artifact containing warehouse data is passed into n8n, THEN n8n can read it from disk or workflow state.",
+        "IF an n8n integration node sends that data to an external service, THEN leakage occurs beyond the warehouse boundary."
+      ],
+      "mitigations": [
+        "Minimize sensitive columns before handing dbt outputs to n8n.",
+        "Disable or restrict outbound n8n integrations for workflows handling warehouse data.",
+        "Store dbt artifacts in a separate directory with tight permissions.",
+        "Add a manual approval step before any n8n export action.",
+        "Rotate credentials if any sensitive workflow has already run."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "dbt-core can call warehouse APIs, while n8n can execute shell commands, write the filesystem, and use broad network egress. Their overlapping access to mutable external systems creates conflict risk if both operate on the same resources without locking. The n8n concurrency model explicitly shares state via datastore and connected systems, increasing collision likelihood.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same warehouse objects or files in one execution window, THEN conflicting writes or stale reads can occur.",
+        "IF n8n workflows mutate shared downstream systems that dbt also updates, THEN race conditions are possible."
+      ],
+      "mitigations": [
+        "Serialize dbt and n8n jobs against shared resources.",
+        "Use separate service accounts for dbt and n8n.",
+        "Add resource-level locks or advisory locks where supported.",
+        "Write n8n outputs to a staging area before promotion.",
+        "Pause one workflow while the other runs on the same dataset."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "dbt-core produces data transformations and n8n can orchestrate actions from workflow inputs, so dbt outputs can become authoritative inputs for downstream automation. Because n8n can execute shell commands and integrations, a bad dbt result can cascade into irreversible external actions unless explicit verification is added.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF an n8n workflow uses dbt-produced tables or artifacts as trusted inputs, THEN downstream actions may execute on incorrect data.",
+        "IF n8n triggers external side effects from dbt outputs without validation, THEN cascading errors can propagate to third-party systems."
+      ],
+      "mitigations": [
+        "Insert validation checks between dbt outputs and n8n actions.",
+        "Require schema and row-count assertions before downstream execution.",
+        "Add a human approval gate for any destructive n8n step.",
+        "Log and diff dbt outputs before they are consumed by n8n.",
+        "Disable Execute Command nodes in workflows that consume dbt results."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches warehouse data, while n8n processes whatever the workflow handles and stores secrets on its server. If regulated data is routed from dbt into n8n, retention, residency, and access-control obligations can diverge. The profiles do not prove a specific jurisdiction mismatch, so this is a compliance-risk medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        }
+      ],
+      "conditions": [
+        "IF regulated warehouse data is routed into n8n workflows, THEN n8n retention and secret-handling policies apply to that data.",
+        "IF the deployment spans jurisdictions or regulated datasets, THEN policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Classify data before sending it into n8n.",
+        "Review n8n retention settings for workflows handling warehouse data.",
+        "Keep regulated datasets out of n8n unless necessary.",
+        "Document residency and access controls for both systems.",
+        "Use separate credentials for regulated and non-regulated workflows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
