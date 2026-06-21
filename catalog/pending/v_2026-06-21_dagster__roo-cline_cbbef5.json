@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__roo-cline_cbbef5",
+  "generated_at": "2026-06-21T07:36:07Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.53,
+  "headline": "High-risk workspace overlap: Roo Code can write and exfiltrate while Dagster is read-only, creating prompt-injection, leakage, and cascading-error exposure through shared files and MCP.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dagster has no shared channel or input surface, so it cannot be directly hijacked. Roo Code can read workspace files, use MCP, and parse browser/file content, so if Dagster outputs land in the shared workspace, Roo Code may treat attacker-controlled content as instructions. The pathway exists, but it is not default for Dagster itself.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Dagster writes untrusted text into a workspace file that Roo Code later opens",
+        "IF Roo Code is configured to act on file or MCP content as instructions"
+      ],
+      "mitigations": [
+        "Keep Dagster outputs in a separate directory from Roo Code workspaces",
+        "Disable MCP servers in Roo Code for the session",
+        "Mark Dagster-generated files as data-only in the workflow",
+        "Review any file-based prompts before Roo Code consumes them"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dagster is read-only and has no network egress, but Roo Code can read workspace files and has broad network egress plus API calls. If both touch the same workspace, sensitive code or artifacts can flow from Dagster-managed files into Roo Code and then out to third-party model APIs. The pairwise leakage path is plausible in default workspace sharing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Dagster-managed files contain secrets or regulated data",
+        "IF Roo Code opens the same workspace and sends file context to its model backend"
+      ],
+      "mitigations": [
+        "Separate sensitive Dagster assets from Roo Code workspaces",
+        "Remove secrets from shared files before opening them in Roo Code",
+        "Use a local-only model backend for Roo Code",
+        "Rotate any secrets exposed in shared workspace files"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Dagster cannot write files or modify git state, while Roo Code can write the filesystem, modify git state, and supports multiple instances sharing state via filesystem. That asymmetry still creates conflict because Roo Code can overwrite Dagster-managed artifacts or git state in the same workspace without Dagster coordination. The shared filesystem makes the conflict default-dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace directory",
+        "IF Roo Code commits or rewrites files that Dagster also reads or generates"
+      ],
+      "mitigations": [
+        "Use separate workspaces for Dagster and Roo Code",
+        "Disable git writes in Roo Code for shared repos",
+        "Add a manual review step before Roo Code saves files",
+        "Run Dagster in a read-only mounted workspace"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dagster can produce pipeline artifacts that Roo Code may read, edit, or act on, and Roo Code has tool authority to write files and modify git state. There is no documented verification boundary between them, so an error in Dagster output can propagate into Roo Code actions. Dagster is not authoritative by itself, but the pair enables unverified downstream execution.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code consumes Dagster-generated plans, configs, or code without independent validation",
+        "IF Roo Code uses those inputs to edit files or commit changes"
+      ],
+      "mitigations": [
+        "Require a human review of Dagster outputs before Roo Code acts on them",
+        "Add schema validation for Dagster-produced artifacts",
+        "Disable auto-apply behavior in Roo Code for Dagster-derived files",
+        "Log and diff all Roo Code edits before commit"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No PHI, residency, or certification mismatch is documented for Dagster, and Roo Code only clearly handles source code and browser screenshots. The main compliance issue is limited to Roo Code's handling of model provider API keys and broad network egress, which can matter if regulated data is placed in the shared workspace. Dagster is not the compliance driver here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in files that Roo Code reads",
+        "IF Roo Code sends those files to a non-approved external model provider"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Roo Code workspaces",
+        "Use an approved model provider with a DPA",
+        "Redact sensitive fields before opening files in Roo Code",
+        "Document retention and logging settings for the model backend"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

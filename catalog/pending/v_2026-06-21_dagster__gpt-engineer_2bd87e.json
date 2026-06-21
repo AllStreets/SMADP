@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "gpt-engineer"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__gpt-engineer_2bd87e",
+  "generated_at": "2026-06-21T07:36:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High-risk default workspace overlap: gpt-engineer can write and execute code in a shared project directory while dagster is a data orchestrator with no isolation, creating leakage and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in the project directory and uses a single LLM loop; dagster has no filesystem read/write or clipboard channel, so direct injection is not default. However, if dagster ingests files from the shared project directory as inputs, attacker-controlled content from gpt-engineer could be treated as instructions. The pathway is plausible but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF dagster reads prompts or configs from the same project directory that gpt-engineer writes to",
+        "IF gpt-engineer writes untrusted text into files later parsed as instructions"
+      ],
+      "mitigations": [
+        "Separate the agents into different directories",
+        "Disable automatic file ingestion in dagster",
+        "Require manual review of generated files before reuse",
+        "Use read-only mounts for dagster inputs",
+        "requires-engineering: add provenance tagging between file producers and consumers"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "gpt-engineer reads and writes the user project directory and sends prompts to a configured model; dagster has no data classes touched and no network egress, so the main leakage path is shared workspace exposure rather than outbound exfiltration. If sensitive files are placed in the shared directory, gpt-engineer can surface them to its backend while dagster can expose them through pipeline artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are stored in the shared project directory",
+        "IF gpt-engineer is configured to include file contents in prompts or context"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared project directory",
+        "Use a separate workspace for sensitive inputs",
+        "Restrict gpt-engineer to a minimal file subset",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-agent directory ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can touch the same project directory: dagster can write files and gpt-engineer can read/write files, while dagster also lacks self-isolation. That creates a direct write-write conflict and race risk in default per-project concurrency, with potential corruption of generated code or pipeline assets. No locking is documented here, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory",
+        "IF writes occur concurrently without external locking"
+      ],
+      "mitigations": [
+        "Run only one agent per directory at a time",
+        "Use separate branches or worktrees",
+        "Add a manual lock file before edits",
+        "Snapshot the directory before each run",
+        "requires-engineering: implement orchestrator-level file locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer can generate code and dagster can orchestrate data workflows, so dagster may consume gpt-engineer output as authoritative project material. Because gpt-engineer can write files and dagster has no verification or isolation mechanism in the profile, a bad generated artifact can cascade into downstream pipeline behavior or code execution. This is a default-pathway concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF dagster uses files produced by gpt-engineer without review",
+        "IF generated code or configs are deployed into a live pipeline"
+      ],
+      "mitigations": [
+        "Review generated files before orchestration",
+        "Run dagster against a staging project first",
+        "Disable auto-apply of generated changes",
+        "Add tests for generated pipeline assets",
+        "requires-engineering: require signed artifacts before execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for dagster, while gpt-engineer handles an OpenAI API key and sends prompts to a configured model. The pair therefore has a possible compliance gap only if regulated data is placed into gpt-engineer prompts; dagster is not cited because its profile shows no touched data classes or residency claims.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is entered into gpt-engineer prompts or files",
+        "IF the configured model backend stores prompts outside approved regions"
+      ],
+      "mitigations": [
+        "Keep regulated data out of prompts",
+        "Use a local or approved model backend",
+        "Document retention settings for the model provider",
+        "Redact sensitive fields before generation",
+        "requires-engineering: add residency and retention policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:c79a9072bf378f149dd87651e37a45fbcd45737884a5f6c4ccc8a81d2379dc54",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
