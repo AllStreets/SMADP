@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "dagster"
+  ],
+  "verdict_id": "v_2026-06-21_claude-code__dagster_15fbcb",
+  "generated_at": "2026-06-21T07:41:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Highest risk is medium prompt-injection and data leakage via Claude Code\u2019s filesystem/MCP access into Dagster workflows; no direct evidence of a dangerous default bridge.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code can read/write repo files and use user-configured MCP servers, while Dagster is a data-orchestration system that may consume files or pipeline artifacts. That creates a plausible default pathway where attacker-controlled content in shared files or MCP outputs is treated as instructions. Dagster\u2019s lack of direct input surfaces lowers certainty, but uncertainty escalates to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Dagster ingests files or artifacts produced by Claude Code without provenance checks, injection is possible.",
+        "IF a shared MCP server returns untrusted text that Claude Code forwards into Dagster configs or jobs, injection risk increases."
+      ],
+      "mitigations": [
+        "Disable MCP servers not required for the workflow.",
+        "Add a provenance tag to any file passed from Claude Code to Dagster.",
+        "Require manual review of generated pipeline code before execution.",
+        "Store Claude Code work in a separate directory from Dagster inputs.",
+        "requires-engineering: add content-sanitization and schema validation at the Dagster boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Claude Code touches source code, git history, shell environment, and files in cwd, and runs as the invoking user with broad network egress. Dagster itself is not shown reading files, but if both share a workspace, Claude Code can expose sensitive repo or environment data into outputs that Dagster later processes. The shared-filesystem pathway is plausible enough to rate medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same working directory, Claude Code can expose repo contents to Dagster-visible artifacts.",
+        "IF Dagster pipelines log or persist Claude Code outputs, sensitive code or secrets may be retained."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Unset or minimize secrets in the shell environment before starting Claude Code.",
+        "Prevent Dagster from ingesting raw terminal transcripts.",
+        "Rotate any credentials present in the shared environment after the session.",
+        "requires-engineering: enforce workspace isolation and secret redaction in orchestration."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Claude Code has filesystem write and git mutation, but Dagster is not documented here as having local write, shell, or git capabilities. With no overlapping mutable surface in the profiles, direct write-write conflict is not established. The only plausible conflict is indirect through shared files, so severity stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Dagster is wrapped by an external orchestrator that grants it filesystem or git writes, conflict risk increases.",
+        "IF both agents are pointed at the same repo and Dagster mutates files through an unlisted integration, collisions may occur."
+      ],
+      "mitigations": [
+        "Keep Dagster read-only with respect to the repo.",
+        "Use separate branches for Claude Code edits and Dagster-generated artifacts.",
+        "Serialize any file writes through one operator.",
+        "Check git status before and after each agent run.",
+        "requires-engineering: add locking around shared mutable paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Claude Code can generate code and shell actions, and Dagster is a pipeline orchestrator that may consume those outputs as authoritative inputs. If Dagster schedules or runs jobs based on Claude Code-produced configs without verification, a mistaken suggestion can cascade into repeated bad runs. The profiles do not prove this default, so medium is the cautious choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Dagster uses Claude Code output as a pipeline definition or run request without review, cascading errors can propagate.",
+        "IF Claude Code emits incorrect commands that Dagster executes repeatedly, the blast radius expands across jobs."
+      ],
+      "mitigations": [
+        "Require human approval for any generated pipeline change.",
+        "Validate generated configs against a schema before execution.",
+        "Limit Dagster retries on newly generated jobs.",
+        "Run a dry-run or staging pipeline first.",
+        "requires-engineering: add policy gates before Dagster executes agent-authored artifacts."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Claude Code explicitly handles git credentials and shell environment data, while Dagster\u2019s profile shows no data classes touched and no special residency or certification claims. There is no documented compliance mismatch between the pair, but the presence of credentials in Claude Code means a small compliance gap exists if those secrets are routed into Dagster logs or artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Claude Code outputs credentials or secret-bearing logs into Dagster-managed storage, retention risk appears.",
+        "IF Dagster is configured to retain run logs longer than the source secret policy, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Exclude secrets from any handoff artifacts.",
+        "Shorten Dagster log retention for runs involving Claude Code.",
+        "Mask environment variables before invoking Claude Code.",
+        "Review whether any regulated data enters the shared workspace.",
+        "requires-engineering: align retention and deletion policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:89912b1aad28b8729e1a4a72ba94eeb03a9a7658c8f425ea104650d59557971b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
