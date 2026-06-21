@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_gemini-cli__xonsh_fdeb3a",
+  "generated_at": "2026-06-21T02:32:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and shell access create default risks of prompt injection, data leakage, and destructive write conflicts between Gemini CLI and xonsh.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Gemini CLI can use MCP and reads/writes repo files; xonsh can execute shell commands and read/write the filesystem. Because both can exchange content through shared files and stdout/stderr, attacker-controlled text from one can be treated as instructions by the other. This is not proven by direct interaction evidence, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory, prompt-like text in files can flow from one to the other.",
+        "IF either agent is instructed to parse the other's output as commands, injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate working directories per agent.",
+        "Disable MCP tools unless explicitly needed.",
+        "Require human review before one agent consumes the other's output.",
+        "Use a read-only handoff file for inter-agent exchange.",
+        "requires-engineering: add provenance tagging to all shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch filesystem contents and shell environment data, so secrets in the workspace or env vars can be exposed by either agent's outputs. Gemini CLI also handles a Google API key and can call external APIs; xonsh can run broad networked shell commands. The shared-file path is documented, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF secrets are present in files or environment variables in the shared workspace, either agent can read them.",
+        "IF Gemini CLI or xonsh is allowed to print workspace contents, those secrets can be exfiltrated into logs or downstream outputs."
+      ],
+      "mitigations": [
+        "Remove secrets from the shared workspace.",
+        "Unset sensitive environment variables before launching either agent.",
+        "Run each agent in a separate OS user or container.",
+        "Restrict network egress for sessions handling sensitive data.",
+        "requires-engineering: add secret-scanning redaction on outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Gemini CLI can write the filesystem and modify git state; xonsh can also write the filesystem and execute shell commands. Their shared-state model is explicitly via filesystem and git, so concurrent edits can collide and corrupt work. Because both have broad write access by default, this is a high-risk conflict pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git repository, simultaneous commits or file edits can conflict.",
+        "IF one agent rewrites files while the other is reading them, stale reads and overwrite races can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Serialize git writes with a lock file.",
+        "Disable write access for one agent during the other's run.",
+        "Use branch-per-agent workflows.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Gemini CLI can produce tool-using outputs and xonsh can execute shell commands, so one agent's output can become the other's input without a verification barrier. That creates a realistic path for incorrect commands or facts to cascade into actions. The pair is not documented as a verified workflow, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI output is pasted or piped into xonsh, xonsh may execute it as shell syntax.",
+        "IF xonsh-generated commands are treated as authoritative by Gemini CLI, downstream actions can follow bad assumptions."
+      ],
+      "mitigations": [
+        "Insert a manual verification step between agents.",
+        "Use a strict command allowlist for any piped handoff.",
+        "Require dry-run mode before execution.",
+        "Log and diff proposed actions before applying them.",
+        "requires-engineering: build typed interfaces instead of free-text handoff."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated-data certifications or residency constraints, so no specific residency mismatch is evidenced. The main compliance concern is that Gemini CLI can handle a Google API key while xonsh can access broad filesystem and network surfaces, which may create policy gaps if sensitive data is present. The lack of explicit compliance claims keeps this low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.vendor.handle"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, both agents may process it without declared controls.",
+        "IF organizational policy requires certified handling or residency guarantees, neither profile documents them."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Review vendor and deployment policies before use.",
+        "Disable network access for sensitive sessions.",
+        "Store secrets in a dedicated vault, not files.",
+        "requires-engineering: obtain formal compliance attestations."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
