@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "rd-agent"
+  ],
+  "verdict_id": "v_2026-06-21_langflow__rd-agent_b36f9d",
+  "generated_at": "2026-06-21T01:05:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "Medium prompt-injection and data-leakage risk: Langflow\u2019s shared server-side state can feed RD-Agent\u2019s API-heavy workflows, creating cross-agent contamination and exfiltration paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can write/read server filesystem and uses server-side shared state; RD-Agent consumes files/logs and runs browser/API-driven research. That creates a plausible path where attacker-controlled content in Langflow flows into RD-Agent inputs or prompts. The interaction is inferred from docs, not directly reproduced, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow outputs are copied into RD-Agent prompts or datasets without sanitization, injection is possible.",
+        "IF both agents share a workspace or server-side store, attacker-controlled content can traverse between them."
+      ],
+      "mitigations": [
+        "Separate workspaces and stores per agent.",
+        "Strip instructions from any Langflow-generated text before RD-Agent ingestion.",
+        "Disable automatic handoff of files/logs between agents.",
+        "Add a manual review step for cross-agent prompt content.",
+        "requires-engineering: add provenance tags and content filtering at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Langflow touches flow inputs, intermediate outputs, uploaded files, and stored secrets; RD-Agent handles financial reports, datasets, logs, and multiple API keys. If they share storage or credentials, sensitive material can leak from Langflow into RD-Agent outputs or from RD-Agent into third-party APIs. Because both have broad egress and the shared-state path is documented only indirectly, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uploads or stores sensitive flow inputs in a shared location, RD-Agent can read them.",
+        "IF RD-Agent is pointed at the same workspace or logs, its API calls can transmit copied sensitive content externally."
+      ],
+      "mitigations": [
+        "Keep secrets and datasets in separate directories per agent.",
+        "Rotate any shared API keys before pairing.",
+        "Block RD-Agent access to Langflow stores and uploaded files.",
+        "Review logs for accidental secret propagation.",
+        "requires-engineering: enforce per-agent credential isolation and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Langflow can write the filesystem and spawn subprocesses; RD-Agent also has broad network egress and browser execution, plus multiple instances. They do not both advertise unrestricted shared git writes, so the strongest conflict indicators are absent. Still, overlapping writes to shared files or logs can corrupt state in default multi-instance deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or log tree, file clobbering can occur.",
+        "IF the orchestrator lacks locking, concurrent runs can overwrite shared artifacts."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Enable file locks around shared artifacts.",
+        "Run only one writer per workspace.",
+        "Audit for concurrent log rotation.",
+        "requires-engineering: add orchestrator-level mutexes for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Langflow is a graph-based orchestrator that can chain multiple agents, while RD-Agent has research/development subagents and API-driven workflows. If Langflow output is treated as authoritative by RD-Agent, errors can cascade into downstream research actions or reports. The pairwise pathway is plausible but not directly evidenced, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Langflow-generated text is fed into RD-Agent without verification, errors can propagate.",
+        "IF RD-Agent uses Langflow outputs as facts for reports or API actions, downstream mistakes can multiply."
+      ],
+      "mitigations": [
+        "Require source verification before RD-Agent acts.",
+        "Insert a human review gate for cross-agent outputs.",
+        "Mark Langflow outputs as untrusted by default.",
+        "Log provenance for every transferred artifact.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Langflow stores per-flow credentials and intermediate outputs on a server filesystem, while RD-Agent handles financial reports, competition datasets, logs, and third-party API keys. If regulated or sensitive data is routed through both, retention and residency mismatches are plausible. No explicit residency or certification mismatch is documented, so medium is the cautious choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data or PHI is processed through both agents, residency and retention controls must be checked.",
+        "IF either agent logs sensitive inputs longer than policy allows, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Classify data before routing it through either agent.",
+        "Set short log retention on both systems.",
+        "Avoid sending regulated data to third-party APIs.",
+        "Document data flow and retention owners.",
+        "requires-engineering: add residency and retention policy enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:dcac0f32242d47240abbde7e5d1b193e371ea4745fcd98e94481d0e716682f97",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
