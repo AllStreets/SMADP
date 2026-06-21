@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_crewai__xonsh_5fda6b",
+  "generated_at": "2026-06-21T01:28:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High risk: both agents can write and execute shell in shared host workspaces, creating default-path prompt injection, data leakage, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared-memory crews; xonsh can execute shell/Python and read/write filesystem contents. If CrewAI outputs are placed in files or stdout that xonsh consumes, prompt-like content can steer downstream actions. The pair lacks built-in provenance or isolation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes instructions or task text into a shared file that xonsh later reads as input, injection is possible.",
+        "IF xonsh is configured to execute or source CrewAI-generated shell text, attacker-controlled content can steer commands."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Require manual review of any file passed from CrewAI to xonsh.",
+        "Disable automatic sourcing of generated shell snippets.",
+        "Add a provenance header to all inter-agent files.",
+        "requires-engineering: enforce content-type checks before xonsh consumes CrewAI output."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI handles developer-passed crew data and API keys, and xonsh touches filesystem contents, configuration, and environment variables. Both have broad network egress and host filesystem access, so sensitive data can flow from CrewAI-managed work products into xonsh-visible files or environment state and then out through model/tool calls. This is a default-path leakage risk, not just an unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF crew inputs include secrets or confidential documents, CrewAI may place them in the working directory.",
+        "IF xonsh reads those files or environment variables and then invokes networked tools, the data can leave the host."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace.",
+        "Use separate OS users for each agent.",
+        "Rotate any API keys exposed to CrewAI.",
+        "Restrict xonsh to a read-only copy of needed inputs.",
+        "requires-engineering: add egress allowlists for both agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution on the host working directory. CrewAI explicitly supports multiple instances with developer-defined shared state, while xonsh does not support multiple instances and has isolated-environment semantics only on its own side. Concurrent writes to the same files or directories can corrupt state or overwrite outputs without locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or file tree, race conditions can corrupt outputs.",
+        "IF CrewAI runs multiple instances against shared state while xonsh edits the same workspace, conflicts become likely."
+      ],
+      "mitigations": [
+        "Assign each agent a separate workspace.",
+        "Serialize writes with a lock file.",
+        "Disable concurrent CrewAI instances on shared state.",
+        "Snapshot the workspace before each run.",
+        "requires-engineering: add transactional file coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI\u2019s role-playing crews can emit synthesized plans or facts, and xonsh can execute shell commands and Python expressions. If xonsh treats CrewAI output as authoritative, a mistaken or malicious CrewAI step can cascade into real command execution or file changes. The pair has no documented verification gate or provenance control in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes CrewAI output without validation, incorrect instructions can be executed.",
+        "IF CrewAI generates commands or facts that xonsh directly runs, downstream errors can become destructive."
+      ],
+      "mitigations": [
+        "Require human approval before execution.",
+        "Validate CrewAI output against a schema.",
+        "Log and diff all proposed commands.",
+        "Run xonsh in dry-run mode for first pass.",
+        "requires-engineering: add a verifier agent between them."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and the profiles do not show a residency or certification mismatch. However, CrewAI handles developer-passed crew data and API keys, while xonsh touches environment variables and filesystem contents; if regulated data is placed in the shared workspace, compliance obligations can be affected. The other agent is not separately cited because no explicit mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace and then processed by both agents, retention and access controls must be enforced.",
+        "IF either agent is used with data subject to stricter residency rules than the host environment, a policy review is required."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Document retention for crew outputs.",
+        "Use a local-only environment for sensitive runs.",
+        "Review vendor terms before processing regulated data.",
+        "requires-engineering: implement data-class routing controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
