@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "plane"
+  ],
+  "verdict_id": "v_2026-06-21_goose__plane_b80ce5",
+  "generated_at": "2026-06-21T04:57:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.38,
+  "headline": "High risk of prompt-injection and data leakage: Goose can read/write the shared filesystem and use MCP, while Plane exposes file uploads and broad egress, creating a dangerous default interaction path.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP, so it may ingest Plane content if files or task text are bridged into its context. Plane exposes files and notes, but no direct parser bridge is documented. This is a plausible default interaction, not a proven one, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Plane task text or uploaded files are copied into Goose's working directory, THEN Goose can treat attacker-controlled content as instructions.",
+        "IF an MCP server forwards Plane content into Goose without provenance tags, THEN prompt injection is possible."
+      ],
+      "mitigations": [
+        "Separate Goose and Plane workspaces.",
+        "Disable MCP connectors that ingest Plane content.",
+        "Require manual review of any Plane text before Goose reads it.",
+        "Use a read-only export from Plane instead of live sync.",
+        "requires-engineering: add provenance tagging on all bridged content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd and has broad network egress; Plane handles issues, tasks, files, images, and notes. If the same workspace is shared, sensitive content can flow from Goose into Plane or vice versa. The pairwise leakage path is plausible from profiles alone, but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose and Plane share a filesystem or synced folder, THEN files in cwd can be exposed to Plane uploads or exports.",
+        "IF Goose sends file contents to configured model providers, THEN Plane-managed sensitive data can leave the local environment."
+      ],
+      "mitigations": [
+        "Keep Plane uploads out of Goose's cwd.",
+        "Use separate OS accounts for each agent.",
+        "Turn off automatic file ingestion in either agent.",
+        "Restrict Goose network egress to approved endpoints.",
+        "requires-engineering: enforce workspace isolation at the orchestrator layer."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Goose can write the filesystem and modify git state; Plane cannot write the filesystem. That means direct write-write conflict is limited, though shared read/write workflows can still collide if Plane files are exported into Goose-managed directories. The overlap is narrower than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Plane exports files into a directory Goose also edits, THEN Goose can overwrite or reorder those artifacts.",
+        "IF Goose is used to commit changes while Plane tracks the same repo, THEN git-state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign Goose exclusive ownership of git commits.",
+        "Keep Plane artifacts outside the repo tree.",
+        "Use branch-per-agent workflows.",
+        "Pause Plane sync during Goose write operations.",
+        "requires-engineering: add locking around shared mutable paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate code or operational outputs, and Plane can store tasks, notes, and files that may be treated as authoritative work items. If Plane consumes Goose output without verification, errors can cascade into tasking or scheduling decisions. The pathway exists in default workflows but is not guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Plane imports Goose-generated text as a task description without review, THEN incorrect instructions can propagate.",
+        "IF Goose writes status updates into Plane notes, THEN downstream users may act on unverified content."
+      ],
+      "mitigations": [
+        "Require human approval before Plane accepts Goose output.",
+        "Mark Goose-generated content as untrusted in Plane.",
+        "Add a verification checklist for imported tasks.",
+        "Limit Goose to draft-only updates.",
+        "requires-engineering: add source attribution and validation gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and no residency, certification, or retention mismatch is documented. Goose handles model-provider keys and extension tokens, while Plane exposes file uploads and support channels, but the profiles do not show a specific compliance conflict. One citation per agent is enough because the issue is absence of a documented mismatch.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF a deployment routes regulated data through a non-approved Plane instance, THEN a compliance review is required.",
+        "IF Goose is configured with a provider that has stricter residency rules than Plane, THEN policy mismatch can arise."
+      ],
+      "mitigations": [
+        "Document data classes allowed in each tool.",
+        "Keep regulated data out of shared uploads.",
+        "Review retention settings in both systems.",
+        "Use separate tenants for sensitive projects.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:712f5bac83e781668d66336d159e3481f47dd4de4d51155f2c0503e6df47dd8d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
