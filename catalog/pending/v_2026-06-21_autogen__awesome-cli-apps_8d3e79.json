@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "awesome-cli-apps"
+  ],
+  "verdict_id": "v_2026-06-21_autogen__awesome-cli-apps_8d3e79",
+  "generated_at": "2026-06-21T00:07:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.515,
+  "headline": "High-risk code-execution and broad-egress AutoGen paired with an unverified content writer creates default data-leak and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write files, execute shell, and run multi-agent tool calls; the other agent is a content-writing system with broad network egress. If AutoGen passes generated text or files into the writer, prompt-like content can be treated as instructions. No shared channel is documented, so this is inferred from the pair\u2019s exposed surfaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF AutoGen outputs are copied into the writer without provenance filtering, injection is possible.",
+        "IF both agents share a filesystem or message queue, attacker-controlled text can bridge them."
+      ],
+      "mitigations": [
+        "Disable automatic handoff of raw agent outputs.",
+        "Add a provenance tag to every inter-agent message.",
+        "Restrict shared folders to read-only for the writer.",
+        "Require human review before forwarding tool output.",
+        "requires-engineering: add content-sanitization and instruction-stripping at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen explicitly touches application data and model-provider API keys, and can read/write configured working directories. The writer has broad network egress. If they share a workspace, sensitive files can be read by AutoGen and then exfiltrated by the writer\u2019s outbound requests. The pairwise leak path is plausible even though the exact workspace sharing is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory, file contents can flow from A to B.",
+        "IF application data includes secrets or customer data, outbound egress can leak it."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Remove secrets from shared inputs before execution.",
+        "Block outbound network for the writer during review runs.",
+        "Use per-agent credentials with least privilege.",
+        "requires-engineering: enforce workspace isolation and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGen has unrestricted filesystem write and subprocess execution; the other agent\u2019s profile is sparse, but it is a content-writing agent with broad network egress. If both are run against the same mutable workspace, writes can race or overwrite each other. Because B\u2019s write surface is undocumented, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering can occur.",
+        "IF the orchestrator lacks locking, concurrent runs can race on shared artifacts."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Serialize writes with a lock file.",
+        "Disable concurrent runs for shared jobs.",
+        "Use immutable inputs and append-only outputs.",
+        "requires-engineering: add orchestrator-level locking and conflict detection."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen can generate tool outputs and code-executed results, while the writer category suggests downstream text production. If the writer treats AutoGen output as authoritative, errors can cascade into polished but wrong content or actions. The blast radius is broad because AutoGen can execute code and the writer can publish externally via network egress.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the writer consumes AutoGen output without verification, hallucinations can be propagated.",
+        "IF AutoGen executes code that produces incorrect artifacts, the writer can amplify them externally."
+      ],
+      "mitigations": [
+        "Require source citations before reuse.",
+        "Insert a verification step between agents.",
+        "Mark AutoGen outputs as untrusted by default.",
+        "Limit the writer to drafting only, not publishing.",
+        "requires-engineering: add automated fact-checking and policy gates before outbound actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "AutoGen handles model-provider API keys and application data, while the other profile has no documented compliance controls or data classes. There is no direct evidence of a residency or certification mismatch, so only a small compliance gap is visible: sensitive data may be processed by an unverified content writer with broad egress. The other agent is cited because its lack of controls is the issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workflow, retention and residency obligations may be unmet.",
+        "IF the writer is used to transmit or store regulated content, compliance review is required."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Document retention for both agents.",
+        "Review outbound destinations before use.",
+        "Use redacted samples for drafting.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:2ba0225ae7e681a9f8e1b400053e952e63bf462ca82bfe6d6e3b3dc66bedebe7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
