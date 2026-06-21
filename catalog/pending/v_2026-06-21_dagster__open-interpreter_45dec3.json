@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__open-interpreter_45dec3",
+  "generated_at": "2026-06-21T07:52:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.665,
+  "headline": "High-risk default filesystem and code-execution overlap: Open Interpreter can read/write the local machine while Dagster is a non-isolated orchestrator, creating leakage, conflict, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can ingest clipboard/files and execute code from content it reads, while Dagster has no isolation or provenance controls shown. A shared filesystem bridge is plausible, so attacker-controlled text from Dagster outputs could be treated as instructions by Open Interpreter. The pathway is not proven by direct pair evidence, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        }
+      ],
+      "conditions": [
+        "IF Dagster writes untrusted text into a file that Open Interpreter later reads",
+        "IF Open Interpreter is run with clipboard or file-based input from Dagster outputs"
+      ],
+      "mitigations": [
+        "Keep Dagster and Open Interpreter on separate directories",
+        "Disable clipboard-based handoff between the agents",
+        "Require a human review step before Open Interpreter executes file contents",
+        "Use read-only exports from Dagster where possible",
+        "requires-engineering: add provenance tagging for files passed between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Dagster touches no local data by profile, but Open Interpreter can read the entire user filesystem and has broad network egress. If Dagster outputs or intermediate files contain secrets, Open Interpreter can access them and transmit them through configured model providers. Because the pair shares the local machine surface and Open Interpreter is not isolated by default, the blast radius is sensitive-data exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Dagster materializes secrets or sensitive datasets on disk",
+        "IF Open Interpreter is pointed at the same workspace or parent directory"
+      ],
+      "mitigations": [
+        "Store Dagster artifacts in a separate restricted directory",
+        "Remove secrets from any files Open Interpreter can read",
+        "Disable network egress for Open Interpreter during review",
+        "Run Open Interpreter in Docker or another isolated environment",
+        "requires-engineering: enforce per-agent filesystem ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Dagster itself is non-runnable and has no write or shell capability, but Open Interpreter has shell, filesystem, and git write access with filesystem-based shared state. If both operate on the same repo or workspace, Open Interpreter can overwrite Dagster-managed files or git state without locking. The overlap is directly supported by the profiles, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same working directory",
+        "IF Open Interpreter modifies files or git state while Dagster is producing artifacts"
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent",
+        "Freeze git writes while Dagster runs",
+        "Use a lock file around shared outputs",
+        "Review diffs before Open Interpreter commits changes",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dagster can generate pipeline outputs that Open Interpreter may treat as actionable input, and Open Interpreter can then execute shell or file operations based on those outputs. There is no documented verification boundary in either profile, so a bad Dagster artifact can cascade into incorrect actions. The pathway exists in default usage, but the blast radius is bounded by operator oversight.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter consumes Dagster-produced plans, configs, or reports without validation",
+        "IF those outputs contain incorrect commands or parameters"
+      ],
+      "mitigations": [
+        "Insert a manual verification step between agents",
+        "Require schema validation on Dagster outputs",
+        "Run Open Interpreter in confirmation mode, not auto-run",
+        "Limit Open Interpreter to dry-run actions first",
+        "requires-engineering: add typed contracts between pipeline outputs and actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dagster is an open-source data orchestrator with no touched data classes listed, while Open Interpreter explicitly touches anything reachable on the local machine and handles model-provider API keys. If local files include regulated data, Open Interpreter can expose them to external model providers, creating a compliance mismatch. The other agent is not cited for a residency claim because none is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present on the local machine",
+        "IF Open Interpreter sends prompts or file contents to external model providers"
+      ],
+      "mitigations": [
+        "Exclude regulated folders from Open Interpreter access",
+        "Use a provider with an approved data-processing agreement",
+        "Redact sensitive fields before prompting",
+        "Review retention settings for the configured model provider",
+        "requires-engineering: segregate regulated workloads from desktop automation"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
