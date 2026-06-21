@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "spring-integration-samples"
+  ],
+  "verdict_id": "v_2026-06-21_open-interpreter__spring-integration-samples_ee38f9",
+  "generated_at": "2026-06-21T06:57:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and code-execution overlap in Open Interpreter; spring-integration-samples adds little isolation, so prompt injection, leakage, and cascading errors are plausible.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter reads/writes the local filesystem, clipboard, and stdin/stdout by default, while spring-integration-samples has no isolation or provenance controls documented. A shared filesystem bridge makes attacker-controlled content plausible as instructions, though B itself is not documented as parsing prompts. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing"
+        }
+      ],
+      "conditions": [
+        "IF both agents exchange files through the shared filesystem, injected instructions can reach Open Interpreter.",
+        "IF B outputs text that Open Interpreter later treats as executable instructions, prompt injection becomes active."
+      ],
+      "mitigations": [
+        "Disable shared filesystem exchange between the agents.",
+        "Require manual review of any file before Open Interpreter reads it.",
+        "Run Open Interpreter in experimental Docker mode.",
+        "Use a dedicated, empty workspace for each agent.",
+        "requires-engineering: add provenance tagging for all inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can access the entire user filesystem and broad network egress, so sensitive local data can flow into its context and then out through configured model providers. spring-integration-samples is documented as network-none, but the pair still shares local files via Open Interpreter's filesystem access. This is a default-config risk with meaningful leakage potential.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared workspace, Open Interpreter can ingest them.",
+        "IF Open Interpreter sends prompts to a configured model provider, local file contents may leave the machine."
+      ],
+      "mitigations": [
+        "Remove secrets from the shared workspace.",
+        "Restrict Open Interpreter to a minimal project directory.",
+        "Rotate any API keys exposed to the workspace.",
+        "Disable network egress for the Open Interpreter process.",
+        "requires-engineering: enforce per-file allowlists before model submission."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter has unrestricted filesystem write and modify_git_state, and its concurrency model explicitly shares state via filesystem. spring-integration-samples is not runnable and exposes no locking or coordination, so if both touch the same repo or workspace, write conflicts and git corruption are plausible. The default shared-state design makes this dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.onexus.runnable"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering can occur.",
+        "IF both agents modify the same git repository without locks, history corruption or lost work can occur."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Pause one agent before the other writes.",
+        "Avoid concurrent git operations.",
+        "Use a lock file around shared mutable resources.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate and act on code or shell commands, while spring-integration-samples is a sample repository with no documented verification step. If B consumes A's outputs as authoritative, mistakes can cascade into incorrect actions or commits. The pathway exists, but B is not documented as autonomous action-taking, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.repo_url"
+        },
+        {
+          "profile_field": "agent_b.onexus.runnable"
+        }
+      ],
+      "conditions": [
+        "IF B uses Open Interpreter output without verification, errors propagate downstream.",
+        "IF A emits incorrect commands or facts and B renders them as trusted output, the mistake cascades."
+      ],
+      "mitigations": [
+        "Add a human review step before acting on A's output.",
+        "Require B to validate any commands or facts against source data.",
+        "Log A's outputs separately from B's inputs.",
+        "Limit A to read-only analysis for shared tasks.",
+        "requires-engineering: implement schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No specific residency, certification, or retention mismatch is documented for spring-integration-samples, while Open Interpreter can touch local files and send prompts to configured model providers. Because only one agent has explicit external data handling and the other has no compliance metadata, the evidence supports only a low, localized compliance concern rather than a breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in Open Interpreter's prompt or workspace, it may be transmitted to a model provider.",
+        "IF the operator requires a specific residency or retention policy, the pair does not document one."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the workspace.",
+        "Use a provider with an approved DPA.",
+        "Review retention settings for the configured model provider.",
+        "Document the data class allowed for this pair.",
+        "requires-engineering: add policy enforcement for regulated datasets."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:a57fe0fa2f1d5479ce8b53cf478ed965e168b66c3e14f9ce29d12f61afe4f424",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
