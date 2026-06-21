@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_open-interpreter__xonsh_8fcd95",
+  "generated_at": "2026-06-21T03:05:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and shell overlap: Open Interpreter can write/modify the user workspace while xonsh can execute those files, creating prompt-injection, leakage, and cascading-action risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the filesystem and uses clipboard/stdin-stdout, while xonsh reads the filesystem and executes shell commands. The shared filesystem bridge makes instruction-like content in files a plausible injection path, though no MCP/shared queue is present. This is less than high because the bridge is indirect and not documented as automatic parsing of raw web content.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter writes attacker-controlled text into a file that xonsh later sources or executes",
+        "IF xonsh is configured to read commands from files produced by Open Interpreter"
+      ],
+      "mitigations": [
+        "Disable automatic execution of generated files",
+        "Keep Open Interpreter and xonsh in separate directories",
+        "Review any file before xonsh sources it",
+        "Use a read-only handoff folder",
+        "requires-engineering: add provenance tagging for generated files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read the filesystem and Open Interpreter explicitly touches anything reachable on the local machine, including secrets and model-provider API keys. xonsh also touches filesystem contents, configuration, and environment variables. Shared local access creates a realistic leakage path even without direct third-party exfiltration evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files or environment variables are present in the shared workspace",
+        "IF either agent is pointed at directories containing secrets or credentials"
+      ],
+      "mitigations": [
+        "Remove secrets from the shared workspace",
+        "Run each agent under a separate OS user",
+        "Mount sensitive directories read-only or not at all",
+        "Clear environment variables before launching",
+        "requires-engineering: isolate workspaces with per-agent sandboxes"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter has unrestricted filesystem write, shell execution, and git-state modification; xonsh also has filesystem write and shell execution. The pair therefore has overlapping write authority on the same local machine, and Open Interpreter's shared-state-via-filesystem model makes conflicts likely without locking. This matches the high-risk overlap pattern more closely than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same working directory",
+        "IF either agent modifies git state or shared files without external locking"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Pause one agent before the other writes",
+        "Use git locks or a single committer",
+        "Make shared paths read-only for one agent",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate shell commands and file edits, and xonsh can execute shell commands and Python expressions. If xonsh consumes Open Interpreter output without verification, mistakes can cascade into executed actions. The pair is not clearly high because xonsh is not documented here as automatically trusting the other agent, but the pathway exists in default-style workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF xonsh runs commands copied from Open Interpreter output",
+        "IF Open Interpreter's generated shell snippets are executed without review"
+      ],
+      "mitigations": [
+        "Require manual review before execution",
+        "Use dry-run mode for generated commands",
+        "Log and diff proposed edits before applying",
+        "Limit xonsh to read-only analysis tasks",
+        "requires-engineering: insert a verification gate between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Open Interpreter explicitly handles model-provider API keys and can reach the whole local filesystem, while xonsh touches filesystem contents and environment variables. That creates a compliance concern if regulated data or secrets are present, but the profiles do not show a specific residency or certification mismatch. Only the shared local-data handling is cited because the issue is local exposure, not a documented cross-border policy conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data, secrets, or credentials are stored in the shared local workspace",
+        "IF organizational policy forbids local processing of those data classes"
+      ],
+      "mitigations": [
+        "Exclude regulated folders from both agents",
+        "Redact secrets before use",
+        "Run both agents on non-sensitive sample data",
+        "Document retention and deletion handling",
+        "requires-engineering: enforce policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
