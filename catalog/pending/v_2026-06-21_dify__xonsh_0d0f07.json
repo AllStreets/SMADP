@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dify",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_dify__xonsh_0d0f07",
+  "generated_at": "2026-06-21T01:33:40Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible; Dify\u2019s per-conversation datastore adds cross-instance coupling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dify can read/write uploaded knowledge-base files and shares state via the Dify server datastore, while xonsh reads filesystem contents and executes shell commands. That creates a plausible content-to-instruction bridge if one agent consumes the other\u2019s files or outputs. No direct shared clipboard/MCP is shown, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Dify outputs are written into a filesystem location that xonsh later reads as commands or config, injection becomes active.",
+        "IF xonsh ingests Dify-generated text without parsing boundaries, attacker-controlled content can steer execution."
+      ],
+      "mitigations": [
+        "Separate workspaces for each agent.",
+        "Treat all inter-agent text as untrusted data.",
+        "Add a manual review step before xonsh executes Dify output.",
+        "Disable automatic file pickup between agents.",
+        "requires-engineering: add provenance tagging on shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the filesystem, and Dify explicitly touches knowledge-base content and conversation logs while xonsh touches filesystem contents, source code, configuration, and environment variables. In a shared workspace, sensitive material can flow from Dify into xonsh outputs or vice versa. The profiles do not show a stronger third-party exfiltration path, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents mount the same directory, files touched by Dify can be read by xonsh.",
+        "IF xonsh is pointed at directories containing conversation logs or knowledge-base files, those contents can leak into shell output."
+      ],
+      "mitigations": [
+        "Use separate directories per agent.",
+        "Restrict xonsh to a read-only subset of files.",
+        "Redact logs before any handoff.",
+        "Audit shared mounts for secrets.",
+        "requires-engineering: enforce per-agent ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. Dify also has per-conversation shared state, while xonsh supports multiple instances only as false, so concurrent writes to the same workspace or mutable resources can collide and corrupt state. The overlap is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, write races can corrupt files.",
+        "IF either agent mutates shared environment state, the other can observe inconsistent inputs."
+      ],
+      "mitigations": [
+        "Assign disjoint working directories.",
+        "Serialize writes with a lock file.",
+        "Run one agent at a time on shared resources.",
+        "Snapshot state before each run.",
+        "requires-engineering: add transactional coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Dify is an orchestration platform that wires tools into agents or workflows, and xonsh executes shell commands and Python expressions. If Dify-generated text is passed into xonsh without verification, xonsh can act on incorrect or malicious instructions, producing downstream irreversible actions. The pair therefore has a strong default cascade path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF Dify output is used as xonsh input without validation, xonsh may execute erroneous commands.",
+        "IF xonsh scripts trigger external side effects, a bad upstream answer can become an irreversible action."
+      ],
+      "mitigations": [
+        "Require human approval before execution.",
+        "Validate Dify output against a schema.",
+        "Use dry-run mode for xonsh commands.",
+        "Log and diff proposed actions.",
+        "requires-engineering: add typed interfaces between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dify explicitly handles conversation logs, knowledge-base content, model-provider API keys, and tool credentials, while xonsh touches environment variables, configuration, source code, and notebooks. If regulated data is placed into the shared workflow, the pair can create retention and residency mismatches, but the profiles do not show a specific HIPAA/GDPR breach path. I therefore keep this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in Dify logs and then copied into xonsh-managed files, retention controls can diverge.",
+        "IF the deployment has residency constraints, broad egress from either agent can move data outside the intended boundary."
+      ],
+      "mitigations": [
+        "Classify data before handoff.",
+        "Keep regulated data out of shared workspaces.",
+        "Set retention limits on logs.",
+        "Review egress destinations.",
+        "requires-engineering: implement residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-5.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8c782248ac5e7e08a7d484c4982111530a1ef43c53069ff5d1cf1c462f67ba8a",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
