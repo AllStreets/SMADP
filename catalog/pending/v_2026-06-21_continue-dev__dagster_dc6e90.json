@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "dagster"
+  ],
+  "verdict_id": "v_2026-06-21_continue-dev__dagster_dc6e90",
+  "generated_at": "2026-06-21T07:19:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Highest risk is medium: Continue can write/read workspace files and use MCP, while Dagster is non-interactive and fileless, so prompt-injection, leakage, and conflict paths are limited but not absent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can read and write workspace files and use MCP, so attacker-controlled content in shared files or MCP outputs could be treated as instructions. Dagster has no file or MCP surface, so it is not an active injector, but it can still be the downstream consumer if its artifacts are fed back into Continue. The shared filesystem bridge makes the pathway plausible in default IDE workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Continue reads a file or MCP output that contains untrusted instructions, THEN those instructions can influence its tool use.",
+        "IF Dagster-produced artifacts are copied into the shared workspace, THEN Continue may parse them as trusted content."
+      ],
+      "mitigations": [
+        "Restrict Continue to trusted directories only.",
+        "Disable MCP servers not explicitly needed.",
+        "Separate Dagster outputs into a non-shared folder.",
+        "Add a manual review step before Continue acts on file content.",
+        "requires-engineering: add provenance tagging for workspace artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code and open editor buffers and has broad network egress, so sensitive workspace data can leave the host through its model provider or MCP calls. Dagster itself has no filesystem read or network egress, so it is not the leak source, but shared workspace use means it can expose data that Continue then transmits. This is a default-configuration risk when both operate on the same project files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF sensitive code or secrets are present in the shared workspace, THEN Continue can transmit them to a remote model provider or MCP server.",
+        "IF Dagster artifacts are placed in the same workspace, THEN Continue may ingest and forward them."
+      ],
+      "mitigations": [
+        "Use a local model provider for Continue.",
+        "Exclude secret files from the workspace.",
+        "Store Dagster artifacts outside the shared project tree.",
+        "Review MCP server allowlists before enabling them.",
+        "requires-engineering: enforce redaction before outbound model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Continue can write the filesystem and Dagster is non-runnable here with no write or shell capability, so there is little direct write-write contention. The only shared mutable surface is the filesystem via Continue's own concurrency model, but Dagster lacks the capabilities to compete on it. This makes conflict possible only through external orchestration, not by the pair itself.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF an external orchestrator gives Dagster write access to the same directory, THEN file contention can occur.",
+        "IF multiple Continue instances edit the same workspace concurrently, THEN last-write wins may overwrite changes."
+      ],
+      "mitigations": [
+        "Avoid concurrent edits to the same files.",
+        "Use per-agent working directories.",
+        "Turn on file backup or version control snapshots.",
+        "Serialize writes through one orchestrator.",
+        "requires-engineering: add locking around shared workspace writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Continue can generate code or instructions from workspace context, and Dagster can orchestrate data pipelines, so a bad Continue output could cascade if copied into Dagster configs or pipeline definitions. Dagster is not shown to verify such inputs, and Continue's tool use via MCP can amplify mistakes into actions. The pair therefore has a plausible default path from generated text to downstream operational impact.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Continue-generated code or config is pasted into Dagster assets or jobs, THEN Dagster may execute the mistake downstream.",
+        "IF Dagster consumes unverified text from Continue, THEN errors can propagate into pipeline definitions."
+      ],
+      "mitigations": [
+        "Require human review of generated code before deployment.",
+        "Validate Dagster configs with tests before execution.",
+        "Keep Continue in suggestion-only mode for pipeline files.",
+        "Use code review for any generated asset definitions.",
+        "requires-engineering: add schema validation gates before Dagster runs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated data handling, residency, or retention commitments, so no specific compliance breach is evidenced. Continue does touch source code and editor buffers, while Dagster touches no data classes here, so the main concern is generic policy mismatch rather than a documented residency or certification conflict. The other agent is not cited because no compliance-specific surface is declared for it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into Continue's workspace, THEN local policy controls must be checked before use.",
+        "IF Dagster is configured to process regulated datasets, THEN separate compliance review is required."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Document retention rules for editor buffers.",
+        "Review deployment region settings for any model provider.",
+        "Use separate environments for regulated pipelines.",
+        "requires-engineering: add compliance policy enforcement to the workflow."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:89912b1aad28b8729e1a4a72ba94eeb03a9a7658c8f425ea104650d59557971b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
