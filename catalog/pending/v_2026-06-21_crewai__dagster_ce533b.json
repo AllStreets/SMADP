@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "dagster"
+  ],
+  "verdict_id": "v_2026-06-21_crewai__dagster_ce533b",
+  "generated_at": "2026-06-21T07:14:14Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.38,
+  "headline": "Highest risk is medium prompt-injection and data-leakage via CrewAI\u2019s shared workspace and broad egress; Dagster is local-only, reducing but not eliminating pairwise blast radius.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses shared memory among subagents, so attacker-controlled content can be re-ingested as instructions. Dagster has no file I/O or stdin/stdout surfaces, so it is not an active injector, but it can still receive CrewAI-produced artifacts if the operator wires them together. The shared workspace makes the pathway plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes untrusted content into the shared working directory and Dagster later consumes that artifact, injection is possible.",
+        "IF the operator connects CrewAI stdout or files into Dagster inputs without sanitization, instructions can propagate."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Disable automatic ingestion of CrewAI-generated files by Dagster.",
+        "Add a content allowlist for any file Dagster reads from CrewAI.",
+        "Run CrewAI in a container with a read-only mount for shared inputs.",
+        "requires-engineering: add provenance tagging and parser hardening."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "CrewAI touches developer-passed crew data, handles API keys, and has broad network egress, while Dagster is documented as network-none and fileless. If both share a workspace, CrewAI can expose sensitive inputs through files or outbound tool calls; Dagster is less likely to exfiltrate directly, but it can still surface CrewAI-derived data in downstream outputs. The pair therefore has a default leakage path through CrewAI.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive crew inputs are written to the shared working directory, CrewAI can leak them through files or API calls.",
+        "IF Dagster reads CrewAI outputs containing secrets, those secrets can appear in downstream logs or artifacts."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace.",
+        "Restrict CrewAI tool egress to approved endpoints.",
+        "Mount separate per-agent directories.",
+        "Redact sensitive fields before Dagster ingests CrewAI outputs.",
+        "requires-engineering: enforce DLP and secret-scanning on handoff files."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "CrewAI has broad shell, subprocess, filesystem write, and network capabilities; Dagster has none of those surfaces in this profile. Because Dagster is not writable or networked here, there is little direct resource contention beyond ordinary file handoff, so the conflict blast radius is small. The pair does not show overlapping mutable privileges by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the operator maps both agents onto the same writable directory, file clobbering can occur.",
+        "IF Dagster is wrapped with additional write or network permissions outside this profile, conflict severity increases."
+      ],
+      "mitigations": [
+        "Use separate output directories.",
+        "Serialize any shared file writes.",
+        "Keep Dagster read-only relative to CrewAI outputs.",
+        "Avoid granting Dagster extra OS permissions.",
+        "requires-engineering: add locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI can generate tool outputs and artifacts, and Dagster commonly orchestrates downstream data workflows, so CrewAI output may be treated as input to later steps. Dagster is not documented here as verifying provenance or independently checking CrewAI claims, so a bad CrewAI result can cascade into incorrect pipeline actions. The interaction is inferred from profiles, not directly evidenced, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.runnable"
+        }
+      ],
+      "conditions": [
+        "IF Dagster consumes CrewAI-produced artifacts without validation, errors can propagate downstream.",
+        "IF CrewAI emits fabricated facts that Dagster uses to schedule or transform data, the cascade affects multiple work products."
+      ],
+      "mitigations": [
+        "Insert a validation step between CrewAI and Dagster.",
+        "Require schema checks on all CrewAI outputs.",
+        "Mark CrewAI outputs as untrusted in Dagster metadata.",
+        "Add human review for high-impact pipeline actions.",
+        "requires-engineering: implement provenance-aware gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "CrewAI explicitly handles developer-passed crew data and API keys, while Dagster\u2019s profile shows no data classes touched and no secrets handled. There is no documented residency or certification mismatch in the profiles, so only a limited compliance gap is visible: sensitive data could be routed into CrewAI\u2019s broader egress environment. Dagster is not cited for a conflicting policy because none is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed into CrewAI, its broader egress and tool integrations may create policy obligations.",
+        "IF Dagster is used to store or log the same regulated data, retention controls must be aligned."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data to CrewAI.",
+        "Confirm retention settings for any Dagster logs or artifacts.",
+        "Mask secrets before orchestration.",
+        "Document the data flow for compliance review.",
+        "requires-engineering: add residency and retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:89912b1aad28b8729e1a4a72ba94eeb03a9a7658c8f425ea104650d59557971b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

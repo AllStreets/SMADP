@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "mentat"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__mentat_11dde4",
+  "generated_at": "2026-06-21T07:14:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.335,
+  "headline": "High: Mentat can read/write shared files and modify git state, creating dangerous overlap with Dagster\u2019s filesystem-adjacent orchestration context.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Dagster has no filesystem, clipboard, or MCP surfaces, so it cannot directly ingest Mentat output by default. Mentat can read files and emit stdin/stdout diffs, so only a manual copy/paste or file handoff bridge exists. That makes prompt injection possible but not default and the blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies Mentat-generated text into Dagster-controlled inputs or files, injection becomes possible.",
+        "IF Dagster is configured to parse user-supplied file contents as instructions, the risk increases."
+      ],
+      "mitigations": [
+        "Keep Mentat and Dagster in separate workspaces.",
+        "Avoid copy/pasting model output into Dagster configs or docs.",
+        "Require human review before any text from Mentat is ingested.",
+        "Use plain-text, non-executable formats for handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "Dagster touches no data classes and has no filesystem or network egress, while Mentat reads selected files and sends context to a configured model provider. The pair can leak source code if the same files are handed to Mentat, but Dagster itself does not appear to expose additional sensitive data by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the same sensitive files are passed to Mentat, those contents may reach the model provider.",
+        "IF Dagster-managed artifacts are placed in Mentat's command-line file set, they can be exposed."
+      ],
+      "mitigations": [
+        "Exclude secrets and credentials from Mentat inputs.",
+        "Use a scrubbed staging directory for shared files.",
+        "Review Mentat command lines before execution.",
+        "Rotate any exposed API keys immediately if leakage is suspected."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Dagster is non-runnable and has no write or git capabilities, but Mentat can write files and modify git state, with shared state explicitly via filesystem. That creates a real conflict surface if both operate on the same repo or workspace, though Dagster itself is not a writer.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Dagster and Mentat point at the same working directory, concurrent edits can collide.",
+        "IF Mentat is allowed to commit or rewrite git state while Dagster-generated artifacts are present, conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize any repo mutations through one operator.",
+        "Disable concurrent Mentat sessions on the same checkout.",
+        "Review git diffs before applying them."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals and uses model-provider APIs, while Dagster is a data orchestrator that could consume generated artifacts or configs. If Dagster treats Mentat output as authoritative without verification, a bad edit can cascade into downstream pipeline failures or incorrect data work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dagster ingests Mentat-generated configs or code without review, errors can propagate.",
+        "IF Mentat proposes a faulty diff that is applied automatically, downstream jobs may fail."
+      ],
+      "mitigations": [
+        "Require code review for every Mentat diff.",
+        "Run tests before applying generated changes.",
+        "Use a staging Dagster environment first.",
+        "Block automatic promotion from Mentat output to production."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, but Mentat handles model-provider API keys and sends content to an external model provider, while Dagster shows no touched data classes or residency constraints. The main compliance concern is limited to whatever data is placed into Mentat; Dagster is not the driver of the mismatch.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is included in Mentat prompts or file inputs, external processing may violate policy.",
+        "IF the operator requires strict residency for source code, Mentat's provider call path must be checked."
+      ],
+      "mitigations": [
+        "Keep regulated data out of Mentat prompts.",
+        "Confirm provider and region settings before use.",
+        "Document retention expectations for model-provider logs.",
+        "Use redacted inputs for compliance-sensitive work."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:37fe74b51e0dc6b9701df9d85fb47d91b592f8335c0b9eb0561c41b2a43c2ce0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
