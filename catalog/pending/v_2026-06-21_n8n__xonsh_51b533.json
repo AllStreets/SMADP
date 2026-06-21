@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "n8n",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_n8n__xonsh_51b533",
+  "generated_at": "2026-06-21T01:17:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: n8n can write and execute server-side workflows while xonsh can run shell commands, creating dangerous default paths for data leakage, command misuse, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "n8n can pass workflow outputs into downstream nodes and write to the server filesystem, while xonsh reads filesystem content and executes shell commands. That creates a plausible instruction-smuggling path if n8n writes attacker-controlled text that xonsh later treats as commands. No shared clipboard/MCP is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF n8n writes untrusted text into files that xonsh later sources or executes",
+        "IF xonsh consumes workflow output as shell input without quoting or validation"
+      ],
+      "mitigations": [
+        "Use a dedicated handoff directory with non-executable file types",
+        "Quote or escape all n8n-generated strings before xonsh consumption",
+        "Add a manual review step before any shell execution",
+        "Restrict xonsh to read-only inputs for workflow handoffs",
+        "requires-engineering: add provenance tags to workflow artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the filesystem, and n8n explicitly handles secrets plus broad network egress. xonsh can inspect filesystem contents, environment variables, and notebooks. If they share a workspace, sensitive workflow data can flow from n8n into xonsh outputs or external calls. The pairwise leakage path is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same server filesystem or workspace",
+        "IF n8n credentials or workflow payloads are stored in files readable by xonsh",
+        "IF xonsh sends inspected contents to external services via curl or similar"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Store secrets outside any shared directory",
+        "Disable outbound network for xonsh during shared runs",
+        "Rotate any credentials exposed in shared files",
+        "requires-engineering: enforce per-agent filesystem ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, so they can race on the same files or directories. n8n also supports multiple instances via shared state, while xonsh does not support multiple instances, increasing collision risk. Without locking, concurrent writes can corrupt workflows, scripts, or generated artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or file set",
+        "IF n8n runs multiple instances against shared state while xonsh edits the same artifacts",
+        "IF no external lock or lease mechanism is present"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Serialize writes with a lock file",
+        "Make xonsh outputs append-only where possible",
+        "Back up shared artifacts before concurrent runs",
+        "requires-engineering: add transactional coordination around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n can orchestrate tools and workflows, and xonsh can execute shell commands and Python expressions. If n8n forwards xonsh-produced text into later workflow steps without verification, a bad command result can cascade into incorrect actions, file writes, or API calls. The default automation posture makes this more than a minor error chain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF n8n treats xonsh output as authoritative input to later nodes",
+        "IF xonsh emits malformed or partial results that n8n parses as structured data",
+        "IF downstream nodes perform writes, sends, or commits based on that data"
+      ],
+      "mitigations": [
+        "Insert schema validation between xonsh and n8n",
+        "Require human approval before destructive downstream steps",
+        "Log and diff intermediate outputs before execution",
+        "Limit xonsh to read-only analysis tasks",
+        "requires-engineering: add typed contracts between workflow stages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "n8n handles secrets and arbitrary workflow data on its server filesystem, while xonsh touches source code, configuration, environment variables, and notebooks. If regulated data is processed in n8n and then exposed to xonsh on the same host, retention and residency controls can diverge. The profiles do not show a specific certification mismatch, so medium is the highest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in n8n credentials or workflow files",
+        "IF xonsh has access to the same host or shared filesystem",
+        "IF retention or deletion policies differ between the two environments"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared filesystems",
+        "Document a single retention policy for shared artifacts",
+        "Purge temporary files after each run",
+        "Restrict xonsh access to non-regulated datasets",
+        "requires-engineering: align residency and retention controls across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:7f94d0e3395a93cd0a7d122c140010a04220111f867e391d1c239387184f2fab",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
