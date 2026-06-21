@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "gemini-cli"
+  ],
+  "verdict_id": "v_2026-06-21_dagster__gemini-cli_1fedd1",
+  "generated_at": "2026-06-21T07:25:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.53,
+  "headline": "High-risk shared-filesystem and tool-use pair: Gemini CLI can overwrite Dagster-managed files, leak context, and cascade errors into downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Dagster has no interactive input surfaces, but Gemini CLI reads and writes repo/user files and can use MCP, so attacker-controlled content in shared files or tools could influence it. Because Dagster is open-source and file-oriented, the pair creates a plausible file-mediated injection path even though direct ingestion from Dagster is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Dagster-generated files are placed in a workspace that Gemini CLI reads as instructions or prompts",
+        "IF an MCP server exposed to Gemini CLI returns untrusted content that is later treated as guidance"
+      ],
+      "mitigations": [
+        "Separate Dagster and Gemini CLI workspaces",
+        "Disable MCP servers for the Gemini CLI session",
+        "Treat all file contents as untrusted input",
+        "Use a read-only mount for Dagster outputs",
+        "requires-engineering: add provenance tagging between producer and consumer"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dagster touches no data classes in the profile, while Gemini CLI reads cwd files, shell environment, and can send requests to Google APIs or user-configured MCP servers. If Dagster artifacts contain secrets or sensitive code, Gemini CLI can ingest them and transmit them outward; the shared filesystem path makes leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dagster writes sensitive artifacts into a directory Gemini CLI can read",
+        "IF Gemini CLI is run with access to files containing secrets or regulated data"
+      ],
+      "mitigations": [
+        "Keep sensitive Dagster outputs outside Gemini CLI's cwd",
+        "Unset unnecessary shell environment variables before launch",
+        "Restrict Gemini CLI to a minimal directory",
+        "Review MCP server allowlist before use",
+        "requires-engineering: enforce data-class filtering on shared paths"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Dagster cannot write files or modify git state, but Gemini CLI can write the filesystem, modify git, and shares state via filesystem and git. That overlapping mutable surface is enough for destructive conflicts in default terminal workflows, and uncertainty about orchestration locking should be resolved upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or working directory",
+        "IF Gemini CLI commits or rewrites files that Dagster also reads or generates"
+      ],
+      "mitigations": [
+        "Use separate branches or repos",
+        "Run only one writer at a time",
+        "Protect shared directories with read-only permissions",
+        "Pause Dagster jobs during Gemini edits",
+        "requires-engineering: add file locks around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Gemini CLI can act on file and shell context, while Dagster can produce pipeline artifacts that Gemini may treat as authoritative inputs. The pair lacks a documented verification boundary, so a bad Dagster output can cascade into Gemini-driven edits or commands even though Dagster itself is not an action agent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI consumes Dagster-produced text or configs without verification",
+        "IF Gemini CLI uses those inputs to edit files or run shell commands"
+      ],
+      "mitigations": [
+        "Insert a human review step before Gemini acts on Dagster output",
+        "Require schema validation on Dagster artifacts",
+        "Limit Gemini to read-only analysis mode",
+        "Log and diff all generated changes",
+        "requires-engineering: add automated verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No PHI, residency, or certification mismatch is documented for Dagster, while Gemini CLI handles local files and optional Google account/API access. The only concrete compliance concern is that sensitive local data could be exposed to a third-party service if the operator places it in Gemini's workspace; this is a narrow, user-controlled path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in Gemini CLI's accessible files or environment",
+        "IF the operator enables Google API access or remote MCP services for that session"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the Gemini workspace",
+        "Disable optional account login",
+        "Use local-only files for analysis",
+        "Review retention settings for connected services",
+        "requires-engineering: document residency and retention boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:08f5c3e646cc24f5d5f3556a847bff970229f143c1a38475c832f7f6d18e0d6e",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
