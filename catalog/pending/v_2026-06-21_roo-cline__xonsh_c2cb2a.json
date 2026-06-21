@@ -1,0 +1,200 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "roo-cline",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_roo-cline__xonsh_c2cb2a",
+  "generated_at": "2026-06-21T02:49:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High-risk shared filesystem and broad write/network defaults create prompt-injection, leakage, and cascading-error exposure between Roo Code and xonsh.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Roo Code reads and writes VS Code workspace files and uses MCP; xonsh reads/writes the filesystem and executes shell commands. Their shared filesystem bridge makes attacker-controlled file content a plausible instruction channel. This is not proven by direct interaction evidence, so I avoid high, but the pathway exists in default workspace use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace directory",
+        "IF xonsh consumes files produced by Roo Code without content provenance checks",
+        "IF Roo Code parses workspace text as instructions or tool directives"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Disable MCP for shared workspaces",
+        "Require manual review of any file passed between agents",
+        "Use read-only mounts for xonsh when consuming Roo Code outputs",
+        "requires-engineering: add provenance tagging for inter-agent files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Roo Code handles model provider API keys and broad network egress; xonsh can read filesystem contents, environment variables, and send data via shell tools. If they share a workspace or environment, sensitive code or secrets can flow from one agent into the other and then out over network paths. The profiles support the pathway, though not a direct leak trace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same filesystem workspace contains secrets or credentials",
+        "IF xonsh reads environment variables or files written by Roo Code",
+        "IF either agent forwards those contents to external APIs or remote services"
+      ],
+      "mitigations": [
+        "Store secrets outside the shared workspace",
+        "Use separate OS users or containers",
+        "Block network egress for xonsh during sensitive tasks",
+        "Rotate any exposed API keys immediately after shared runs",
+        "requires-engineering: enforce per-agent secret scoping"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and execute shell commands; Roo Code also modifies git state while xonsh can manipulate files and run subprocesses. In a shared workspace, concurrent writes and git operations can overwrite each other or corrupt state. Because the profiles explicitly show overlapping mutable access and no locking, the conflict is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents are active in the same VS Code workspace",
+        "IF either agent edits the same files or git branch concurrently",
+        "IF no external lock or serialization layer is present"
+      ],
+      "mitigations": [
+        "Assign separate branches per agent",
+        "Serialize write operations manually",
+        "Pause one agent before the other edits shared files",
+        "Use file locks for git and workspace mutations",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Roo Code can generate code, browser-derived content, and tool outputs that xonsh can immediately execute as shell commands or Python expressions. That creates a direct A-to-B trust chain with no documented verification step, so a mistaken or malicious Roo Code output can become an executed action in xonsh. The blast radius includes destructive shell actions and repo changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes Roo Code output as shell input or notebook code",
+        "IF Roo Code emits unverified commands, patches, or facts",
+        "IF xonsh executes those outputs without human review"
+      ],
+      "mitigations": [
+        "Require explicit confirmation before execution",
+        "Insert a validation step between agents",
+        "Restrict Roo Code to producing diffs only",
+        "Run xonsh in dry-run mode for inter-agent handoffs",
+        "requires-engineering: add schema validation for handoff messages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch stated. Roo Code handles model provider API keys and xonsh handles environment variables and filesystem contents, so compliance risk exists only if regulated data is placed into the shared workspace. I therefore keep this low and do not cite a single-agent residency violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is stored in the shared workspace",
+        "IF either agent sends that data to a non-compliant external service",
+        "IF retention or logging settings differ across the two agents"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Disable external API calls for regulated tasks",
+        "Review retention settings before processing sensitive data",
+        "Use a compliance-approved environment only",
+        "requires-engineering: add policy enforcement for data classes"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3467a1c605b4c1e5bb0da82ccceaacaefa1cce7bbf60240c7b2b83b858bb1a0e",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

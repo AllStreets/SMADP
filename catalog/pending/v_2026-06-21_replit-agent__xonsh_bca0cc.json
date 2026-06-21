@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "replit-agent",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_replit-agent__xonsh_bca0cc",
+  "generated_at": "2026-06-21T02:49:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High-risk shared Repl filesystem and broad egress make prompt injection, leakage, and cascading errors plausible; xonsh adds write-conflict and compliance uncertainty.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Replit Agent can read/write Repl workspace files and xonsh can read/write the filesystem and emit shell-driven outputs, so a shared workspace can carry attacker-controlled content between them. No MCP or clipboard bridge is documented, so this is not high, but the shared filesystem pathway is enough for prompt injection risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same Repl workspace files, injected instructions in one agent's output can be consumed by the other.",
+        "IF either agent treats file contents as trusted instructions, the shared-file pathway becomes exploitable."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces.",
+        "Require manual review of any file one agent wants the other to read.",
+        "Prefix untrusted files with a non-executable marker and strip instructions before reuse.",
+        "Disable automatic ingestion of generated files into prompts.",
+        "requires-engineering: add provenance tagging for inter-agent file handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Replit Agent explicitly handles secrets and deployment configuration, while xonsh touches filesystem contents, environment variables, and shell commands. Both have broad network egress, so sensitive material can move from the shared workspace into outbound requests or logs. The pairwise leakage path is therefore dangerous by default, even though the exact shared storage boundary is only partially documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF secrets or environment variables are present in the shared workspace, either agent can read them.",
+        "IF either agent sends workspace-derived content over network egress, sensitive data can leave the environment.",
+        "IF the same OAuth or API credentials are reused across both agents, leakage impact expands."
+      ],
+      "mitigations": [
+        "Remove secrets from shared files before either agent runs.",
+        "Use separate credentials for each agent.",
+        "Block outbound network access during sensitive edits.",
+        "Store secrets only in a dedicated secret manager, not in workspace files.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters on outbound traffic."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the same filesystem and execute shell commands; Replit Agent also modifies git state while xonsh can manipulate files and subprocesses. Without documented locking between them, concurrent edits can overwrite each other or corrupt repository state. The overlap is direct and the blast radius can include irreversible code loss.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, concurrent writes can clobber files.",
+        "IF both agents touch the same git repository without locks, history or working-tree state can diverge.",
+        "IF one agent runs while the other is mid-edit, race conditions can corrupt outputs."
+      ],
+      "mitigations": [
+        "Run only one agent at a time on a repository.",
+        "Assign each agent a separate working directory.",
+        "Commit or snapshot before handing work between agents.",
+        "Use file locks for shared mutable paths.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Replit Agent produces code and deployment changes, and xonsh can execute shell commands and Python expressions, so one agent's output can become the other's input with no documented verification step. That creates a plausible chain where a mistaken or malicious artifact is acted on downstream. The pathway exists, but the profiles do not show fully autonomous irreversible actions by both agents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes commands generated by Replit Agent without review, errors can cascade into the environment.",
+        "IF Replit Agent consumes xonsh-produced files as authoritative, bad assumptions can propagate into code or deployment changes.",
+        "IF either agent is allowed to act on the other's output without a verification step, downstream mistakes multiply."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require tests or lint checks before accepting generated commands.",
+        "Limit each handoff to read-only artifacts.",
+        "Log and diff every inter-agent transfer.",
+        "requires-engineering: add schema validation for handoff payloads."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Replit Agent handles secrets and deployment configuration in a cloud Repl, while xonsh processes filesystem contents and environment variables in an isolated environment. That creates a compliance mismatch risk around retention and residency for sensitive data, but the profiles do not document a specific regulated-data regime like HIPAA or EU-only processing. Uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, retention and residency obligations may diverge.",
+        "IF Replit-hosted data is copied into xonsh logs or notebooks, retention controls may differ.",
+        "IF the operator requires a specific certification boundary, the pair may violate it."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Verify retention settings for both environments before use.",
+        "Use redacted test data for cross-agent workflows.",
+        "Document where each agent stores logs and artifacts.",
+        "requires-engineering: align residency and retention controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ee95381fd1a4fde08ad97a1bda6c9f560786e95a63cbe51d0772ce52fef1fddf",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
