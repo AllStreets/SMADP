@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_langgraph__xonsh_18c3ae",
+  "generated_at": "2026-06-21T02:43:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.455,
+  "headline": "High: shared filesystem and broad shell/network capabilities make prompt injection, leakage, and cascading errors plausible by default; compliance risk is lower but nonzero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can wire developer-defined tools and has no self-isolation, while xonsh reads and writes filesystem contents and runs shell/Python. That creates a plausible shared-file or stdout/stderr bridge where attacker-controlled content from one can be treated as instructions by the other. No direct MCP/clipboard bridge is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange files or shell output through a shared workspace, prompt injection becomes reachable.",
+        "IF either agent parses the other's file contents as instructions, the attack path is active."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable automatic execution of file-derived commands.",
+        "Require human review before passing outputs between agents.",
+        "Strip instruction-like text from exchanged artifacts.",
+        "requires-engineering: add provenance tagging to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both profiles can read and write filesystem contents and have broad network egress. LangGraph explicitly handles model provider API keys, and xonsh touches environment variables, configuration, and notebooks. In a shared workspace, sensitive data can flow from one agent into the other's outputs or outbound requests. The pairwise leakage path is therefore plausible in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or environment, files and secrets can be exposed across the pair.",
+        "IF either agent forwards context or file contents to external model providers or APIs, leakage expands beyond the local host."
+      ],
+      "mitigations": [
+        "Use separate service accounts and env files.",
+        "Mount only the minimum required directories.",
+        "Redact secrets before handoff between agents.",
+        "Block outbound network except allowlisted endpoints.",
+        "requires-engineering: add per-agent data-loss prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have overlapping write access to the filesystem and can spawn subprocesses, so they can contend over the same mutable resources. LangGraph supports multiple instances via a shared checkpointer store, while xonsh does not support multiple instances, increasing the chance of race conditions if both touch the same files or state. This is a real conflict path, though not as severe as unrestricted git-state collisions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or checkpoint store, last-writer-wins conflicts can occur.",
+        "IF the orchestrator does not provide locking, concurrent subprocesses can corrupt shared state."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Enable file locks around shared resources.",
+        "Serialize writes to checkpoints and notebooks.",
+        "Use per-agent temp directories.",
+        "requires-engineering: add transactional coordination for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LangGraph is an orchestration framework that can pass one node's output to another, and xonsh executes shell/Python expressions. If LangGraph feeds xonsh outputs without verification, a mistaken or malicious intermediate result can cascade into executed commands or downstream actions. The pathway is documented by the profiles, but there is no evidence of mandatory verification, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph routes xonsh output directly into later nodes, errors can propagate unchecked.",
+        "IF any downstream node executes commands derived from prior outputs, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Insert validation nodes between agents.",
+        "Require schema checks on all handoffs.",
+        "Log and diff intermediate outputs before execution.",
+        "Disable auto-execution of generated commands.",
+        "requires-engineering: add policy gates for high-risk actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented for either open-source profile, so a strong compliance finding is not supported. However, LangGraph handles model provider API keys and xonsh touches notebooks, environment variables, and filesystem contents; if regulated data is placed into a shared workspace, policy gaps could arise. I cite both profiles because the risk depends on their combined data handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared workspace, retention and access controls must be checked.",
+        "IF either agent sends regulated data to external services, residency and DPA requirements must be verified."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared folders.",
+        "Document retention for notebooks and checkpoints.",
+        "Review outbound destinations before use.",
+        "Separate credentials from working data.",
+        "requires-engineering: map data flows to compliance controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
