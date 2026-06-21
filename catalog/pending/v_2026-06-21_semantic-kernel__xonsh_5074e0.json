@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "semantic-kernel",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-06-21_semantic-kernel__xonsh_5074e0",
+  "generated_at": "2026-06-21T03:00:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.5,
+  "headline": "Medium prompt-injection and data-leakage risk from Semantic Kernel\u2019s MCP/filesystem orchestration paired with xonsh\u2019s shell/file access; no direct evidence of a safer bridge.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel can use MCP servers and application-defined files, while xonsh reads/writes the filesystem and consumes stdin/stdout. That creates a plausible content-to-instruction bridge if SK passes untrusted tool output into xonsh. The pair lacks direct documented provenance controls, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel forwards MCP or file content into xonsh command text without sanitization, injection is possible.",
+        "IF xonsh executes text derived from SK outputs as shell code, attacker-controlled instructions can be followed."
+      ],
+      "mitigations": [
+        "Disable automatic piping of SK outputs into xonsh commands.",
+        "Require explicit allowlists for any SK-to-xonsh text transfer.",
+        "Add a manual review step before executing generated shell text.",
+        "Log and diff all tool outputs before reuse.",
+        "requires-engineering: add provenance tags on all cross-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystem contents, and Semantic Kernel explicitly handles model provider API keys and plugin credentials. If they share a workspace or memory store, xonsh can expose those files while SK may send them to external model APIs. That is a default-risk pathway, though not proven for this exact deployment.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a writable workspace, secrets in files can be read by xonsh and reused by Semantic Kernel.",
+        "IF SK sends workspace contents to Azure OpenAI/OpenAI/Hugging Face tools, file data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Move secrets out of the shared workspace.",
+        "Restrict SK to a read-only subset of files.",
+        "Block xonsh from directories containing credentials.",
+        "Rotate any exposed API keys immediately.",
+        "requires-engineering: separate per-agent workspaces and mount them read-only."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel can write files and call MCP/OpenAPI tools; xonsh can execute shell commands, spawn subprocesses, and write files. Their overlapping write and execution surfaces can race on the same workspace or artifacts. No locking or coordination primitive is documented, so conflict risk is real in default multi-agent use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, concurrent writes can corrupt files.",
+        "IF SK invokes MCP tools while xonsh edits the same artifacts, state divergence can occur."
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent.",
+        "Serialize writes with a simple file lock.",
+        "Avoid concurrent edits to git-tracked files.",
+        "Check for stale file timestamps before overwrite.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel can generate tool-using agent outputs, and xonsh can execute shell commands and subprocesses. If xonsh treats SK output as authoritative, a mistaken or malicious instruction can cascade into real actions. The pair lacks a built-in verification boundary in the profiles, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes commands derived from SK text without human review, errors propagate into actions.",
+        "IF SK output is used as a source of facts for xonsh scripts, downstream commands may be wrong."
+      ],
+      "mitigations": [
+        "Require human approval before execution.",
+        "Insert a validation step that checks SK outputs against source data.",
+        "Limit xonsh to dry-run mode for generated commands.",
+        "Record command provenance alongside outputs.",
+        "requires-engineering: enforce typed schemas between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel handles model-provider API keys and can send data to Azure OpenAI/OpenAI/Hugging Face, while xonsh touches filesystem contents, source code, configuration, and environment variables. If regulated data or secrets are present in the shared workspace, the pair can create retention and residency mismatches. The profiles do not prove a specific regime, so medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in files accessible to both agents, compliance scope expands.",
+        "IF SK forwards those files to third-party model APIs, residency or retention obligations may be violated."
+      ],
+      "mitigations": [
+        "Classify and exclude regulated files from the shared workspace.",
+        "Disable external model calls for sensitive jobs.",
+        "Document retention for any data sent through SK APIs.",
+        "Review whether the workspace contains PHI or EU PII before use.",
+        "requires-engineering: add policy-based routing for sensitive data."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:698493e9e2bf6da383b1e6a3755c4bfdd52b537cc8c59f5aa8797665d5a64d41",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
