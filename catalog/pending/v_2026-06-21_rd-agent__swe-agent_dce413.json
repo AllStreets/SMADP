@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "rd-agent",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-21_rd-agent__swe-agent_dce413",
+  "generated_at": "2026-06-21T00:24:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High: shared filesystem/network and write-capable SWE-agent can leak or corrupt RD-Agent outputs; prompt-injection and cascading-error risks are medium.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "RD-Agent can run browsers and ingest research/web content, while SWE-agent reads and writes files in its Docker sandbox. If RD-Agent\u2019s outputs are copied into SWE-agent\u2019s task context or files, attacker-controlled text can steer tool use. No MCP/shared queue is documented, so this is inferred from file-based handoff rather than direct evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF RD-Agent output is pasted into SWE-agent prompts or task files",
+        "IF SWE-agent treats file contents as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Use a strict prompt template that strips instructions from RD-Agent outputs",
+        "Add a human review step before copying any RD-Agent artifact into SWE-agent",
+        "Store RD-Agent outputs in read-only files for SWE-agent",
+        "Tag imported text as data, not instructions",
+        "requires-engineering: add provenance-aware parsing between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "RD-Agent touches financial reports, competition datasets, execution traces, logs, and has broad network egress plus API-key handling. SWE-agent has filesystem read/write and broad egress inside its sandbox. If they share a workspace or secrets are copied across, sensitive data can leave via either agent\u2019s outbound calls; the pairwise leakage path is plausible and high impact.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or log directory",
+        "IF RD-Agent artifacts include secrets, financial reports, or competition datasets",
+        "IF SWE-agent is allowed to transmit file contents to its model provider"
+      ],
+      "mitigations": [
+        "Separate workspaces and mount them read-only across agents",
+        "Remove secrets from shared artifacts before handoff",
+        "Disable outbound network for one agent during shared-data handling",
+        "Rotate any API keys used by RD-Agent after the run",
+        "requires-engineering: enforce per-agent data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "RD-Agent supports multiple instances and broad network/API use; SWE-agent can execute shell, modify git state, install packages, and write files. If both operate on the same repo or directory, concurrent writes and git mutations can overwrite each other or corrupt state. The profiles show no locking or coordination primitive, so the conflict is a default-risk inference.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or filesystem tree",
+        "IF either agent commits or rewrites files without external locking",
+        "IF multiple instances of RD-Agent run concurrently with SWE-agent"
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout",
+        "Serialize git writes with a manual lock file",
+        "Pause one agent before the other edits the repo",
+        "Review diffs before any commit or push",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "RD-Agent produces research outputs from papers, datasets, logs, and browser-derived content; SWE-agent can act on those outputs by editing files and modifying git state. That creates a handoff where SWE-agent may treat RD-Agent results as authoritative without verification. The blast radius is multiple work products, but not inherently irreversible in the documented setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes RD-Agent findings without independent validation",
+        "IF RD-Agent outputs are used as facts for code changes or commits",
+        "IF no review gate exists between research and implementation"
+      ],
+      "mitigations": [
+        "Require a second-pass verification checklist",
+        "Compare RD-Agent claims against source artifacts before action",
+        "Block direct commit from RD-Agent outputs",
+        "Have a human approve any downstream code change",
+        "requires-engineering: add automated fact-checking between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "RD-Agent explicitly handles financial reports and competition datasets, while SWE-agent handles repository code and GitHub tokens. If regulated or restricted data is moved into SWE-agent\u2019s sandbox or logs, retention and residency obligations can diverge. The profiles do not specify certifications or residency, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF financial reports or restricted datasets are copied into SWE-agent\u2019s workspace",
+        "IF GitHub tokens or model-provider keys are present in shared logs",
+        "IF the deployment must satisfy a specific retention or residency policy"
+      ],
+      "mitigations": [
+        "Keep regulated data out of SWE-agent workspaces",
+        "Redact secrets from logs before sharing artifacts",
+        "Use separate retention policies per agent",
+        "Document which data classes each agent may process",
+        "requires-engineering: map each agent to a compliance boundary"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-2.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:223e7cb9a9424512806123cd15755bc2d6f09fe715ddd681760eef38dfbdb11a",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
