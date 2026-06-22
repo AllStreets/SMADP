@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "godot-rl-agents",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-22_godot-rl-agents__open-interpreter_6c644b",
+  "generated_at": "2026-06-22T04:34:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.59,
+  "headline": "High: Open Interpreter can read/write the shared filesystem and run shell commands, creating prompt-injection, leakage, and cascading-action risks when paired with a non-isolated game agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read the filesystem and use clipboard/stdin, while godot_rl_agents has no isolation or provenance controls shown. A shared file or copied output can therefore be treated as trusted input by Open Interpreter, creating an injection path. The pathway is inferred from the pair, not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange content through a shared file, clipboard, or stdin/stdout bridge",
+        "IF Open Interpreter is run with default confirmation behavior and parses agent_a output as instructions"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents",
+        "Keep agent_a and agent_b in separate directories",
+        "Require a human to review any text passed from agent_a to agent_b",
+        "Run Open Interpreter in Docker or another isolated environment",
+        "requires-engineering: add provenance tags to all inter-agent messages"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read the entire user filesystem and has broad network egress, while godot_rl_agents is a local game-playing agent with no stated data controls. If agent_a artifacts or local secrets are present on disk, agent_b can read and potentially transmit them. This is a default-capable leakage path, though not proven for a specific secret class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present in the shared local filesystem",
+        "IF Open Interpreter is pointed at directories containing agent_a outputs or secrets"
+      ],
+      "mitigations": [
+        "Move sensitive files out of the working directory",
+        "Run Open Interpreter with a restricted workspace",
+        "Rotate any exposed API keys after testing",
+        "Disable network egress for the session if possible",
+        "requires-engineering: enforce per-agent filesystem sandboxing"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a has no write or shell capabilities, but agent_b can write the filesystem, modify git state, and spawn subprocesses. If both are pointed at the same workspace, agent_b can overwrite or race with agent_a artifacts, and the concurrency model explicitly shares state via filesystem. The conflict is therefore default-dangerous for shared workspaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory or git repository",
+        "IF agent_b is allowed to write while agent_a is producing artifacts"
+      ],
+      "mitigations": [
+        "Give each agent a separate working directory",
+        "Avoid concurrent runs on the same repository",
+        "Use git branches or commits for handoff instead of shared files",
+        "Pause agent_b before agent_a writes final outputs",
+        "requires-engineering: add file locks or an orchestrator mutex"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Open Interpreter can execute shell commands and modify files, so if it consumes agent_a outputs as authoritative, mistakes can cascade into real actions. godot_rl_agents is a game-playing agent, but the pair still creates a path where generated content becomes executable instructions or code. Because agent_b has action-taking authority by default, the blast radius is irreversible enough for high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a output as code, commands, or configuration without verification",
+        "IF agent_b is run with --auto_run or equivalent auto-execution"
+      ],
+      "mitigations": [
+        "Require manual review before execution",
+        "Disable auto-run modes",
+        "Insert a validation step between agents",
+        "Limit agent_b to dry-run mode for handoffs",
+        "requires-engineering: add schema validation for agent_a outputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency or regulated-data mismatch is documented for godot_rl_agents, while Open Interpreter can touch anything on the local machine and send data to configured model providers. The pair therefore has a plausible compliance gap if regulated data is present, but the profiles do not show a specific jurisdictional violation. The other agent is cited because the risk arises from their interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is stored on the local machine",
+        "IF Open Interpreter is configured to send that data to a third-party model provider"
+      ],
+      "mitigations": [
+        "Exclude regulated folders from the workspace",
+        "Use a local-only model provider",
+        "Review retention settings for the provider",
+        "Separate regulated and non-regulated projects",
+        "requires-engineering: document a data-processing agreement and residency controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:82774c58513e4d00a38557009f58135bc2691f017de616e98e8317c87c5fcef6",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
