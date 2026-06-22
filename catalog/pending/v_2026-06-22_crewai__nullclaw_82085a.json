@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-06-22_crewai__nullclaw_82085a",
+  "generated_at": "2026-06-22T02:49:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High: CrewAI\u2019s shared workspace and broad egress can collide with nullclaw\u2019s MCP, durable memory, and secret-bearing CRM surfaces, creating leakage and action-conflict risks by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI reads and writes the host working directory and uses shared memory by default; nullclaw exposes workspace files, webhooks, MCP, and browser/tool channels. That creates a plausible instruction-hijack path if one agent consumes the other\u2019s file or tool output as trusted content. The interaction is inferred from documented surfaces, not directly reproduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI outputs text into a shared workspace that nullclaw later parses as instructions",
+        "IF nullclaw ingests CrewAI-generated files or webhook payloads without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories",
+        "Disable automatic parsing of peer-generated files",
+        "Add provenance tags to all inter-agent artifacts",
+        "Require manual review before tool execution",
+        "requires-engineering: add content-sanitizing wrappers around shared channels"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "CrewAI handles API keys and broad model-provider/tool egress, while nullclaw touches API keys, private keys, bearer tokens, service-account JSON, and audit logs. If they share a workspace or credentials store, sensitive data can flow from CrewAI into nullclaw\u2019s broader channel set or vice versa. The blast radius includes secrets exfiltration, so uncertainty should not be down-ranked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same workspace or config directory",
+        "IF either agent is configured to forward file contents or logs to external model providers"
+      ],
+      "mitigations": [
+        "Place secrets in separate per-agent vaults",
+        "Mount distinct workspaces with no cross-read access",
+        "Rotate any shared API keys before co-running",
+        "Disable log export for secret-bearing sessions",
+        "requires-engineering: enforce per-agent credential isolation in the orchestrator"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, spawn subprocesses, and use broad network egress; nullclaw also modifies git state and uses MCP. In a shared directory or repo, concurrent writes and git mutations can overwrite each other or corrupt state. Because CrewAI lacks default self-isolation and nullclaw\u2019s session scope spans channels/accounts, the conflict is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or workspace",
+        "IF nullclaw\u2019s git actions and CrewAI\u2019s file writes occur concurrently"
+      ],
+      "mitigations": [
+        "Use separate repositories or worktrees",
+        "Serialize write access with a lock file",
+        "Disable git mutation in one agent",
+        "Run each agent in its own container volume",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "CrewAI can generate outputs from delegated subagents, and nullclaw\u2019s tool-use pattern includes delegate, schedule, git, and web actions. If nullclaw treats CrewAI output as authoritative, an upstream hallucination can cascade into downstream actions or commits. The pair lacks a documented verification boundary, but the blast radius is bounded by operator oversight.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw consumes CrewAI-produced text without an explicit verification step",
+        "IF CrewAI-generated recommendations are used to trigger nullclaw scheduling, web, or git actions"
+      ],
+      "mitigations": [
+        "Require a human approval step before actions",
+        "Cross-check critical facts against a second source",
+        "Mark CrewAI outputs as untrusted inputs",
+        "Restrict nullclaw to read-only mode for CrewAI-fed tasks",
+        "requires-engineering: implement structured validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI is documented as handling developer-passed crew data and API keys, while nullclaw explicitly touches audit logs, workspace files, and multiple secret classes. If regulated or sensitive data is routed through both, retention and residency obligations can diverge, especially because nullclaw\u2019s docs expose broad network and storage surfaces. The other agent is cited because the mismatch arises from their combined handling of the same data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed through both agents in the same workflow",
+        "IF one agent retains logs or workspace files longer than the other"
+      ],
+      "mitigations": [
+        "Classify data before routing it to either agent",
+        "Disable retention of audit logs for sensitive runs",
+        "Keep regulated data out of shared workspaces",
+        "Document residency and retention for each agent",
+        "requires-engineering: add policy enforcement for data-class routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

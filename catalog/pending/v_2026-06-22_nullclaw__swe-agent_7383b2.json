@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "nullclaw",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-22_nullclaw__swe-agent_7383b2",
+  "generated_at": "2026-06-22T02:48:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem, shell, git, and broad egress create default risks of prompt injection, data leakage, and conflicting writes between nullclaw and SWE-agent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "nullclaw can read/write a workspace, use MCP, browsers, and stdin/stdout; SWE-agent can read/write files in its Docker sandbox and consumes task inputs. A shared filesystem or copied outputs would let attacker-controlled content from one agent influence the other, but no direct shared channel is documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the orchestrator shares files or task text between the agents, prompt injection becomes reachable.",
+        "IF either agent parses the other's output as instructions without sanitization, malicious content can steer tool use."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Strip instructions from inter-agent handoffs.",
+        "Use a fixed schema for exchanged messages.",
+        "Disable MCP bridges between the pair unless required.",
+        "requires-engineering: add provenance tags and instruction filtering."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "nullclaw touches API keys, private keys, bearer tokens, memory, and audit logs, while SWE-agent handles repository code and model-provider/GitHub tokens. If they share a workspace or account context, sensitive material can flow from nullclaw into SWE-agent outputs or network calls. The profiles do not prove a shared workspace, so I keep this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents mount the same directory, secrets in nullclaw's workspace can be exposed to SWE-agent.",
+        "IF SWE-agent is configured with issue mode or provider keys, it can transmit copied secrets off-box."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories.",
+        "Rotate any tokens present in the workspace.",
+        "Run SWE-agent with dummy credentials for testing.",
+        "Review outbound requests for secret-bearing payloads.",
+        "requires-engineering: enforce secret redaction before egress."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have execute_shell, write_filesystem, modify_git_state, and broad network egress. nullclaw also supports multiple instances with durable shared memory, while SWE-agent runs per-task in a Docker sandbox. If they target the same repo or directory, concurrent writes and git mutations can clobber each other; the overlap is direct and dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout, commit history and working tree can diverge or be overwritten.",
+        "IF nullclaw's durable memory is used to coordinate with SWE-agent without locks, stale state can trigger conflicting edits."
+      ],
+      "mitigations": [
+        "Assign separate branches per agent.",
+        "Use file locks around shared paths.",
+        "Serialize git commits through one coordinator.",
+        "Disable concurrent writes to the same repo.",
+        "requires-engineering: add optimistic-concurrency checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "nullclaw can act as a multi-surface assistant and SWE-agent is an autonomous coding agent; if nullclaw's outputs are fed into SWE-agent as task instructions, SWE-agent may treat them as authoritative and act on them. The profiles show no built-in verification handshake, but SWE-agent's sandbox reduces blast radius, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw generates task text that SWE-agent consumes verbatim, errors can cascade into code changes.",
+        "IF SWE-agent is instructed to trust upstream summaries without review, incorrect facts can become commits or patches."
+      ],
+      "mitigations": [
+        "Require human review before execution.",
+        "Pass only structured tasks, not free-form prose.",
+        "Add a verification step against source files.",
+        "Limit SWE-agent to dry-run mode first.",
+        "requires-engineering: implement citation-backed task validation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, but nullclaw handles sensitive classes like API keys, private keys, bearer tokens, and audit logs, while SWE-agent is scoped to repository code in a Docker sandbox. The main compliance issue is a potential retention or residency mismatch if those secrets are moved into SWE-agent's environment; no direct mismatch is documented, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from nullclaw is copied into SWE-agent's container logs, retention policy mismatch may occur.",
+        "IF the deployment stores both agents' logs under different retention rules, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Keep regulated data out of SWE-agent tasks.",
+        "Set short log retention on both systems.",
+        "Document which agent stores which data class.",
+        "Purge test secrets after runs.",
+        "requires-engineering: align retention and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f942553a857414905d327eb66d5bbc64290b50afc681a88666054ae020b667e1",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
