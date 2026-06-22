@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-22_kotaemon__open-interpreter_5686a1",
+  "generated_at": "2026-06-22T05:34:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.725,
+  "headline": "High-risk default interaction: Open Interpreter can read/write the shared filesystem and execute code, so pairing with kotaemon can leak documents/API keys and turn generated content into unsafe actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, HTML, MHTML, PDFs, and chat transcripts, while Open Interpreter can read the filesystem and use clipboard/stdin. A shared file or copied output can therefore become attacker-controlled input to the other agent. This is not provably blocked, but it is not a direct default parser bridge either.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon outputs are copied into Open Interpreter via clipboard or files, prompt injection is possible.",
+        "IF Open Interpreter reads a kotaemon-generated document without sanitization, instructions inside the content can be followed."
+      ],
+      "mitigations": [
+        "Disable clipboard/file handoff between agents.",
+        "Use a dedicated folder with read-only exports from kotaemon.",
+        "Strip instructions from retrieved documents before passing them onward.",
+        "Keep Open Interpreter out of any workspace containing untrusted HTML/PDF content.",
+        "requires-engineering: add provenance tagging and content filtering between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "kotaemon handles documents, PDFs, chat transcripts, and API keys, and Open Interpreter can read the entire user filesystem and has broad network egress. In the default pair, sensitive kotaemon data can be exposed to Open Interpreter and then transmitted onward by its model-provider/API calls or shell actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon stores API keys or sensitive documents in ./ktem_app_data, Open Interpreter can read them from the filesystem.",
+        "IF Open Interpreter sends context to a configured model provider, any leaked content can leave the machine."
+      ],
+      "mitigations": [
+        "Move kotaemon data to a separate user account or mount.",
+        "Remove secrets from shared directories before running Open Interpreter.",
+        "Disable network egress for Open Interpreter during shared-workspace use.",
+        "Use a local-only model provider for Open Interpreter.",
+        "requires-engineering: isolate the two agents with separate containers and volumes."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter has write_filesystem, modify_git_state, and broad shell execution, while kotaemon also uses a local files directory and supports multiple instances. If both touch the same workspace, concurrent writes and git mutations can corrupt state or overwrite each other's outputs; no locking is documented here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory, file overwrites or corruption can occur.",
+        "IF Open Interpreter modifies git state in a shared repo while kotaemon writes artifacts there, conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Avoid shared git repositories for both agents.",
+        "Run only one agent at a time on mutable files.",
+        "Make kotaemon outputs read-only before Open Interpreter accesses them.",
+        "requires-engineering: add filesystem locking or per-agent volume isolation."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "kotaemon produces retrieved documents, citations, and chat outputs, and Open Interpreter can execute shell commands and arbitrary code as the invoking user. If Open Interpreter treats kotaemon output as authoritative, a mistaken or manipulated answer can cascade into destructive local actions or commits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter uses kotaemon output as a command source or factual authority, errors can propagate into actions.",
+        "IF kotaemon returns incorrect citations and Open Interpreter acts on them, downstream damage can occur."
+      ],
+      "mitigations": [
+        "Require human review before any shell command derived from kotaemon output.",
+        "Separate retrieval from execution with a verification step.",
+        "Disable auto-run in Open Interpreter.",
+        "Limit Open Interpreter to non-destructive commands in shared workflows.",
+        "requires-engineering: implement structured validation of kotaemon outputs before execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon explicitly handles API keys and chat transcripts, while Open Interpreter can read the whole local filesystem and use external model providers. That creates a plausible compliance mismatch for secrets and personal data retention/transfer, even though no specific residency regime is documented for either agent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in kotaemon's workspace, Open Interpreter can access it locally.",
+        "IF Open Interpreter forwards that data to a third-party model provider, retention and residency obligations may be violated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared directories.",
+        "Use local-only inference for Open Interpreter.",
+        "Purge API keys from any workspace before pairing.",
+        "Document a data-handling policy for both tools.",
+        "requires-engineering: perform a formal residency and retention review before deployment."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
