@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-22_dbt-core__plandex_8bf911",
+  "generated_at": "2026-06-22T00:24:51Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.71,
+  "composite_score": 0.635,
+  "headline": "High: Plandex can write/modify shared files and run shell commands, creating default-risk leakage and cascading errors when paired with dbt-core\u2019s warehouse-facing workflows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Plandex reads and writes project files and uses a review-then-apply workflow, so dbt-core outputs placed in shared files could be treated as instructions. dbt-core itself has no shared-channel protections or prompt-filtering surface documented, so the pair has an indirect injection path via files. The pathway is plausible in default project workflows, though not proven by direct evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core-generated text is written into a project file that Plandex reads",
+        "IF Plandex auto-applies changes from file content without human review"
+      ],
+      "mitigations": [
+        "Keep dbt artifacts in a separate directory from Plandex inputs",
+        "Disable auto-apply in Plandex",
+        "Require manual review of any file-derived instructions",
+        "Add a file naming convention that excludes prompt-like content",
+        "requires-engineering: add provenance tags to generated files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and can call a warehouse API, while Plandex reads filesystem content and sends context to a model provider or Plandex Cloud. If warehouse outputs or credentials land in the shared project directory, Plandex can ingest them and transmit them off-box. This is a default workflow risk, not a guaranteed leak, but the blast radius includes sensitive warehouse data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF warehouse extracts, logs, or credentials are stored in the Plandex project directory",
+        "IF Plandex forwards those files to a third-party model provider or Plandex Cloud"
+      ],
+      "mitigations": [
+        "Exclude secrets and warehouse exports from the project directory",
+        "Use a local-only model backend for sensitive runs",
+        "Redact warehouse outputs before Plandex reads them",
+        "Restrict filesystem access to a narrow working tree",
+        "requires-engineering: enforce DLP scanning before model upload"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Plandex has write_filesystem, modify_git_state, and broad shell/network capabilities, while dbt-core interacts with the data warehouse and is commonly used in repo-based workflows. If both operate on the same repo or workspace, concurrent edits and git-state changes can collide, and dbt runs can be affected by Plandex rewrites. The profiles document overlapping mutable surfaces, so the conflict is real and potentially destructive.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace",
+        "IF Plandex modifies files while dbt-core is generating or applying warehouse-backed changes"
+      ],
+      "mitigations": [
+        "Serialize dbt and Plandex runs",
+        "Use separate branches for each agent",
+        "Lock the workspace during apply steps",
+        "Review git diffs before merge",
+        "requires-engineering: add workspace-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Plandex\u2019s review-then-apply flow can consume dbt-core outputs as authoritative project changes, and dbt-core\u2019s warehouse-facing outputs may be transformed into code or config without independent verification. That creates a clear cascade from generated content to applied actions, with potential for incorrect SQL, broken models, or bad commits. The pair lacks a documented verification barrier between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core output is fed into Plandex planning or apply steps",
+        "IF Plandex applies changes without a separate validation step"
+      ],
+      "mitigations": [
+        "Insert a human approval gate before apply",
+        "Run dbt compile/tests before Plandex apply",
+        "Compare generated diffs against expected schema changes",
+        "Limit Plandex to suggestion-only mode",
+        "requires-engineering: add automated semantic validation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core is documented as touching data warehouse data, while Plandex handles project files and can send context to Plandex Cloud or a model provider. If warehouse data includes regulated records, the pair can create a retention or residency mismatch when those files are uploaded to external services. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated warehouse data is copied into Plandex-managed files",
+        "IF those files are transmitted to a third-party model provider or cloud service"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Plandex workspaces",
+        "Use self-hosted or local inference only",
+        "Minimize retention in project files",
+        "Document data handling boundaries",
+        "requires-engineering: add residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
