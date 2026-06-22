@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "dbt-core"
+  ],
+  "verdict_id": "v_2026-06-22_aider__dbt-core_ba7a7c",
+  "generated_at": "2026-06-22T00:13:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.545,
+  "headline": "High: Aider\u2019s shared-git, shell, and broad egress can conflict with dbt-core\u2019s warehouse writes and create default-path data and compliance risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Aider can read and write repo files and uses shared git state, so malicious content in files could be copied into prompts or edits. dbt-core mainly consumes warehouse/project inputs and has allowlisted egress, but no direct instruction channel is documented. The bridge is plausible through files, not proven by evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Aider is pointed at a repository containing attacker-controlled prompt text or instructions, it may ingest them.",
+        "IF dbt-core outputs are copied into Aider-managed files without review, those instructions can influence later edits."
+      ],
+      "mitigations": [
+        "Review repo files for instruction-like text before opening them in Aider.",
+        "Keep prompt-bearing notes outside the shared repo.",
+        "Use separate branches for generated artifacts and human-authored prompts.",
+        "Add a short manual review step before Aider applies edits."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes git-tracked files and can send context to configured model providers; dbt-core touches warehouse data and has allowlisted network egress. In a shared workspace, sensitive warehouse outputs can flow into Aider prompts or commits, creating a default-path leakage risk even without a documented direct bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core materializes sensitive warehouse rows into files in the shared repo, Aider can read them.",
+        "IF Aider is configured with a third-party model provider, file contents may leave the local machine."
+      ],
+      "mitigations": [
+        "Keep warehouse extracts out of the shared repo.",
+        "Redact secrets and PII before Aider sees generated files.",
+        "Use a separate workspace for dbt artifacts and code edits.",
+        "Restrict Aider to non-sensitive branches when possible.",
+        "Verify model-provider logging settings before running either agent."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider has unrestricted filesystem write, shell, subprocess, and git-state modification in a shared repo; dbt-core can also mutate warehouse state through API calls. That overlap creates a real write/write conflict surface, and the shared git repo plus lack of locking makes concurrent edits and state drift dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository concurrently, commits and file edits can race.",
+        "IF dbt-core writes to shared warehouse objects while Aider edits generated SQL, the two can diverge without coordination."
+      ],
+      "mitigations": [
+        "Serialize runs on the shared repo.",
+        "Use separate branches per agent.",
+        "Add a lock file or orchestrator mutex before edits.",
+        "Pause dbt runs while Aider is rewriting SQL models.",
+        "Review git diffs before merging either agent\u2019s changes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate or rewrite code and dbt-core can execute warehouse transformations, so Aider\u2019s output may become dbt-core input with no built-in verification step. dbt-core is not documented here as critically evaluating upstream text, so a mistaken edit can cascade into incorrect transformations or broken models.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Aider edits dbt models or SQL that dbt-core later executes, errors can propagate downstream.",
+        "IF dbt-core is run immediately after Aider without review, incorrect assumptions can become warehouse actions."
+      ],
+      "mitigations": [
+        "Require a human diff review before dbt runs.",
+        "Run dbt tests after any Aider-generated change.",
+        "Limit Aider to non-executable documentation files when possible.",
+        "Use CI checks to block unreviewed model changes.",
+        "Keep a rollback plan for failed warehouse runs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Aider handles source code and git history locally, while dbt-core touches warehouse data and can move regulated data into analytics workflows. The profiles do not document residency, retention, or certification alignment, so the safest reading is a compliance mismatch risk on shared data classes rather than a proven violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF warehouse data includes regulated records and is surfaced into the shared repo, retention and residency controls may diverge.",
+        "IF either agent logs outputs to a third-party service, policy obligations may change."
+      ],
+      "mitigations": [
+        "Classify warehouse extracts before sharing them with Aider.",
+        "Confirm retention settings for both the repo and warehouse.",
+        "Avoid placing regulated data in git-tracked files.",
+        "Check whether any third-party model provider is in scope for compliance.",
+        "Document a deletion/export process for generated artifacts."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-5.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:f7fa37a39c5443a60bcf72065bf3f8e5dd493098630cabbddceb612fd3e4a269",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
