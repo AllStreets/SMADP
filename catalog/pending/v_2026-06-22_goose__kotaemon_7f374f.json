@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "kotaemon"
+  ],
+  "verdict_id": "v_2026-06-22_goose__kotaemon_7f374f",
+  "generated_at": "2026-06-22T05:29:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.71,
+  "headline": "High risk of data leakage and capability conflict: Goose can write the shared filesystem and use MCP, while kotaemon reads/writes app data and sends content to external model APIs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can use MCP and read/write the user filesystem, and its shared state is via filesystem; kotaemon processes documents and chat transcripts in a web UI. That creates a plausible content-to-instructions bridge if one agent consumes the other's files or outputs as trusted text. No direct shared channel is documented, so this is inferred from both profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes instructions into files that kotaemon later ingests as documents, injection is possible.",
+        "IF kotaemon renders untrusted document text as guidance for Goose, prompt hijacking can occur."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Disable automatic ingestion of newly written files.",
+        "Require manual review before passing outputs between agents.",
+        "Use a provenance tag or filename convention for agent-generated files.",
+        "requires-engineering: add content-sanitization and trust-boundary enforcement between the two tools."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Goose touches source code and files in cwd, handles model-provider and extension tokens, and has broad network egress. Kotaemon touches documents, PDFs, chat transcripts, and API keys, and calls external model APIs by default. Running them together can expose sensitive local files or secrets to third-party inference paths without user awareness.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF either agent is pointed at a workspace containing secrets or regulated documents, those contents may flow to external APIs.",
+        "IF Goose extensions or kotaemon connectors are configured to upload local files, leakage becomes direct."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace.",
+        "Use separate API keys for each agent.",
+        "Disable external connectors not needed for the task.",
+        "Run both agents on redacted copies of documents.",
+        "requires-engineering: enforce egress allowlists and secret-scanning gates."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose has filesystem write, shell, git modification, and broad network egress; kotaemon writes to ./ktem_app_data and also uses external APIs. Because both support multiple instances and Goose shares state via filesystem, concurrent writes can collide on shared files or derived artifacts. The profiles do not show locking, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same working tree, file clobbering or stale reads can occur.",
+        "IF Goose modifies git state while kotaemon writes app data in the same directory tree, conflicts are likely."
+      ],
+      "mitigations": [
+        "Run each agent in its own directory.",
+        "Avoid concurrent edits to the same repository.",
+        "Pause one agent while the other writes.",
+        "Use git branches for isolated changes.",
+        "requires-engineering: add file locks or an orchestrator with resource arbitration."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate code or file changes that kotaemon may later ingest as documents or chat context, and kotaemon can present retrieved content through a web UI. There is no documented verification step between them, so one agent's output can become the other's input. The blast radius is multiple work products, but not clearly irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon uses Goose-produced files as source material, errors can propagate into summaries or answers.",
+        "IF Goose acts on kotaemon-generated text without verification, mistaken facts can cascade into code or git changes."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require citations or source links for any factual claim.",
+        "Compare outputs against original source documents before acting.",
+        "Limit Goose to draft-only changes.",
+        "requires-engineering: add automated validation of retrieved facts and generated edits."
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "Kotaemon explicitly touches documents, PDFs, chat transcripts, and API keys and sends content to external model providers; Goose handles source code and files in cwd with broad egress. If regulated or personal data is placed in the shared workspace, the pair can move it into third-party processing without a residency or retention boundary being documented. The profiles do not show matching compliance controls, so uncertainty escalates.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data or PHI is stored in the shared workspace, external processing may violate policy or contract.",
+        "IF retention or deletion requirements apply, neither profile documents a coordinated deletion/export workflow."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Use local-only models where possible.",
+        "Separate residency-sensitive workloads from general coding tasks.",
+        "Document retention and deletion procedures before use.",
+        "requires-engineering: implement residency-aware routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:7ff175c413e209877f096b59b3144464c2e5e4a3c70c611665695c1ad614aa48",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
