@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-22_dbt-core__roo-cline_a588d7",
+  "generated_at": "2026-06-22T00:19:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High-risk workspace overlap: Roo Code can read/write shared VS Code files while dbt-core can act on warehouse data, creating prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Roo Code reads and writes VS Code workspace files and uses MCP; dbt-core can consume project files and warehouse context. A malicious or malformed file in the shared workspace could influence Roo Code\u2019s tool use or instructions, while dbt-core\u2019s outputs may be treated as trusted project artifacts. The shared filesystem bridge makes injection plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace directory",
+        "IF Roo Code parses dbt-generated files or notes as instructions",
+        "IF MCP content is exposed through workspace artifacts"
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces",
+        "Disable automatic parsing of workspace text as instructions",
+        "Require explicit human review before acting on file content",
+        "Use read-only mounts for dbt outputs where possible",
+        "requires-engineering: add provenance tags to workspace artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and has allowlisted network egress; Roo Code reads workspace files, captures screens, and can call external model APIs. If warehouse-derived data is written into the shared workspace, Roo Code can ingest it and potentially transmit it to its configured model provider. The pair therefore creates a realistic leakage path in default workspace-sharing setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF warehouse data is materialized into workspace files",
+        "IF Roo Code is configured with a third-party model API",
+        "IF screenshots or file contents include sensitive warehouse records"
+      ],
+      "mitigations": [
+        "Keep sensitive warehouse outputs out of the shared workspace",
+        "Use a local-only model backend for Roo Code",
+        "Redact secrets before writing dbt artifacts",
+        "Restrict workspace permissions to least privilege",
+        "requires-engineering: add DLP scanning on workspace writes"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Roo Code has write_filesystem, modify_git_state, and broad workspace concurrency via filesystem; dbt-core also operates on project files and can emit artifacts into the same repo. Without locking, both agents can mutate the same files or git state, causing overwrites and inconsistent builds. The default shared-workspace model makes this a dangerous write-conflict pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or workspace",
+        "IF git state is shared between their runs",
+        "IF no external locking or serialization is enforced"
+      ],
+      "mitigations": [
+        "Run the agents in separate branches",
+        "Serialize writes with a single-writer policy",
+        "Pause one agent while the other commits",
+        "Review diffs before merge",
+        "requires-engineering: add workspace locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "dbt-core can generate warehouse-facing outputs and Roo Code can act on workspace content with shell, git, and browser tools. If Roo Code treats dbt artifacts or summaries as authoritative, it may propagate a modeling mistake into commits or downstream actions. Because Roo Code has action-taking authority, the blast radius can extend beyond a single file.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code consumes dbt outputs without verification",
+        "IF dbt artifacts are used as the basis for commits or browser actions",
+        "IF downstream automation trusts generated summaries"
+      ],
+      "mitigations": [
+        "Require human verification of dbt outputs",
+        "Add schema and test checks before Roo Code acts",
+        "Limit Roo Code to read-only review mode",
+        "Use signed artifacts for handoff",
+        "requires-engineering: add validation gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while Roo Code handles workspace files, screenshots, and model-provider API keys. If regulated warehouse data or secrets are written into the workspace, Roo Code\u2019s external API calls and screen capture can create retention and residency mismatches. The profiles do not prove a specific jurisdiction breach, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace",
+        "IF model-provider APIs retain prompts or screenshots",
+        "IF the warehouse data is subject to stricter residency or retention rules than the model backend"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Roo Code prompts",
+        "Disable screenshot sharing for sensitive sessions",
+        "Use a provider with compliant retention settings",
+        "Document data-flow boundaries",
+        "requires-engineering: implement residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
