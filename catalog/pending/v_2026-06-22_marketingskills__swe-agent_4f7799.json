@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "marketingskills",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-22_marketingskills__swe-agent_4f7799",
+  "generated_at": "2026-06-22T00:52:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High risk of capability conflict and cascading error: SWE-agent\u2019s writable, networked Docker shell can collide with marketingskills\u2019 shared-context file workflows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "marketingskills explicitly uses shared-context skill files and references that can be built on by other skills, while SWE-agent reads/writes files in a Docker sandbox and processes repository content. If marketing content is placed into shared files, SWE-agent could ingest attacker-controlled instructions. No direct shared channel is documented, so this is inferred from file-based interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a skill files are exposed to agent_b as task input, prompt-like content can steer agent_b.",
+        "IF operator copies agent_a outputs into files that agent_b reads, injection becomes plausible."
+      ],
+      "mitigations": [
+        "Separate agent_a and agent_b into distinct directories.",
+        "Strip instructions from any shared text before passing between agents.",
+        "Use a fixed schema for handoffs instead of free-form prose.",
+        "Review file contents before agent_b consumes them.",
+        "requires-engineering: add provenance tags to shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a can read and write filesystem content and calls external APIs; agent_b can also read/write files and has broad network egress plus secrets handling. If both touch the same workspace or copied artifacts, marketing context can leak into agent_b outputs or outbound requests. The profiles do not prove a shared workspace, so this is a plausible but not confirmed leakage path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory, file contents can flow between them.",
+        "IF agent_b is given files containing sensitive marketing context, it may transmit them to its configured model provider."
+      ],
+      "mitigations": [
+        "Use separate workspaces per agent.",
+        "Remove secrets from shared files before handoff.",
+        "Disable outbound access for nonessential runs.",
+        "Limit agent_b inputs to redacted excerpts.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have write_filesystem and spawn_subprocesses; agent_b also modify_git_state and agent_a supports multiple instances with shared-context skill files. In a shared repo or directory, concurrent writes and git mutations can overwrite each other, causing irreversible work loss. The profiles do not show locking, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b operate on the same git checkout, concurrent edits can conflict.",
+        "IF agent_b commits while agent_a is still writing, repository state can be corrupted or lost."
+      ],
+      "mitigations": [
+        "Assign separate branches per agent.",
+        "Run only one writer at a time.",
+        "Snapshot the workspace before each run.",
+        "Avoid git commits until both agents finish.",
+        "requires-engineering: add file locks or orchestrator-level coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "marketingskills is designed around skills that reference each other and build on shared context, while SWE-agent is an autonomous coding agent that can act on file-based inputs. If agent_b treats agent_a\u2019s generated marketing text as authoritative, errors can cascade into downstream edits or actions. There is no verification step documented between them, so the pathway exists but is not proven by direct evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is used as direct input to agent_b, agent_b may propagate mistakes.",
+        "IF agent_b is instructed to implement agent_a recommendations without review, errors can cascade."
+      ],
+      "mitigations": [
+        "Require a human review step between agents.",
+        "Ask agent_b to cite source lines before acting.",
+        "Convert agent_a output into checklist items.",
+        "Reject outputs that lack explicit evidence.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, and the only clearly stated sensitive class is agent_b\u2019s model-provider API keys and GitHub tokens. No residency or regulated-data mismatch is documented, so compliance risk is limited to handling those secrets if they are placed into shared files or logs. The other agent is not shown to process regulated data.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF secrets are copied into shared artifacts, they may be exposed in logs or outputs.",
+        "IF regulated data is introduced into either agent\u2019s workspace, compliance review is required."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared files.",
+        "Rotate any exposed tokens immediately.",
+        "Use redacted examples for testing.",
+        "Restrict logs to non-sensitive summaries.",
+        "requires-engineering: formalize retention and residency controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:34cc7266afe1ed76ce6c2b392b7509e3b64a7e74547a51149618df7ef1e2031d",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
