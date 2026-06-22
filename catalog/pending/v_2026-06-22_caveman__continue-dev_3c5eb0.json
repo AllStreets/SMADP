@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "caveman",
+    "continue-dev"
+  ],
+  "verdict_id": "v_2026-06-22_caveman__continue-dev_3c5eb0",
+  "generated_at": "2026-06-22T01:53:28Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.455,
+  "headline": "High: shared filesystem/MCP and broad shell/write access make prompt injection, leakage, and cascading errors plausible by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "caveman uses MCP and reads/writes project files like CLAUDE.md and memory files, while Continue also uses MCP and reads workspace files/editor buffers. That creates a plausible instruction-injection bridge through shared files or MCP content, even though direct parsing behavior is not fully documented. The pairwise pathway is therefore real but not proven to be permissive enough for high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or MCP-backed content, injected instructions can cross from A to B.",
+        "IF Continue treats workspace text as instructions, file-based prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces.",
+        "Disable MCP on one side for untrusted content.",
+        "Mark shared files read-only during review.",
+        "Add a manual instruction-prefix filter before copying outputs.",
+        "requires-engineering: add provenance tagging for file and MCP content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "caveman touches session logs, memory files, project notes, and CLAUDE.md, while Continue reads workspace files and open editor buffers and can send content to a user-chosen model provider. If sensitive material lands in the shared workspace, Continue can transmit it off-host through its model provider path. caveman has no network egress, but the pair still creates a default leakage path via shared files and outbound inference.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive notes or logs are stored in the shared workspace, Continue can read them.",
+        "IF Continue is configured with a remote model provider, workspace contents may leave the host."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared workspace files.",
+        "Use a local-only model provider in Continue.",
+        "Restrict Continue to a narrow project folder.",
+        "Rotate any secrets already written to notes or logs.",
+        "requires-engineering: enforce file-level redaction before model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "caveman supports multiple instances and Continue also supports multiple instances with shared state via filesystem. Continue can write filesystem and spawn subprocesses, while caveman touches project files and memory files. Even though caveman lacks explicit write_filesystem, the shared-file concurrency model makes conflicting edits and stale state plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or notes directory, concurrent edits can collide.",
+        "IF Continue writes workspace files while caveman updates project notes, stale overwrites become possible."
+      ],
+      "mitigations": [
+        "Run only one agent per workspace at a time.",
+        "Use separate branches or clones.",
+        "Turn on autosave checkpoints before agent actions.",
+        "Review diffs before accepting writes.",
+        "requires-engineering: add locking around shared files."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "caveman produces content for Claude Code/Codex-style workflows, and Continue is a coding assistant that can act on workspace context and tool calls via MCP. That makes A's output a likely input to B's next step, with limited verification documented in the profiles. The result is a realistic chain where mistaken instructions or facts propagate into code or actions, though not enough evidence for high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Continue consumes caveman-generated text as authoritative guidance, errors can propagate.",
+        "IF MCP tool calls are approved based on A's output, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require human review before acting on A's output.",
+        "Ask Continue to restate assumptions before execution.",
+        "Use a checklist for any tool-triggering instruction.",
+        "Limit A's output to summaries, not directives.",
+        "requires-engineering: add verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the evidence only shows generic workspace and model-provider handling, not a specific residency or certification mismatch. Continue handles model provider API keys and can send content to a chosen provider, while caveman has no network egress. Without a documented regulated-data flow, the compliance risk is limited to ordinary policy mismatch rather than a clear breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Continue and a noncompliant remote provider is selected, policy violations can occur.",
+        "IF the deployment requires strict residency but workspace content leaves the host, compliance controls are bypassed."
+      ],
+      "mitigations": [
+        "Use a local model provider only.",
+        "Keep regulated data out of the shared workspace.",
+        "Document the approved provider list.",
+        "Review retention settings before use.",
+        "requires-engineering: add residency-aware routing controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:10a2d1358745d49114841835adca711e0264cdfff09aece9b48273cdc2a4b985",
+    "profile_b_hash": "sha256:36bc79f7fa6a4ca2df8df6ff025349ec31222a396a7bf26d1f317ca5d6e30151",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
