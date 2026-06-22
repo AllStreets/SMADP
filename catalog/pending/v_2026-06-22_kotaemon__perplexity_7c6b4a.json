@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "perplexity"
+  ],
+  "verdict_id": "v_2026-06-22_kotaemon__perplexity_7c6b4a",
+  "generated_at": "2026-06-22T05:01:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.515,
+  "headline": "High risk of data leakage and cascading errors when kotaemon\u2019s broad-egress RAG outputs feed Perplexity\u2019s vendor-hosted browsing/search pipeline.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A can ingest documents, HTML, MHTML, and chat transcripts from ./ktem_app_data, while B runs vendor-hosted browsing/search and can process uploaded documents. A shared file-based handoff is plausible, so prompt-like content in A\u2019s outputs could influence B. No direct shared channel is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF A exports retrieved content into files that B later uploads or reads, injection becomes active.",
+        "IF B treats uploaded document text as instructions rather than untrusted content, the risk materializes."
+      ],
+      "mitigations": [
+        "Restrict handoff files to plain data-only formats.",
+        "Add a prompt-injection filter before any upload to B.",
+        "Use a separate workspace per agent.",
+        "Require human review of A outputs before B consumes them.",
+        "requires-engineering: add provenance labels to all retrieved passages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "A explicitly handles API keys and broad document classes, and B uploads documents to a vendor-hosted backend with broad network egress to api.perplexity.ai/search providers. If sensitive A outputs are passed into B, they can leave the local environment and enter third-party processing. The pairwise pathway is not blocked by either profile, so this is dangerous by default once the workflow is connected.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF A\u2019s retrieved documents include API keys or confidential transcripts and are forwarded to B, leakage occurs.",
+        "IF B uploads those files for analysis, the data leaves the operator\u2019s host."
+      ],
+      "mitigations": [
+        "Do not pass secrets-bearing files from A to B.",
+        "Redact API keys before any upload.",
+        "Use a separate tenant/account for B.",
+        "Limit B inputs to synthetic or public documents.",
+        "requires-engineering: enforce DLP on the A\u2192B transfer path."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "A supports multiple instances and writes to ./ktem_app_data, while B supports multiple instances with per-thread/per-Space session scope and no filesystem write or git modification. There is some overlap in concurrent use, but the profiles do not show shared mutable writes to the same directory or resource, so conflict risk is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable workspace outside the documented profiles, conflicts can appear.",
+        "IF an operator manually synchronizes state between A and B, race conditions become possible."
+      ],
+      "mitigations": [
+        "Keep separate working directories.",
+        "Avoid shared git repositories for the pair.",
+        "Run one agent per task queue.",
+        "Snapshot files before handoff.",
+        "requires-engineering: add locking around any shared workspace."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A is a RAG system that produces retrieved answers and citations, and B is an answer engine with live search/citations. If B consumes A\u2019s output as authoritative, errors or hallucinated citations can cascade into a second generated answer. No verification step is documented between them, so the interaction exists in default-style workflows once chained.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF B uses A\u2019s answer as source material without independent verification, cascaded errors occur.",
+        "IF A\u2019s citations are stale or incorrect and B republishes them, the error propagates."
+      ],
+      "mitigations": [
+        "Verify A outputs against primary sources.",
+        "Require B to cite sources independently.",
+        "Use a human review step between agents.",
+        "Flag low-confidence passages from A.",
+        "requires-engineering: add automated citation cross-checking."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A handles API keys and customer-support documents locally, while B is vendor-hosted and processes uploaded documents and browsing context under Perplexity\u2019s privacy policy. That creates a retention/residency mismatch risk for sensitive support data if it is moved from A into B. The profiles do not show a specific regulated-data certification conflict, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF customer-support transcripts or API keys are uploaded from A into B, vendor retention policies apply.",
+        "IF the data subject is under a stricter residency or deletion regime than B supports, compliance gaps arise."
+      ],
+      "mitigations": [
+        "Exclude regulated data from B uploads.",
+        "Review B\u2019s retention settings before use.",
+        "Use anonymized excerpts only.",
+        "Document the data transfer in the processing register.",
+        "requires-engineering: implement policy-based routing by data class."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:afd6e998f1db34d759d05a93a87b9c3eb7aa97da3555cddb739445bbd997b203",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
