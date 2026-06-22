@@ -1,0 +1,192 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "kotaemon"
+  ],
+  "verdict_id": "v_2026-06-22_flowise__kotaemon_1f4cae",
+  "generated_at": "2026-06-22T04:45:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High: Flowise can write shared files and browse/egress while kotaemon reads local app data and sends content to external model APIs, creating prompt-injection, leakage, and compliance risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read/write the filesystem and run browsers, while kotaemon ingests documents and chat transcripts through a web UI. If Flowise outputs are placed into kotaemon\u2019s document or chat inputs, malicious instructions can ride the shared file path. The pair lacks documented provenance tracking or isolation, so the interaction is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise outputs are copied into kotaemon document uploads or chat transcripts",
+        "IF both agents share a writable workspace without provenance labels"
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories",
+        "Disable automatic ingestion of Flowise-generated files into kotaemon",
+        "Add a manual review step before importing any shared artifact",
+        "Tag imported files with source and timestamp",
+        "requires-engineering: add provenance metadata checks"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Flowise handles model provider keys and tool credentials and has broad network egress; kotaemon handles API keys and sends content to external model APIs such as OpenAI and AzureOpenAI. If they share files or a workspace, sensitive documents, transcripts, or secrets can move from Flowise into kotaemon and then out to third-party APIs. That creates a realistic exfiltration path in default configurations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Flowise and kotaemon share any writable workspace or uploaded-file directory",
+        "IF kotaemon routes imported content to OpenAI, AzureOpenAI, Cohere, Groq, or similar APIs"
+      ],
+      "mitigations": [
+        "Store secrets in separate vaults per agent",
+        "Block shared filesystem access between the two services",
+        "Restrict kotaemon connectors to local-only models for shared data",
+        "Rotate any exposed API keys immediately",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Flowise supports multiple instances with shared state via a server datastore and can write the filesystem; kotaemon also supports multiple instances and writes ./ktem_app_data. If both operate on the same host or volume, concurrent writes can collide on shared mutable resources. The profiles do not show locking, so conflict risk is real but bounded to state corruption rather than guaranteed loss.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are deployed on the same host or shared volume",
+        "IF Flowise server datastore and kotaemon ./ktem_app_data overlap or are bind-mounted together"
+      ],
+      "mitigations": [
+        "Use separate volumes for each agent",
+        "Run only one writer per shared directory",
+        "Snapshot data before concurrent maintenance",
+        "Check for file-lock support in the deployment",
+        "requires-engineering: add transactional locking around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise is a graph-based agent flow builder that can emit tool outputs, and kotaemon is a RAG/chat system that can consume documents and citations. If kotaemon treats Flowise-produced content as authoritative without verification, errors or fabricated citations can cascade into downstream answers. The pairwise pathway is plausible, but the profiles do not show autonomous action-taking, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon ingests Flowise outputs as source documents or citations",
+        "IF no human or automated verification step checks those outputs before answering"
+      ],
+      "mitigations": [
+        "Require source verification before indexing Flowise outputs",
+        "Mark Flowise-generated artifacts as untrusted",
+        "Compare citations against original documents",
+        "Limit Flowise outputs to drafts only",
+        "requires-engineering: add confidence and provenance scoring"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and secrets, while kotaemon touches documents, transcripts, and API keys and can send content to external model providers. If regulated or residency-bound data is routed through both, retention and processor boundaries can diverge. The profiles do not specify HIPAA/GDPR certifications, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or transcripts are processed by both agents",
+        "IF the deployment requires a specific residency, retention, or DPA boundary"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared flows",
+        "Document retention settings for both systems",
+        "Disable external API connectors for sensitive workloads",
+        "Review vendor DPAs before deployment",
+        "requires-engineering: align residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:7ff175c413e209877f096b59b3144464c2e5e4a3c70c611665695c1ad614aa48",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
