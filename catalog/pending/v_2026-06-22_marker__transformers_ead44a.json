@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "marker",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-22_marker__transformers_ead44a",
+  "generated_at": "2026-06-22T02:32:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared document-processing pair can leak or corrupt outputs because transformers has broad file/network access while marker is a local document processor with no isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has no shared channel or parser surface documented, but B can read/write files and run browsers while A is a document processor that may consume file content. If A\u2019s outputs are fed into B via shared workspace, prompt-like content could steer B. The pathway is inferred, not directly documented, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the pair is connected through a shared workspace or stdin/stdout bridge, injection becomes plausible.",
+        "IF B parses A-produced documents as instructions, attacker-controlled content can influence downstream behavior."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Disable automatic ingestion of A\u2019s outputs by B.",
+        "Add a manual review step before B consumes generated documents.",
+        "Strip executable-looking directives from exchanged text.",
+        "requires-engineering: add provenance tags to all inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "B has broad filesystem and network egress, while A has no filesystem read/write or network egress. If they share a workspace, B can exfiltrate files that A produces or processes. No sensitive data class is explicitly listed, but the shared-document-processing setup makes leakage plausible in default deployments, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF A and B share a filesystem, B can read artifacts created for A.",
+        "IF B is allowed to send files to external APIs, shared documents can leave the environment."
+      ],
+      "mitigations": [
+        "Place each agent in a separate workspace.",
+        "Block B\u2019s outbound network until review.",
+        "Use least-privilege mounts for shared files.",
+        "Delete temporary artifacts after each run.",
+        "requires-engineering: enforce per-file access controls and audit logs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "B can write the filesystem and spawn subprocesses; A cannot write or execute, so direct write-write conflict is absent. However, if both are pointed at the same directory, B\u2019s unrestricted writes can overwrite A\u2019s inputs or outputs, and the lack of any locking in either profile makes the shared-mutable-resource pathway dangerous. Uncertainty pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, B can overwrite A\u2019s artifacts.",
+        "IF the orchestrator provides no locking, concurrent runs can race on shared files."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer per workspace.",
+        "Add file locks around shared artifacts.",
+        "Snapshot inputs before B mutates them.",
+        "requires-engineering: introduce transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A produces document-processing outputs and B has stdin/stdout plus file-based inputs, so B may treat A\u2019s output as authoritative if chained. There is no evidence of verification or critique in either profile, but also no explicit downstream action authority. That makes a default pipeline error-prone, though not clearly high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A\u2019s generated text without validation, errors will propagate.",
+        "IF A\u2019s output is used as a source of facts, B may render or act on incorrect content."
+      ],
+      "mitigations": [
+        "Insert a validation step between agents.",
+        "Require citations or schema checks on A\u2019s output.",
+        "Compare A\u2019s output against source documents.",
+        "Flag low-confidence sections for human review.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No residency, certification, or retention mismatch is documented for either agent, and both are open-source docs-only profiles. The only concrete compliance-relevant difference is B\u2019s broad network and file access versus A\u2019s local-only posture, which could matter if regulated data is introduced. Because the rubric requires a documented mismatch for higher severity, low is the safest supported choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed and B is configured to send it off-host, compliance obligations may be triggered.",
+        "IF retention or residency controls are added externally, the pair may violate them unless configured accordingly."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Disable B\u2019s outbound network for regulated workloads.",
+        "Document retention and deletion handling.",
+        "Review deployment region before use.",
+        "requires-engineering: add policy enforcement for data residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:954d247a9c9a8f88fe9bec8ed84220d92d0bb1cc80e749d55d14a591cb6607fa",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
