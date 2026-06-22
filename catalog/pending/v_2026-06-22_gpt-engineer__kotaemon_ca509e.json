@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "kotaemon"
+  ],
+  "verdict_id": "v_2026-06-22_gpt-engineer__kotaemon_ca509e",
+  "generated_at": "2026-06-22T05:12:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.56,
+  "headline": "High: shared project-directory writes and broad egress create prompt-injection, leakage, and cascading-error risks; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a per-project directory and has no self-isolation by default; kotaemon reads/writes app data and processes documents through a web UI. If kotaemon ingests gpt-engineer outputs from the shared workspace, attacker-controlled text can be treated as instructions. The interaction is plausible in default shared-directory workflows, though not proven by direct evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same project or app-data directory",
+        "IF kotaemon ingests files produced by gpt-engineer without provenance filtering"
+      ],
+      "mitigations": [
+        "Separate the two agents into different directories",
+        "Disable automatic ingestion of newly written files",
+        "Add a manual review step before kotaemon reads gpt-engineer output",
+        "Use read-only mounts for one agent where possible",
+        "requires-engineering: add provenance tagging for shared files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and handle sensitive material: gpt-engineer handles OPENAI_API_KEY and writes project files, while kotaemon handles API keys and document corpora. If they share a workspace, either can expose the other's files or secrets through model/API calls. This is a default-configuration risk when co-located, not a provably blocked pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same filesystem tree",
+        "IF either agent sends file contents or prompts to a third-party model API"
+      ],
+      "mitigations": [
+        "Store secrets outside the shared workspace",
+        "Use separate service accounts and API keys",
+        "Restrict file permissions between the two runtimes",
+        "Review outbound prompts for secret-bearing content",
+        "requires-engineering: add secret redaction before API calls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "gpt-engineer can write the project directory and spawn subprocesses; kotaemon also uses files under ./ktem_app_data and supports multiple instances. Their write surfaces overlap at the filesystem level, so concurrent runs can overwrite or corrupt shared state. The profiles do not show locking or coordination, so conflict is plausible in default shared-directory setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both instances write to the same directory tree",
+        "IF no external lock or orchestration layer serializes writes"
+      ],
+      "mitigations": [
+        "Assign distinct working directories",
+        "Run only one writer at a time",
+        "Make one workspace read-only",
+        "Back up shared state before concurrent runs",
+        "requires-engineering: add file locking or transactional writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer produces generated code and offers to run it, while kotaemon is a document/chat system that can surface or act on retrieved content. If kotaemon consumes gpt-engineer output as authoritative, errors can cascade from generated code or claims into downstream actions or rendered answers. Because neither profile shows verification gates, the unsafe path is present by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon treats gpt-engineer output as trusted input",
+        "IF downstream actions are taken without human verification"
+      ],
+      "mitigations": [
+        "Require human review before acting on generated output",
+        "Add a verification checklist for retrieved claims",
+        "Separate generation from execution steps",
+        "Log and diff all downstream changes",
+        "requires-engineering: implement confidence/provenance gating"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon explicitly touches documents, PDFs, chat transcripts, and API keys, while gpt-engineer handles generated source code and project files. If regulated or sensitive documents are routed through kotaemon and then into gpt-engineer's code workspace, retention and residency obligations can diverge. The profiles do not document matching compliance controls, so the mismatch is plausible but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or personal data are processed by kotaemon",
+        "IF those same materials are copied into gpt-engineer's project directory"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Minimize retention in kotaemon app data",
+        "Use separate storage policies per agent",
+        "Review data export paths before copying files",
+        "requires-engineering: align retention and deletion workflows"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:7ff175c413e209877f096b59b3144464c2e5e4a3c70c611665695c1ad614aa48",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
