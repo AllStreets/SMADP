@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-22_kotaemon__langgraph_65de63",
+  "generated_at": "2026-06-22T05:07:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High: shared filesystem and broad egress make prompt-injection, leakage, and cascading errors plausible by default in this pair.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, PDFs, HTML, MHTML, and chat transcripts, while LangGraph can read/write application-defined files and route node outputs through developer-wired edges. That creates a plausible content-to-instruction bridge if A\u2019s outputs are fed into B without sanitization. No shared channel is explicit, so I stop at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs are copied into agent_b prompts or node inputs without filtering",
+        "IF agent_b treats file or transcript content as instructions rather than data",
+        "IF both agents share an application-defined workspace or checkpointer payload"
+      ],
+      "mitigations": [
+        "Add a strict content/instruction separator in the handoff",
+        "Strip or escape prompt-like text before passing A outputs to B",
+        "Disable automatic ingestion of raw transcripts into B",
+        "Review one representative handoff for instruction-following markers",
+        "requires-engineering: add provenance tags to every cross-agent message"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "kotaemon explicitly handles API keys and broad document types, and LangGraph has broad network egress plus filesystem read/write. If they share a workspace or checkpointer, sensitive files or secrets touched by A can be exposed to B and then transmitted outward by B\u2019s tools. The pairwise leakage path is credible in default-style deployments, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a stores documents or API keys in ./ktem_app_data or another shared path",
+        "IF agent_b is given access to the same filesystem or checkpointer store",
+        "IF agent_b tools forward file contents to model providers or external APIs"
+      ],
+      "mitigations": [
+        "Move secrets out of any shared workspace",
+        "Restrict B to a read-only mount for A-owned files",
+        "Rotate any API keys that may have been exposed",
+        "Inspect the checkpointer/store permissions now",
+        "requires-engineering: isolate the agents into separate storage and network zones"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can operate concurrently, and LangGraph can write files while kotaemon also uses a local data directory and broad egress. If they target the same directory or shared state, concurrent writes and state corruption are plausible, with no locking mechanism documented in either profile. Uncertainty favors the higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem path",
+        "IF both instances run concurrently against the same checkpointer or workspace",
+        "IF the orchestrator does not provide external locking"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize writes with a simple lock file",
+        "Check for concurrent runs before starting a second instance",
+        "Back up shared state before enabling parallel runs",
+        "requires-engineering: add transactional locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is a low-level orchestration framework where developer-wired nodes can treat upstream outputs as authoritative, and kotaemon produces document-derived answers and citations. If B consumes A\u2019s outputs without verification, a single hallucination or malformed citation can cascade into downstream actions or rendered results. The default wiring risk is substantial, so high fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a outputs as node inputs without validation",
+        "IF downstream nodes act on A-generated facts or citations",
+        "IF no verification step is inserted between A and B"
+      ],
+      "mitigations": [
+        "Insert a verification node between agents",
+        "Require source-backed citations before downstream use",
+        "Sample-check one A output against original documents",
+        "Disable automatic action-taking on unverified text",
+        "requires-engineering: implement schema validation for all inter-agent payloads"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon explicitly handles API keys and customer-support documents, while LangGraph is a general orchestration library with developer-defined tools and broad egress. The profiles do not prove a residency or certification mismatch, but they do show a compliance-sensitive data mix that can create retention and handling gaps when paired. I therefore rate this medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF customer-support documents or API keys are routed through both agents",
+        "IF retention or deletion policies differ between the two runtimes",
+        "IF either agent logs prompts, files, or tool outputs by default"
+      ],
+      "mitigations": [
+        "Confirm both runtimes\u2019 retention settings now",
+        "Exclude secrets from any shared logs",
+        "Document which data classes each agent may process",
+        "Run a quick deletion test on one sample record",
+        "requires-engineering: align residency and retention controls across the pair"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-22_kotaemon__windsurf_dcff67",
+  "generated_at": "2026-06-22T05:07:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.665,
+  "headline": "High: shared filesystem and permissive tool use create prompt-injection, leakage, and write-conflict risks; Windsurf\u2019s auto-execute can amplify Kotaemon outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Windsurf reads workspace files, uses clipboard/MCP, and can auto-execute commands; Kotaemon ingests documents/PDFs/HTML and writes to ./ktem_app_data. If Kotaemon outputs attacker-controlled content into shared files or copied text, Windsurf may treat it as instructions. The pathway is plausible in default pair usage, though not proven by direct interaction evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Kotaemon output is copied into a Windsurf workspace file or clipboard",
+        "IF Windsurf parses file or clipboard content as instructions",
+        "IF an MCP server bridges the two agents without provenance checks"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between agents",
+        "Keep Kotaemon outputs in a separate directory from Windsurf workspaces",
+        "Require provenance tags on any shared notes or files",
+        "Turn off Windsurf auto-execute for shared-content workflows",
+        "requires-engineering: add content-sanitization/provenance filtering at the handoff boundary"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kotaemon handles API keys and broad document classes, while Windsurf reads workspace files and sends context to model proxies/MCP servers with broad network egress. If both touch the same workspace or copied files, sensitive content from Kotaemon can flow into Windsurf\u2019s outbound requests. The blast radius includes secrets and documents, so this is more than a small local leak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kotaemon stores documents or API keys in a directory Windsurf can read",
+        "IF Windsurf sends workspace context to its model proxy or MCP servers",
+        "IF shared files contain secrets or regulated documents"
+      ],
+      "mitigations": [
+        "Move sensitive Kotaemon data outside Windsurf-visible workspaces",
+        "Rotate any API keys that were present in shared files",
+        "Restrict Windsurf access to a read-only scrubbed mirror",
+        "Disable MCP servers for sessions handling sensitive documents",
+        "requires-engineering: enforce per-agent workspace isolation and secret redaction"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Windsurf can write the filesystem, modify git state, and spawn subprocesses; Kotaemon also writes ./ktem_app_data and supports multiple instances. Both agents can mutate overlapping local state if pointed at the same directory, and Windsurf\u2019s per-window shared state via local filesystem makes collisions likely. Without locking, concurrent edits can corrupt files or git history.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write into the same directory",
+        "IF Windsurf modifies git state while Kotaemon writes app data or generated files",
+        "IF no external file-locking or coordination is enabled"
+      ],
+      "mitigations": [
+        "Assign separate output directories to each agent",
+        "Pause one agent before the other writes shared files",
+        "Avoid git operations from Windsurf in shared workspaces",
+        "Use a file-locking wrapper around shared paths",
+        "requires-engineering: add orchestrator-level locking and conflict detection"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Windsurf\u2019s Cascade loop can act on model outputs with command execution, while Kotaemon produces document-grounded answers and citations. If Windsurf consumes Kotaemon output as authoritative without verification, errors can cascade into edits or commands. The pair is not inherently unsafe, but the default workflow can propagate mistakes across work products.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf uses Kotaemon-generated text as factual input without checking sources",
+        "IF Windsurf auto-execute is enabled or command approval is bypassed",
+        "IF downstream actions are taken from unverified summaries"
+      ],
+      "mitigations": [
+        "Require source-link verification before acting on Kotaemon output",
+        "Keep Windsurf auto-execute disabled for shared workflows",
+        "Use a human review step before commits or shell commands",
+        "Limit Kotaemon output to summaries with explicit uncertainty markers",
+        "requires-engineering: add citation-preserving handoff and validation checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kotaemon is documented as handling API keys and broad document classes, while Windsurf is a closed-source editor process with broad network egress and model-proxy/MCP traffic. If regulated documents or secrets are processed in Kotaemon and then opened in Windsurf, retention and residency obligations may diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or secrets are moved from Kotaemon into Windsurf workspaces",
+        "IF Windsurf\u2019s model proxy or MCP traffic is outside the required residency boundary",
+        "IF retention or deletion policies differ between the two tools"
+      ],
+      "mitigations": [
+        "Keep regulated data out of Windsurf sessions",
+        "Review vendor retention terms before sharing documents",
+        "Use redacted copies for cross-tool workflows",
+        "Document a deletion procedure for both tools",
+        "requires-engineering: implement residency and retention controls per data class"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
