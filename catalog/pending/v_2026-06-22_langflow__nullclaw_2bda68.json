@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-06-22_langflow__nullclaw_2bda68",
+  "generated_at": "2026-06-22T03:22:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.77,
+  "headline": "High risk: Langflow\u2019s broad filesystem/network access combined with nullclaw\u2019s secret-bearing, MCP-enabled workspace creates dangerous default pathways for leakage, conflict, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Langflow can read/write the server filesystem and chain tools in graph flows, while nullclaw can ingest files, webhooks, and MCP/tool outputs. A shared workspace or file handoff lets attacker-controlled content from one agent be treated as instructions by the other. This is not provably blocked in either profile, so the interaction is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are connected through a shared workspace, webhook, or file handoff, prompt injection is plausible.",
+        "IF either agent parses the other\u2019s output as instructions without provenance checks, injection risk materializes."
+      ],
+      "mitigations": [
+        "Separate workspaces and disable shared file mounts.",
+        "Add provenance tags to all inter-agent artifacts.",
+        "Require human review before executing tool outputs.",
+        "Restrict nullclaw MCP endpoints to trusted servers.",
+        "requires-engineering: add content-sanitization and instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Langflow touches flow inputs, intermediate outputs, and stored component credentials, and it has broad network egress. Nullclaw touches API keys, private keys, bearer tokens, workspace files, and audit logs. If they share files or a workspace, sensitive material can flow from one agent into the other and then out over Langflow\u2019s arbitrary HTTP/model-provider calls or nullclaw\u2019s broad egress.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the agents share a filesystem or workspace, sensitive files can be read by both.",
+        "IF either agent forwards its context or files to external APIs, secrets can exfiltrate."
+      ],
+      "mitigations": [
+        "Isolate filesystems and credentials per agent.",
+        "Disable outbound HTTP except allowlisted endpoints.",
+        "Store secrets in separate vaults, not workspace files.",
+        "Rotate any secrets that may have been exposed.",
+        "requires-engineering: enforce per-agent egress policy and secret redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem, execute shells, spawn subprocesses, and use broad network egress; nullclaw also modifies git state and supports MCP. Langflow\u2019s server-side flows and nullclaw\u2019s durable workspace/session model can collide on shared mutable resources. Without explicit locking, concurrent writes or git operations can corrupt state or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or repository, write conflicts are possible.",
+        "IF both agents run concurrent shell or git actions without locks, state corruption can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint directories and repos.",
+        "Disable git writes for one agent.",
+        "Serialize write operations with a lock file.",
+        "Run one agent at a time on shared resources.",
+        "requires-engineering: add transactional coordination for shared mutable state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow is a workflow orchestrator that can chain multiple agents, and nullclaw exposes delegate/schedule/tooling plus persistent memory and webhook inputs. That makes it plausible for Langflow outputs to become authoritative inputs for nullclaw actions without verification, creating a cascade from a mistaken generation into downstream actions or stored memory.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Langflow output is fed into nullclaw delegate, schedule, or webhook paths without validation, errors can cascade.",
+        "IF nullclaw stores Langflow-generated facts in memory or acts on them, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Insert a verification step between agents.",
+        "Require citations or source links before actioning outputs.",
+        "Limit nullclaw to read-only mode for Langflow-fed tasks.",
+        "Log and review all cross-agent handoffs.",
+        "requires-engineering: implement schema validation and confidence gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "Langflow handles flow inputs, intermediate outputs, and stored credentials, while nullclaw handles API keys, private keys, bearer tokens, workspace files, and audit logs. If regulated or customer data is placed into both systems, the pair can create a compliance breach through mixed retention, logging, or residency controls. The profiles do not show matching compliance guarantees, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are stored in both agents, retention and logging mismatches can violate policy.",
+        "IF one agent is deployed in a restricted residency zone and the other is not, residency mismatch occurs."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows.",
+        "Disable verbose logging for sensitive runs.",
+        "Set explicit retention limits on both systems.",
+        "Review deployment residency for each agent.",
+        "requires-engineering: add policy enforcement for data-class-specific handling."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
