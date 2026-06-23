@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "taipy",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-23_taipy__windsurf_6b1ef5",
+  "generated_at": "2026-06-23T00:51:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High-risk shared-filesystem and tool-use overlap: Windsurf can write/egress broadly while Taipy has no isolation or egress controls documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Windsurf exposes clipboard, workspace files, and MCP/tool use, and its shared_state_with_other_instances is via local filesystem. Taipy has no documented isolation or input-sanitization surface, so if Taipy consumes files or copied content from Windsurf, prompt injection is plausible. The pairwise bridge is indirect, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Taipy reads content from files or clipboard produced by Windsurf, injected instructions can propagate.",
+        "IF Windsurf MCP/tool output is copied into Taipy inputs without filtering, prompt injection is possible."
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the two tools.",
+        "Use separate workspaces for each agent.",
+        "Require a human review step before Taipy ingests Windsurf-generated text.",
+        "Strip instructions from shared files before reuse.",
+        "requires-engineering: add provenance tagging for agent-generated content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Windsurf can read workspace files and broad network egress is documented; Taipy has no documented data-handling restrictions or isolation. If both touch the same workspace, sensitive files opened in Windsurf can be exposed through its model/tooling path, while Taipy may process the same files locally. The shared-workspace pathway is enough for medium severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace directory, file contents can flow between them.",
+        "IF Windsurf sends opened file contents to its model proxy or MCP tools, sensitive data may leave the local machine."
+      ],
+      "mitigations": [
+        "Keep separate directories for each agent.",
+        "Remove secrets from shared files before opening them in Windsurf.",
+        "Turn off auto-upload or external tool calls where possible.",
+        "Use least-privilege file permissions on the workspace.",
+        "requires-engineering: enforce per-agent workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Windsurf can write the filesystem, modify git state, and spawn subprocesses; its shared state is via local filesystem. Taipy is not documented with conflicting write controls, but the pair clearly overlaps on mutable local resources, and Windsurf\u2019s defaults can alter git/workspace state without coordination. Uncertainty about Taipy\u2019s write surfaces does not lower the risk below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, concurrent writes can conflict.",
+        "IF Windsurf auto-executes terminal commands, it can race with Taipy-generated file changes."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Pause one agent before the other writes.",
+        "Use git locks or a single-writer policy.",
+        "Review diffs before commit.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Windsurf\u2019s Cascade loop can act on tool output and modify files or git state, while Taipy can generate automation/data-engineering outputs. If Taipy\u2019s output is treated as authoritative by Windsurf, errors can cascade into edits or commands. There is no direct evidence of verification between them, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf consumes Taipy output without a verification step, incorrect facts can be operationalized.",
+        "IF Taipy emits malformed instructions that Windsurf forwards to tools, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Insert a human verification step before actions.",
+        "Require structured outputs from Taipy.",
+        "Limit Windsurf to read-only mode for Taipy-derived inputs.",
+        "Log and review tool actions.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Windsurf is closed-source and handles model provider keys plus workspace files; Taipy is open-source with no documented compliance controls. If regulated data is opened in Windsurf, its broad egress and external model proxy create a compliance mismatch risk. Taipy is not cited for residency controls because none are documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is opened in Windsurf, external transmission may violate policy.",
+        "IF the workspace contains data subject to retention or residency rules, Windsurf\u2019s broad egress can conflict with them."
+      ],
+      "mitigations": [
+        "Do not open regulated data in Windsurf.",
+        "Use redacted copies for analysis.",
+        "Review vendor security and retention settings.",
+        "Separate compliant and non-compliant datasets.",
+        "requires-engineering: obtain a DPA or approved deployment for regulated data."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:050a0bcde4b0728f992754df475b881fb1d8d132fb2488dd119ff3f880112b2b",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
