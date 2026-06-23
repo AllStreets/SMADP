@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "great-expectations",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-23_great-expectations__open-interpreter_9bf428",
+  "generated_at": "2026-06-23T04:34:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.62,
+  "headline": "High risk: Open Interpreter can read/write the shared filesystem and execute code, creating dangerous prompt-injection, leakage, and cascading-action pathways with Great Expectations outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Great Expectations reads and writes files for data sources, validation results, and documentation, while Open Interpreter can read the filesystem and execute shell commands. If GE outputs are placed in a shared workspace, OI can ingest them as content and be steered by malicious instructions embedded in files. The pathway is plausible in default file-based workflows, though not guaranteed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations outputs are stored in a directory Open Interpreter reads automatically, injection is possible.",
+        "IF Open Interpreter is run with auto-run or similar reduced confirmation, malicious file content is more likely to be acted on."
+      ],
+      "mitigations": [
+        "Keep GE outputs in a dedicated read-only directory for OI.",
+        "Disable auto-run in Open Interpreter.",
+        "Require manual review of any file before OI processes it.",
+        "Use separate OS users for the two agents.",
+        "requires-engineering: add provenance tagging for files passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Great Expectations touches validation results and documentation, and Open Interpreter has broad filesystem read/write plus network egress and can access model-provider API keys. If both share a workspace, OI can read GE artifacts and transmit them externally. Because OI defaults to broad local access and outbound connectivity, the blast radius includes sensitive local data and possible exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a filesystem workspace, Open Interpreter can read Great Expectations artifacts.",
+        "IF those artifacts contain sensitive validation data, network egress can exfiltrate them."
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces.",
+        "Restrict Open Interpreter network egress.",
+        "Store sensitive GE outputs outside OI's readable paths.",
+        "Run OI under a least-privilege OS account.",
+        "requires-engineering: enforce per-directory access controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Great Expectations writes validation results and documentation, while Open Interpreter can write the filesystem, modify git state, and spawn subprocesses. Both can touch the same files via the shared filesystem concurrency model, and OI has no default isolation. That creates a direct write-write conflict with possible repo corruption or overwritten artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory, concurrent writes can collide.",
+        "IF Open Interpreter modifies git state while GE updates artifacts, repository state can become inconsistent."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Pause one agent while the other writes.",
+        "Use git locks or a single-writer workflow.",
+        "Review diffs before commits.",
+        "requires-engineering: add transactional file writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Great Expectations produces validation results that Open Interpreter could treat as authoritative input when deciding shell actions or edits. OI can execute code and modify files, so a mistaken or manipulated GE result can cascade into incorrect downstream actions. The pair lacks a built-in verification boundary in the profiles, but the harm is not inherently irreversible by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter uses GE validation output as a decision input without independent checks, errors can cascade.",
+        "IF OI is allowed to act on those outputs automatically, downstream changes may be incorrect."
+      ],
+      "mitigations": [
+        "Require human review before OI acts on GE outputs.",
+        "Add a second validation step for critical decisions.",
+        "Limit OI to read-only analysis of GE reports.",
+        "Log source-to-action mappings.",
+        "requires-engineering: implement schema validation for GE outputs before action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Great Expectations is an open-source data-engineering tool with local file surfaces, while Open Interpreter can access the entire local filesystem and send data to configured model providers. The main compliance concern is policy mismatch if regulated data in GE artifacts is exposed to OI's external API calls. This is a plausible but configuration-dependent residency/retention issue, not a default breach from the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF GE artifacts contain regulated data and Open Interpreter sends them to a third-party model provider, compliance obligations may be triggered.",
+        "IF retention policies differ between the two workflows, records handling can diverge."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared GE artifacts.",
+        "Disable external model-provider calls for sensitive runs.",
+        "Document retention for both workflows.",
+        "Use redacted validation outputs.",
+        "requires-engineering: add policy-based data routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:976a11f35080ca9d89338092212c8a346bfdcb222fb57c91656113659de40983",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
