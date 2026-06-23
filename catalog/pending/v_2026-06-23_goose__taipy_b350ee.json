@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "taipy"
+  ],
+  "verdict_id": "v_2026-06-23_goose__taipy_b350ee",
+  "generated_at": "2026-06-23T01:08:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High-risk shared filesystem and shell-capable Goose can corrupt or leak Taipy workflows; no direct prompt-injection bridge is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Goose can read/write the filesystem and use MCP, while Taipy exposes no input channel or parser surface in its profile. The only documented bridge is Goose\u2019s filesystem sharing with other instances, so prompt injection is possible only through manual file handoff or shared files, not a proven default channel into Taipy.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF Goose and Taipy exchange content through a shared file or MCP bridge, attacker-controlled text can be reinterpreted as instructions.",
+        "IF Taipy is configured to ingest Goose-authored files as prompts or configs, injection risk increases."
+      ],
+      "mitigations": [
+        "Separate workspaces for the two agents.",
+        "Disable MCP bridges not needed for the task.",
+        "Review any shared files before Taipy consumes them.",
+        "Use read-only mounts for Taipy inputs.",
+        "requires-engineering: add provenance tagging on exchanged artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd, and its profile says shared state with other instances is via filesystem. Taipy\u2019s profile does not show file access, but the pair still creates a default shared-workspace leakage path if Taipy reads Goose-written artifacts. The blast radius includes source code and files in cwd, so this is more than a low-risk local-only overlap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory, Goose-written files can be read by Taipy.",
+        "IF Taipy is pointed at Goose outputs, source code or cwd files may be exposed in downstream logs or UI."
+      ],
+      "mitigations": [
+        "Run each agent in a separate directory.",
+        "Restrict Taipy to a read-only input folder.",
+        "Avoid placing secrets in the shared workspace.",
+        "Delete transient artifacts after each run.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose has unrestricted filesystem write, shell, subprocess, and git-state modification, and its shared state is via filesystem. Taipy\u2019s profile is sparse, but the pair still has a clear conflict pathway if Taipy also writes to the same workspace or project files; uncertainty about Taipy\u2019s write surface escalates rather than lowers severity. Concurrent git or file edits can corrupt state irreversibly.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Taipy writes to the same project directory Goose edits, file races can corrupt outputs.",
+        "IF both agents touch git state without locking, commits or working-tree changes can conflict."
+      ],
+      "mitigations": [
+        "Assign separate working trees.",
+        "Serialize edits with a lock file.",
+        "Pause one agent before the other writes.",
+        "Use git branches per agent.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate code and modify files, and Taipy is a data-engineering/automation tool that may consume those outputs. The profiles do not prove Taipy blindly trusts Goose, but the default pairwise workflow can still propagate incorrect artifacts from Goose into Taipy-driven pipelines. Because the interaction is inferred, not directly documented, medium is the higher safe choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Taipy consumes Goose-generated files without validation, Goose errors can cascade into downstream jobs.",
+        "IF Goose writes configuration or code that Taipy executes, incorrect assumptions can propagate."
+      ],
+      "mitigations": [
+        "Add validation gates before Taipy consumes Goose output.",
+        "Require human review for generated configs.",
+        "Compare outputs against a known-good schema.",
+        "Keep Taipy jobs read-only until reviewed.",
+        "requires-engineering: add automated provenance and checksum checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Goose explicitly handles model provider keys and extension-specific tokens, while Taipy\u2019s profile shows no sensitive-data handling or residency constraints. No direct compliance mismatch is documented, so only a limited low-risk concern remains: if Goose secrets or regulated data are placed into shared files, Taipy could surface them. The other agent is not cited beyond its lack of documented controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.vendor.handle"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are stored in the shared workspace, Taipy may expose them in dashboards or logs.",
+        "IF Goose extension tokens are written to files Taipy reads, compliance handling may be violated."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared folders.",
+        "Mask sensitive fields before Taipy ingestion.",
+        "Review Taipy logs for accidental disclosure.",
+        "Use separate credentials per agent.",
+        "requires-engineering: define retention and deletion rules for shared artifacts."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:4b8a1493c69ed8856d07a1e91c6476d769ee4356cf3154f405580c0c1d9e83ec",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
