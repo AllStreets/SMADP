@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cognee",
+    "notion-ai"
+  ],
+  "verdict_id": "v_2026-06-23_cognee__notion-ai_da025a",
+  "generated_at": "2026-06-23T22:08:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.395,
+  "headline": "High: shared workspace state and Notion AI\u2019s vendor-hosted file access create medium-to-high leakage and cascading-error risks; prompt injection is limited by no direct bridge.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "cognee has session memory and can ingest documents; Notion AI is workspace-Q&A grounded in pages/databases. There is no documented direct channel between them, so only manual copy/paste or user-mediated transfer is plausible. That makes injection possible but not default, and the blast radius is limited by the lack of a shared parser bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies Notion AI output into cognee prompts or documents, injection becomes plausible.",
+        "IF a shared workspace export/import pipeline is added between the agents, the risk increases."
+      ],
+      "mitigations": [
+        "Disable copy-paste of untrusted AI output into downstream prompts.",
+        "Add a human review step before reusing generated text.",
+        "Use a fixed prompt template that strips instructions from pasted content.",
+        "requires-engineering: add provenance labels to imported content.",
+        "requires-engineering: isolate the agents into separate workspaces."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "cognee touches personal data, finance data, support history, and documents, while Notion AI can read pages and databases in the user\u2019s workspace and sends queries to vendor backends. The pair therefore has a plausible default path for sensitive workspace content to reach a third-party inference service, even though cognee itself is allowlisted-egress and Notion is vendor-hosted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are stored in the shared Notion workspace and queried by Notion AI, those contents may leave the workspace boundary.",
+        "IF cognee ingests the same sensitive data and is used to summarize or transform it, downstream leakage risk increases."
+      ],
+      "mitigations": [
+        "Restrict sensitive pages from Notion AI access.",
+        "Move regulated data to a separate workspace.",
+        "Redact finance and personal data before querying either agent.",
+        "Review vendor retention and logging settings.",
+        "requires-engineering: enforce data-class-based access controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "cognee has no filesystem write or shell execution, and Notion AI has no host execution and only Notion-controlled actions. Their write surfaces do not overlap on the host, so direct resource contention is limited. The main shared mutable surface is workspace content, which is more a data-flow issue than a capability conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same Notion workspace pages, they can still race on content edits.",
+        "IF an external orchestrator grants cognee write access to the same datastore, conflict severity increases."
+      ],
+      "mitigations": [
+        "Assign separate workspaces for each agent.",
+        "Avoid concurrent edits to the same pages.",
+        "Use manual approval for writes.",
+        "requires-engineering: add locking around shared pages/databases.",
+        "requires-engineering: introduce optimistic concurrency checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Notion AI is a RAG-style Q&A system grounded in workspace content, so it can treat upstream text as authoritative unless the operator verifies it. cognee also stores decisions, workflows, and successful implementations, making it a plausible upstream source for Notion summaries. The pair can therefore propagate errors across work products even without direct action-taking authority.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF cognee-generated summaries are pasted into Notion pages, Notion AI may re-summarize them as facts.",
+        "IF the operator uses Notion AI output to drive decisions without verification, errors cascade."
+      ],
+      "mitigations": [
+        "Mark AI-generated content as unverified.",
+        "Require source links for any factual claim.",
+        "Spot-check outputs before reuse.",
+        "Separate draft and approved pages.",
+        "requires-engineering: add citation enforcement in the workflow."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "cognee explicitly touches personal data and finance data, while Notion AI is vendor-hosted and sends workspace content to Notion backends and downstream model providers. That creates a compliance mismatch risk if regulated data is placed into Notion without a suitable DPA, residency, or retention review. The other agent is cited because the risk arises from their combined handling of the same data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.vendor.url"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data is stored in the Notion workspace and queried by Notion AI, residency/DPA review is required.",
+        "IF finance or personal data is mirrored from cognee into Notion, retention and subject-rights obligations may diverge."
+      ],
+      "mitigations": [
+        "Review the DPA and residency terms before use.",
+        "Keep regulated data out of Notion AI-enabled pages.",
+        "Minimize retention of AI-generated notes.",
+        "Document deletion/export workflows.",
+        "requires-engineering: implement compliance gating by data class."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-3.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:aafd2e418fd88589b7d890907dd54a74c72b2b5fdd0f27ae9a5ffe3c9d867013",
+    "profile_b_hash": "sha256:83fba93e92359cfd8ca58c3d2caaf90ec7ce22f9081b3c195021313226f40655",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
