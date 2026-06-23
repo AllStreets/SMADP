@@ -1,0 +1,151 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "memmachine",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-23_memmachine__swe-agent_eadcc2",
+  "generated_at": "2026-06-23T02:32:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: shared MCP/file pathways make prompt injection and data leakage plausible; SWE-agent\u2019s write/network powers raise cascading and conflict risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "MemMachine exposes an MCP Server and REST/Python interfaces, while SWE-agent can read/write the filesystem and execute shell commands. That creates a plausible bridge where MemMachine content can reach SWE-agent as trusted input, even though no direct shared channel is documented. Uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine content is copied into a file or task prompt consumed by SWE-agent, injection becomes reachable.",
+        "IF an MCP tool or shared workspace bridges the agents, SWE-agent may treat attacker-controlled text as instructions."
+      ],
+      "mitigations": [
+        "Disable any shared workspace or file handoff between the agents.",
+        "Require explicit human review before SWE-agent acts on MemMachine-generated text.",
+        "Strip instructions from MemMachine outputs before passing them onward.",
+        "Use separate containers and mount points for each agent.",
+        "requires-engineering: add provenance tagging for all cross-agent content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "MemMachine touches long-term user facts and conversational context, and SWE-agent handles repository code plus model-provider API keys/GitHub tokens. If MemMachine outputs are forwarded into SWE-agent\u2019s context or files, sensitive data can leak through SWE-agent\u2019s broad network egress. The pairwise path is inferred, not directly evidenced, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine outputs are stored in files readable by SWE-agent, leakage is possible.",
+        "IF SWE-agent is run with issue-mode tokens while ingesting MemMachine context, secrets may be exposed in downstream logs or API calls."
+      ],
+      "mitigations": [
+        "Do not pass user facts into SWE-agent unless redacted.",
+        "Rotate any GitHub or model-provider tokens before shared runs.",
+        "Keep MemMachine and SWE-agent in separate containers with no shared volume.",
+        "Review outbound network destinations for SWE-agent before enabling runs.",
+        "requires-engineering: enforce data-class filtering between agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "SWE-agent has unrestricted filesystem write, shell, subprocess, and git-state modification inside its sandbox. MemMachine can reach the same pair only if the orchestrator connects them through shared files or an MCP bridge, which is plausible given MemMachine\u2019s MCP server. Because the write/git side is strong and coordination is not documented, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or directory, write conflicts can occur.",
+        "IF MemMachine uses MCP to trigger SWE-agent tasks against shared state, concurrent edits may race."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Serialize all write operations through one orchestrator lock.",
+        "Disable git writes for one agent during joint runs.",
+        "Use read-only mounts for MemMachine.",
+        "requires-engineering: add optimistic-concurrency checks before commits."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "MemMachine can generate conversational outputs and SWE-agent can take shell/git actions. If SWE-agent treats MemMachine output as authoritative, a mistaken or manipulated plan can cascade into code changes or commands. No verification step is documented in the profiles, so the interaction exists in default-style orchestration but is not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes MemMachine text as task instructions without validation, errors can propagate.",
+        "IF MemMachine is used to draft plans that SWE-agent executes automatically, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require a human approval step before execution.",
+        "Have SWE-agent summarize and verify MemMachine instructions first.",
+        "Limit SWE-agent to dry-run mode for joint tasks.",
+        "Log and diff all proposed commands before running them.",
+        "requires-engineering: add schema validation for MemMachine-to-SWE-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "MemMachine explicitly touches long-term user facts and conversational context, while SWE-agent handles repository code and may use model-provider API keys and GitHub tokens. That creates a plausible retention and residency mismatch if the pair is used on regulated data, even though no specific jurisdictional mismatch is documented. The risk is compliance-relevant but not clearly high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is routed through MemMachine and then persisted by SWE-agent logs or artifacts, retention obligations may be violated.",
+        "IF GitHub tokens or model-provider keys are stored alongside user facts, subject-access or deletion workflows may fail."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data through the pair.",
+        "Set short retention windows for logs and artifacts.",
+        "Separate secrets from user-content storage.",
+        "Review data-processing notices before deployment.",
+        "requires-engineering: document residency and retention for both agents."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:64d1ebe840f7bb6123ea438844723e33ea75fdd4061cee2f0d5b8b0d71bd6758",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
