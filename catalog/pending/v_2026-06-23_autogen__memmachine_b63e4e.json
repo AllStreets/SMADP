@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "memmachine"
+  ],
+  "verdict_id": "v_2026-06-23_autogen__memmachine_b63e4e",
+  "generated_at": "2026-06-23T03:16:55Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High-risk shared filesystem and code-execution pair: AutoGen can write/execute locally while MemMachine uses MCP and allowlisted egress, creating prompt-injection, leakage, and cascading-action exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write working directories and process stdin/stdout, while MemMachine exposes an MCP Server. That creates a plausible content bridge where AutoGen-produced files or messages can be treated as instructions by MemMachine. The pair lacks explicit provenance or isolation controls in the profiles, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a writable workspace or MCP channel without provenance tags, prompt injection is possible.",
+        "IF MemMachine parses AutoGen-generated text as instructions, attacker-controlled content can steer actions."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP ingestion of untrusted text.",
+        "Add provenance markers to all inter-agent messages.",
+        "Require human review before executing file-derived instructions.",
+        "requires-engineering: enforce content-sanitization and schema validation at the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen touches application data and model-provider API keys, and MemMachine stores long-term user facts and conversational context. If they share files or an MCP bridge, sensitive context can flow from one agent into the other and then out through AutoGen's broad egress or MemMachine's API surfaces. The profiles do not show isolation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF shared files contain user facts or secrets, AutoGen can read them and transmit them onward.",
+        "IF MemMachine receives AutoGen context through MCP, long-term memory may retain data beyond the original task."
+      ],
+      "mitigations": [
+        "Keep sensitive data out of shared directories.",
+        "Restrict AutoGen egress to approved endpoints.",
+        "Turn off memory writes for sensitive sessions.",
+        "Use separate credentials per agent.",
+        "requires-engineering: add DLP/redaction at the integration boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGen has execute_shell, install_packages, write_filesystem, and spawn_subprocesses; MemMachine has MCP and allowlisted network egress. Even without overlapping git writes, both can mutate shared external resources if connected to the same workspace or API-backed task. The profiles do not show locking or coordination primitives, so conflict risk is real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or remote resource, writes can race or overwrite each other.",
+        "IF MemMachine issues MCP actions while AutoGen edits files, state divergence can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint resource scopes.",
+        "Serialize writes through one orchestrator.",
+        "Use per-agent temp directories.",
+        "Disable package installation in shared runs.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen can generate code, shell actions, and file outputs that MemMachine may consume through REST, SDK, or MCP. If MemMachine treats those outputs as authoritative, errors or hallucinations can cascade into downstream travel-planning actions or retained memory. No verification step is documented in either profile, so the interaction is plausible by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine uses AutoGen output as input without validation, incorrect facts can propagate.",
+        "IF downstream actions are taken from that output, the blast radius extends beyond a single response."
+      ],
+      "mitigations": [
+        "Require explicit verification before acting on AutoGen output.",
+        "Add a second-pass checker for factual claims.",
+        "Limit AutoGen output to structured schemas.",
+        "Log and review all cross-agent handoffs.",
+        "requires-engineering: implement confidence gating on downstream actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "AutoGen handles model-provider API keys and application data, while MemMachine stores long-term user facts and conversational context. The profiles do not show a residency or certification mismatch, so only a limited compliance gap is evidenced. Because both agents touch user data but no specific regulated class is named, this stays low rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into MemMachine memory, retention obligations may apply.",
+        "IF AutoGen forwards secrets or user facts to external model providers, logging policy must cover that flow."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared sessions.",
+        "Review retention settings before use.",
+        "Separate secrets from conversational context.",
+        "Document data-flow ownership.",
+        "requires-engineering: align retention and deletion policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:520303aea91fe9b8a9a4429a093b81d3b69a0b8c00a6eefdecd0de7951403876",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
