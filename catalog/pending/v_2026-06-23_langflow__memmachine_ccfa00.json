@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langflow",
+    "memmachine"
+  ],
+  "verdict_id": "v_2026-06-23_langflow__memmachine_ccfa00",
+  "generated_at": "2026-06-23T03:05:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.68,
+  "headline": "High: shared server-side state plus MCP/API bridging creates prompt-injection, leakage, and cascading-error risk; compliance risk is medium.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Langflow can chain agents and uses server-side state/stores; MemMachine exposes an MCP Server. If Langflow outputs are routed into MemMachine through MCP or shared state, attacker-controlled content can be treated as instructions. The pairwise pathway is documented by both profiles, though not sandboxed here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flow outputs are forwarded into MemMachine via MCP or REST",
+        "IF MemMachine parses upstream text as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Disable direct MCP/REST handoff between the two agents",
+        "Add a provenance tag to all Langflow outputs before MemMachine consumes them",
+        "Require an allowlist of instruction sources in MemMachine",
+        "Insert a human review step for any prompt-like content",
+        "requires-engineering: isolate the agents with separate workspaces and trust boundaries"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Langflow reads/writes server filesystem and handles flow inputs, intermediate outputs, and secrets; MemMachine stores long-term user facts and conversational context and can be reached through an MCP Server. If Langflow forwards those data classes into MemMachine, sensitive context can persist beyond the original flow and be exposed through downstream APIs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Langflow flows pass uploaded files, secrets, or intermediate outputs into MemMachine",
+        "IF MemMachine retains those inputs as long-term memory or exposes them through its API"
+      ],
+      "mitigations": [
+        "Block secrets from entering Langflow-to-MemMachine paths",
+        "Redact uploaded files before any transfer",
+        "Turn off memory writes for sensitive flows",
+        "Review MCP tool schemas for data minimization",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Langflow has broad filesystem write and subprocess execution, while MemMachine has allowlisted network egress and MCP access. They do not both advertise unrestricted writes to the same mutable resource, but if orchestrated against a shared workspace or shared API credentials, overlapping mutation can still race or overwrite state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory",
+        "IF both agents share mutable API credentials or memory backends"
+      ],
+      "mitigations": [
+        "Separate their working directories",
+        "Use distinct credentials per agent",
+        "Serialize writes through one coordinator",
+        "Disable shell execution for nonessential Langflow flows",
+        "requires-engineering: add locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Langflow can produce intermediate outputs from chained agents, and MemMachine is a conversational agent that can consume those outputs through REST, SDK, or MCP. If MemMachine treats Langflow output as authoritative, an upstream hallucination or malformed instruction can cascade into downstream actions or memory updates without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine uses Langflow output as a source of truth",
+        "IF no verification or citation-checking step is inserted before memory writes or actions"
+      ],
+      "mitigations": [
+        "Require validation before MemMachine acts on Langflow output",
+        "Add schema checks to Langflow outputs",
+        "Log and review all cross-agent handoffs",
+        "Limit MemMachine to read-only consumption for pilot runs",
+        "requires-engineering: implement confidence gating on downstream actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Langflow stores per-flow credentials and server-side flow data, while MemMachine retains long-term user facts and conversational context. That creates a retention-policy mismatch risk if the same personal data class is routed through both systems. No residency or certification mismatch is documented, so I do not escalate beyond medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF the same personal data is stored in Langflow and then retained in MemMachine",
+        "IF retention or deletion requests are expected to apply across both systems"
+      ],
+      "mitigations": [
+        "Minimize personal data in Langflow flows",
+        "Set explicit retention windows for MemMachine memory",
+        "Document deletion/export handling across both systems",
+        "Separate sensitive and non-sensitive workflows",
+        "requires-engineering: align retention and deletion policies end-to-end"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9427152ab1b0e013deb5c0aeac0f0684cf81c8d1e051a829f0a9ce89e2175490",
+    "profile_b_hash": "sha256:520303aea91fe9b8a9a4429a093b81d3b69a0b8c00a6eefdecd0de7951403876",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
