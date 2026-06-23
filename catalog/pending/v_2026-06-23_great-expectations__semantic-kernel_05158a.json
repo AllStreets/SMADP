@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "great-expectations",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-23_great-expectations__semantic-kernel_05158a",
+  "generated_at": "2026-06-23T04:24:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High data-leakage and cascading-error risk: Semantic Kernel can read/write files and call MCP/OpenAI-style APIs, while Great Expectations handles validation data and docs, creating a dangerous default handoff path.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Semantic Kernel can use MCP and file inputs, so if Great Expectations outputs are fed into SK as files or tool context, attacker-controlled content in validation artifacts could steer prompts. Great Expectations itself is not an instruction parser, but the pair creates a shared content channel. This is inferred from documented surfaces, not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations reports are ingested by Semantic Kernel as prompt text or MCP tool input",
+        "IF validation artifacts can be edited by an untrusted party before SK reads them"
+      ],
+      "mitigations": [
+        "Add a strict delimiter/template around GE outputs before SK consumes them",
+        "Require a human review step before any SK prompt includes GE-generated text",
+        "Store GE outputs in a read-only folder for SK",
+        "Reject instructions found inside validation reports",
+        "requires-engineering: add provenance tagging between the two systems"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Great Expectations touches validation results and documentation, while Semantic Kernel can read files, write files, and send context to external model APIs. If GE artifacts contain sensitive data, SK can forward them to third-party inference backends by default. The pairwise leakage path is plausible from the profiles alone; no direct sandbox evidence is provided.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations stores sensitive validation results in files accessible to Semantic Kernel",
+        "IF Semantic Kernel routes those file contents into Azure OpenAI, OpenAI, Hugging Face, or MCP tools"
+      ],
+      "mitigations": [
+        "Restrict SK to a redacted copy of GE outputs",
+        "Disable external model calls for workflows that touch sensitive validation data",
+        "Place GE artifacts in a separate workspace with least-privilege ACLs",
+        "Scan outputs for secrets before any API call",
+        "requires-engineering: enforce data-loss-prevention at the orchestrator boundary"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Great Expectations writes validation results and documentation, and Semantic Kernel can write files too. That overlapping write surface can cause clobbering or inconsistent artifacts if both operate on the same directory. Great Expectations lacks locking details, while Semantic Kernel\u2019s concurrency model uses shared state via memory store, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same workspace or report directory",
+        "IF no external lock or transaction wrapper serializes file writes"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Make GE outputs append-only",
+        "Use a file lock around shared artifacts",
+        "Run one agent at a time for shared files",
+        "requires-engineering: add transactional storage for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Semantic Kernel is an orchestration layer that can act on plugin outputs, and Great Expectations produces validation results that may be treated as authoritative. If SK consumes GE results without verification, a bad validation or malformed report can cascade into downstream actions or decisions. Because SK can call APIs and manage agents, the blast radius is larger than a simple report error.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel uses Great Expectations output as a decision signal without independent checks",
+        "IF downstream plugins or agents take actions based on that signal"
+      ],
+      "mitigations": [
+        "Require a second validation pass before acting on GE output",
+        "Add schema checks to GE reports before SK reads them",
+        "Log and review any SK action triggered by validation failures",
+        "Limit SK to advisory mode for GE-derived decisions",
+        "requires-engineering: implement confidence thresholds and rollback hooks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Great Expectations is documented as open-source data-engineering tooling touching validation results and documentation, while Semantic Kernel is a Microsoft orchestration SDK that handles model provider API keys and plugin credentials. The profiles do not show a specific residency or regulated-data mismatch, so only a modest compliance gap is evident from differing handling/retention surfaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Semantic Kernel plugin credentials or model-provider calls",
+        "IF Great Expectations validation artifacts are retained longer than the governing policy"
+      ],
+      "mitigations": [
+        "Classify data before routing it through SK",
+        "Avoid placing regulated data in plugin credentials",
+        "Set a short retention window for validation artifacts",
+        "Document which system is system-of-record for each data class",
+        "requires-engineering: align retention and residency controls across both tools"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:976a11f35080ca9d89338092212c8a346bfdcb222fb57c91656113659de40983",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
