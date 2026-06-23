@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "great-expectations"
+  ],
+  "verdict_id": "v_2026-06-23_gpt-engineer__great-expectations_d35f62",
+  "generated_at": "2026-06-23T04:12:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High: shared project-directory writes and broad egress make prompt injection, leakage, and cascading errors plausible by default; compliance risk is lower but nontrivial.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a writes and reads the project directory by default, and its self_isolation is none; agent_b also reads/writes files in data sources, validation results, and documentation. That shared filesystem bridge makes file-content prompt injection plausible even though no MCP or clipboard bridge is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory or shared workspace, file content from one can influence the other.",
+        "IF agent_b ingests documentation or validation artifacts as trusted instructions, injected text can steer behavior."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Add a manual review step before either agent consumes the other's files.",
+        "Prefix untrusted files with a warning banner in the workspace.",
+        "Disable automatic ingestion of generated docs as instructions.",
+        "requires-engineering: add provenance tagging for files and prompts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a has broad network egress and handles OPENAI_API_KEY, while agent_b has no network egress but does touch validation results and documentation. If sensitive project data lands in the shared workspace, agent_a can transmit it to a third-party model backend; agent_b is less risky but still shares the same data surface.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive data is stored in the shared project directory, agent_a can send it off-box through its configured model API.",
+        "IF validation results contain regulated data, agent_b will process that data locally and may expose it in outputs."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared project directory.",
+        "Use a redaction pass before agent_a reads files.",
+        "Run agent_a with a restricted API key and logging disabled.",
+        "Store validation outputs in a separate, access-controlled folder.",
+        "requires-engineering: enforce data-loss-prevention filters on outbound prompts."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can write the filesystem and spawn subprocesses; agent_b can install packages and also works over files. The pair therefore has overlapping mutable access to the same project directory, creating race conditions and conflicting edits even though agent_a cannot modify git state directly.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, concurrent edits can overwrite each other.",
+        "IF agent_b installs packages while agent_a is generating code, dependency drift can break the workspace."
+      ],
+      "mitigations": [
+        "Run only one agent at a time per project directory.",
+        "Snapshot the workspace before each agent run.",
+        "Use separate branches or directories for each agent.",
+        "Review package changes before installation.",
+        "requires-engineering: add file locks around shared mutable paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a produces generated source code and writes files; agent_b consumes validation results and documentation, so A's output can become B's input without a documented verification barrier. That makes incorrect code or fabricated docs propagate into downstream checks, though agent_b is not shown to take irreversible external actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tagline"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_b treats generated code or docs from agent_a as authoritative, errors will propagate into validation artifacts.",
+        "IF agent_a emits incorrect code comments or README text, agent_b may validate or document the mistake."
+      ],
+      "mitigations": [
+        "Require human review of agent_a outputs before validation.",
+        "Compare generated artifacts against tests before accepting them.",
+        "Mark agent_a outputs as untrusted inputs to agent_b.",
+        "Keep a changelog of assumptions and verified facts.",
+        "requires-engineering: add automated cross-checks between generation and validation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and docs-only, with no explicit residency or certification mismatch documented. The main compliance concern is that agent_a handles secrets and broad egress while agent_b processes validation data and documentation, but the profiles do not show PHI, EU-only data, or a specific policy conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace, compliance obligations may attach to both agents.",
+        "IF the deployment requires residency or retention guarantees, the current profiles do not document them."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the workspace.",
+        "Document retention and deletion expectations before use.",
+        "Restrict agent_a's outbound API usage to approved endpoints.",
+        "Separate documentation from sensitive validation artifacts.",
+        "requires-engineering: obtain formal compliance attestations for both tools."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:844ca2be33b359ea5e897ccb739eb8b4599dabe2a212b7b665d4a21ca3415297",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

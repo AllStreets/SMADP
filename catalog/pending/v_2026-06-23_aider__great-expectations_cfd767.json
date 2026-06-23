@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "great-expectations"
+  ],
+  "verdict_id": "v_2026-06-23_aider__great-expectations_cfd767",
+  "generated_at": "2026-06-23T04:12:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: shared git-repo writes make prompt-injection, data leakage, and cascading errors plausible; Great Expectations' local-only posture limits external exfiltration.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes repo files and shares state via a shared git repo, so attacker-controlled content in files can be re-ingested as instructions. great_expectations also reads/writes files for validation results and documentation, creating a plausible file-based bridge. No MCP or clipboard bridge is documented, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace files",
+        "IF Aider is prompted to summarize or edit content that Great Expectations wrote into shared files"
+      ],
+      "mitigations": [
+        "Separate the agents into different working directories",
+        "Disable automatic ingestion of generated files into prompts",
+        "Review shared files before either agent processes them",
+        "Use read-only mounts for Great Expectations outputs",
+        "requires-engineering: add provenance tags to files and reject untrusted instruction-like text"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider has broad network egress and handles model-provider API keys, while Great Expectations is documented as network-egress none. If they share a workspace, sensitive source code or validation artifacts can flow into Aider and then to third-party model providers. Great Expectations alone does not exfiltrate, but the pair still creates a default leakage path through Aider.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF shared files contain secrets, source code, or regulated data",
+        "IF Aider sends those contents to configured model providers"
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared repo",
+        "Use separate repos for code and validation artifacts",
+        "Redact sensitive fields before Aider reads files",
+        "Restrict Aider to a local-only model backend",
+        "requires-engineering: enforce data-loss-prevention filters on prompts and file reads"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem, execute shell, and modify git state; its shared_state_with_other_instances is via a shared git repo. Great Expectations also reads/writes files for validation outputs. Concurrent edits to the same repo can overwrite each other or corrupt git state, and no locking is documented. This is a direct overlap in default write surfaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repository",
+        "IF either agent runs without external locking or branch isolation"
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch",
+        "Serialize writes with a manual lock file",
+        "Run Great Expectations in a separate output directory",
+        "Commit after each Aider change before GE runs",
+        "requires-engineering: add orchestrator-level concurrency locks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate or edit code and git history, and Great Expectations can consume files and produce validation results. If GE treats Aider-authored artifacts as authoritative without a review step, bad code or bad assumptions can cascade into incorrect validation or downstream actions. The pair is not documented as autonomous action-taking, so high is not justified.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations consumes files produced by Aider without human review",
+        "IF validation results are used to gate merges or releases"
+      ],
+      "mitigations": [
+        "Insert a manual review step before validation runs",
+        "Require tests to fail closed on schema changes",
+        "Compare validation outputs against a known baseline",
+        "Keep Aider edits on a feature branch until reviewed",
+        "requires-engineering: add provenance checks for Aider-generated artifacts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider touches source code and git history and may send content to configured model providers, while Great Expectations is local-only network-wise and touches validation results/documentation. The pair can create policy mismatch if regulated data is placed in shared files, but no specific residency or certification conflict is documented in either profile. The other agent is cited because the risk arises from their combined handling of the same files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in the shared repository",
+        "IF Aider is configured to send that data to a third-party model provider"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo",
+        "Use a DPA-approved local model for Aider",
+        "Separate compliance-sensitive artifacts from code",
+        "Document retention rules for validation outputs",
+        "requires-engineering: map data classes to approved processing locations"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2",
+      "GOVERN-1.6"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:844ca2be33b359ea5e897ccb739eb8b4599dabe2a212b7b665d4a21ca3415297",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
