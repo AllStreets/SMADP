@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "openhands",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-06-24_openhands__whisper_d4730e",
+  "generated_at": "2026-06-24T03:47:40Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.335,
+  "headline": "Highest risk is capability conflict: OpenHands can write/modify shared runtime state while whisper is non-interactive and file-limited, making prompt injection and leakage mostly low but compliance risk minimal.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "OpenHands can read/write runtime files and use MCP, so if whisper outputs are manually copied or mounted into the same workspace, injected text could be misread as instructions. Whisper itself has no tool use or filesystem write, so the pathway is one-way and limited. No shared channel is documented by default, so this stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF whisper outputs are copied into a file that OpenHands later parses as instructions, injection becomes plausible.",
+        "IF both agents are attached to the same mounted volume, file-based prompt injection is possible."
+      ],
+      "mitigations": [
+        "Keep whisper outputs in a separate directory from OpenHands inputs.",
+        "Require a human review step before OpenHands acts on any transcribed text.",
+        "Disable MCP connections that expose untrusted text sources.",
+        "Prefix transcriptions with a non-executable schema and strip directives."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "OpenHands touches mounted runtime files and may handle model-provider API keys, while whisper only touches audio files and has no network egress. The pair does not show a default shared workspace or outbound upload path from whisper, so leakage is limited to local file exposure rather than external exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive audio is mounted into the same runtime volume OpenHands can read, OpenHands may see it.",
+        "IF whisper transcripts are stored alongside secrets in the same directory, local disclosure is possible."
+      ],
+      "mitigations": [
+        "Store audio and transcripts in separate folders with restrictive permissions.",
+        "Remove secrets from the shared runtime before processing audio.",
+        "Mount only the minimum required files into OpenHands.",
+        "Rotate any exposed API keys immediately after the run."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "OpenHands has broad filesystem write, shell, and git modification capabilities inside its Docker runtime, while whisper is non-writable and non-networked. If both are pointed at the same mounted volume, OpenHands can overwrite or race on shared files even though whisper cannot actively contend. The shared-volume path is documented, so conflict is plausible in default pair deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given the same mounted directory, OpenHands can clobber files whisper expects to read.",
+        "IF OpenHands is allowed to modify git state in a shared repo, concurrent edits can corrupt work products."
+      ],
+      "mitigations": [
+        "Give each agent its own workspace mount.",
+        "Use read-only mounts for whisper inputs.",
+        "Serialize access to any shared git repository.",
+        "Add file-locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "OpenHands can act on files and browser outputs, so if whisper transcripts are treated as authoritative, transcription errors can cascade into incorrect edits or commands. Whisper is a sequence-to-sequence model with no verification layer, and OpenHands is an agent loop that can execute actions, making the handoff risky even without direct evidence of a specific workflow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF OpenHands consumes whisper transcripts without a human verification step, transcription mistakes can propagate.",
+        "IF whisper output is used as the sole source for shell commands or code edits, downstream errors can be executed."
+      ],
+      "mitigations": [
+        "Require human approval before executing transcript-derived actions.",
+        "Compare transcripts against the original audio for critical commands.",
+        "Use confidence thresholds to flag uncertain segments.",
+        "Restrict OpenHands to draft-only mode for transcript-derived tasks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "OpenHands handles files in a Docker runtime and may process model-provider API keys, while whisper is an open-source speech model that touches audio files only. No residency, certification, or retention mismatch is documented in the profiles, so compliance risk is limited to local handling of audio and mounted files rather than a clear policy breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio is mounted into OpenHands without a matching retention policy, compliance gaps can arise.",
+        "IF transcripts are retained longer than the source audio policy allows, subject-rights handling may fail."
+      ],
+      "mitigations": [
+        "Document retention for audio and transcripts.",
+        "Keep regulated data out of the shared runtime.",
+        "Delete temporary transcripts after use.",
+        "Review whether any mounted files contain regulated content."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8e5f9fc2307783e8ec6d9e0e159b14764298828689231c78e9b8293eca27f16e",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
