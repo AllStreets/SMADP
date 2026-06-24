@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-06-24_pipecat__windsurf_4db30d",
+  "generated_at": "2026-06-24T23:31:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: shared-bus Pipecat plus writable Windsurf workspace creates prompt-injection, leakage, and cascading-action risk by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Pipecat uses a shared bus/session scope and can ingest text, audio, and files; Windsurf has clipboard, workspace files, and MCP/tool use. That creates a plausible bridge where Windsurf content can reach Pipecat or vice versa and be treated as instructions. The pathway is documented only indirectly, so uncertainty pushes upward from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf copies attacker-controlled text into a shared workspace or clipboard consumed by Pipecat, injection is possible.",
+        "IF Pipecat parses shared-bus content as instructions without provenance checks, the bridge becomes exploitable."
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents.",
+        "Isolate Pipecat and Windsurf into separate workspaces.",
+        "Require provenance tags on any shared-bus messages.",
+        "Review and strip instructions from any text passed between agents.",
+        "requires-engineering: add content-sanitization or trust-boundary enforcement at the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Pipecat touches audio, video, images, text, and conversation state and has broad API egress; Windsurf reads workspace files and can use MCP and broad network egress. If sensitive files or conversation state flow from Pipecat into Windsurf, Windsurf can transmit them outward. Because both profiles show external transmission surfaces, the leakage path is credible and potentially irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat conversation state or media is stored in a workspace readable by Windsurf, leakage is possible.",
+        "IF Windsurf sends read files or MCP outputs to external services, sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Keep Pipecat data outside Windsurf-readable directories.",
+        "Disable MCP servers that can access sensitive files.",
+        "Restrict Windsurf network egress to approved endpoints.",
+        "Separate credentials and API keys per agent.",
+        "requires-engineering: enforce per-agent storage and egress isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Pipecat supports shared-bus multi-instance operation, while Windsurf can write the filesystem and modify git state with shared state via local filesystem. If both touch the same repo or workspace, concurrent writes and git mutations can collide, corrupt state, or overwrite each other. The overlap is explicit in both profiles, so this is a default-dangerous conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory, file-write races can occur.",
+        "IF Windsurf auto-commits while Pipecat writes artifacts to the same tree, git state can be corrupted."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Disable auto-commit or auto-write modes.",
+        "Serialize file writes with a lock file.",
+        "Keep Pipecat outputs in a non-git scratch area.",
+        "requires-engineering: add orchestrator-level locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Pipecat can emit conversation state and generated text, and Windsurf is an action-capable coding agent with shell, filesystem, and git authority. If Windsurf treats Pipecat output as authoritative, a mistaken transcript or hallucinated instruction can cascade into code changes or commands. Windsurf may verify some outputs, but no verification boundary is documented here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf uses Pipecat output as task instructions without human review, errors can propagate.",
+        "IF Pipecat generates incorrect code or commands that Windsurf executes, downstream damage can occur."
+      ],
+      "mitigations": [
+        "Require human review before execution.",
+        "Mark Pipecat outputs as untrusted input.",
+        "Add a verification step before shell or git actions.",
+        "Limit Windsurf to read-only mode for Pipecat-derived tasks.",
+        "requires-engineering: implement provenance-aware gating for agent outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Pipecat touches audio, video, images, text, and conversation state, while Windsurf handles source code and open files with local filesystem sharing. If regulated content such as customer audio or PII is placed into the shared workspace, differing retention or residency expectations can be violated. The profiles do not document a specific mismatch, so this remains a medium-risk compliance exposure.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio or PII is stored in a Windsurf-readable workspace, compliance obligations may be triggered.",
+        "IF retention policies differ between Pipecat logs and Windsurf workspace files, deletion/export can fail."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces.",
+        "Disable or minimize logging for sensitive sessions.",
+        "Document retention and deletion procedures for both agents.",
+        "Use separate storage locations by data class.",
+        "requires-engineering: align residency and retention controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

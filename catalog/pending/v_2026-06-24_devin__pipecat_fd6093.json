@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "devin",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-06-24_devin__pipecat_fd6093",
+  "generated_at": "2026-06-24T23:30:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High: Devin\u2019s broad workspace and write/network privileges can collide with Pipecat\u2019s shared-bus, multi-service runtime, creating default-path data leakage and cascading action risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Devin can read/write cloud workspace files and use MCP, while Pipecat runs on a shared bus with stdin/stdout and many API transports. That creates a plausible instruction-smuggling path if Pipecat relays untrusted text into Devin\u2019s workspace or MCP inputs. The pairwise bridge is documented only indirectly, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat forwards untrusted text into Devin-readable files or MCP messages, injection becomes reachable.",
+        "IF the orchestrator copies conversation state from Pipecat into Devin without provenance filtering, prompt hijack risk increases."
+      ],
+      "mitigations": [
+        "Disable automatic file-to-agent handoff between the two systems.",
+        "Add provenance tags to every Pipecat message before Devin reads it.",
+        "Restrict Devin MCP tools to allowlisted schemas only.",
+        "Require manual review before any Pipecat output is written into Devin workspace files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Devin touches source code, issue trackers, team chat, docs, and handles secrets in a cloud workspace; Pipecat touches conversation state, audio/video/images/text, and can call third-party LLM/STT/TTS APIs. If they share a workspace or bus, sensitive content can flow from Devin into Pipecat\u2019s external services by default. The blast radius includes exfiltration, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Devin workspace artifacts are forwarded into Pipecat services, sensitive code or chat may leave the workspace.",
+        "IF Pipecat is configured with external STT/LLM/TTS providers, conversation content can be transmitted off-box."
+      ],
+      "mitigations": [
+        "Route only redacted text into Pipecat.",
+        "Disable external providers for any session handling secrets.",
+        "Separate Devin and Pipecat into distinct workspaces or tenants.",
+        "Block uploads of repo clones and chat logs to Pipecat by policy.",
+        "Review provider allowlists before enabling live traffic."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Devin has broad filesystem write, git mutation, shell, and network egress; Pipecat is a multi-process/shared-bus framework that can also reach external services. If both operate on the same repo, workspace, or shared mutable resource, concurrent writes and git state changes can race and corrupt outputs. The profiles show overlapping write authority, so high fits the default danger.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or workspace directory, write conflicts are possible.",
+        "IF Pipecat instances share a bus while Devin edits git state, race conditions can corrupt commits or generated artifacts."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Serialize git writes through one designated actor.",
+        "Use file locks for shared artifacts.",
+        "Disable concurrent Pipecat instances on the same bus.",
+        "Pause Devin before Pipecat mutates the same repo."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Devin acts autonomously inside its workspace, and Pipecat can carry conversation state through a shared bus and render outputs from multiple LLM/STT/TTS services. If Pipecat treats Devin-produced text as authoritative, errors can cascade into downstream actions or user-facing speech without verification. Because the pair can create an automated trust chain, high is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat consumes Devin output as final text without validation, hallucinations can propagate.",
+        "IF Pipecat triggers downstream actions or speech from Devin-generated content, mistakes become user-visible."
+      ],
+      "mitigations": [
+        "Insert a verification step before Pipecat uses Devin output.",
+        "Require citations or structured schemas for Devin-produced facts.",
+        "Log and diff Devin output before downstream action.",
+        "Disable automatic action-taking on unreviewed agent text.",
+        "Use human approval for any externally delivered response."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Devin explicitly handles team chat, issue trackers, docs, and secrets in a cloud workspace, while Pipecat processes audio, video, images, text, and analytics/metrics. That combination can create retention and residency mismatches if the same regulated data class is routed through Pipecat\u2019s external providers. The profiles do not prove a specific jurisdiction breach, so medium is the safest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated chat or secrets are routed from Devin into Pipecat providers, retention and residency obligations may diverge.",
+        "IF Pipecat analytics or third-party services retain conversation content longer than Devin\u2019s workspace policy, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Classify data before routing it to Pipecat.",
+        "Disable analytics on regulated sessions.",
+        "Set explicit retention limits for both systems.",
+        "Keep regulated workloads in a single approved region.",
+        "Review provider DPAs before enabling production traffic."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1d97574bb7982fc1717d4bef5ab11836bf78e14703fff89e823dac3311cba4ee",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
