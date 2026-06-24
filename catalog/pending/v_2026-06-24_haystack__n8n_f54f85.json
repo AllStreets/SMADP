@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "haystack",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-24_haystack__n8n_f54f85",
+  "generated_at": "2026-06-24T00:29:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: n8n\u2019s default broad egress and server-side execution can turn Haystack outputs into unsafe actions or leaks when paired without strict verification and isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Haystack can call REST APIs and MCP servers, while n8n can execute workflow nodes and consume external inputs. If Haystack ingests attacker-controlled content and passes it into n8n workflows, prompt-like instructions can traverse the pair. The shared bridge is plausible, but not proven by direct pair evidence, so I rate it medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Haystack output is forwarded into an n8n workflow without sanitization, injection risk exists.",
+        "IF n8n treats Haystack-produced text as instructions rather than data, the pathway is active."
+      ],
+      "mitigations": [
+        "Add an allowlist parser between Haystack and n8n.",
+        "Wrap Haystack outputs in a strict JSON schema.",
+        "Require human review before n8n executes any LLM-derived step.",
+        "Disable MCP or external tool calls for untrusted Haystack inputs.",
+        "requires-engineering: add provenance tags through the workflow."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Haystack touches anonymous usage statistics and has broad network egress; n8n reads and writes the server filesystem and also has broad egress. Together, a shared workflow can move data from Haystack into n8n-managed files or integrations, creating leakage risk in default deployments. The pairwise path is inferred from documented surfaces, not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Haystack processes sensitive inputs beyond anonymous usage statistics, leakage risk increases.",
+        "IF n8n workflows persist Haystack outputs to disk or send them to integrations, data can leave the original boundary."
+      ],
+      "mitigations": [
+        "Restrict n8n filesystem access to a dedicated temp directory.",
+        "Turn off persistence for intermediate Haystack outputs.",
+        "Use redaction before any n8n integration node.",
+        "Limit Haystack egress to approved endpoints only.",
+        "requires-engineering: separate credentials and storage per workflow."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Haystack can use MCP and broad network egress, while n8n can execute shell commands, spawn subprocesses, and write the server filesystem. In a shared environment, both can mutate external resources and the same host state without any documented locking between them. That makes conflicting writes and race conditions dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path or external API credentials, write conflicts can occur.",
+        "IF n8n Execute Command nodes and Haystack tool calls run concurrently, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign separate directories for each agent.",
+        "Use per-agent credentials for all shared services.",
+        "Serialize workflows that touch the same resource.",
+        "Disable Execute Command for workflows that also call Haystack.",
+        "requires-engineering: add distributed locks around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Haystack is a search-RAG agent that can generate retrieved answers, and n8n is an automation orchestrator with tool nodes that can act on workflow inputs. If n8n consumes Haystack output as authoritative, errors can cascade into downstream actions such as API calls or shell execution. The default automation posture makes this high risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n routes Haystack output directly into action nodes, cascading error is active.",
+        "IF Haystack citations or retrieval confidence are not checked before execution, false facts can trigger actions."
+      ],
+      "mitigations": [
+        "Insert a verification step before any action node.",
+        "Require confidence thresholds for Haystack outputs.",
+        "Block shell or external API actions on unreviewed text.",
+        "Log and review all Haystack-to-action transitions.",
+        "requires-engineering: add policy gates for high-impact workflow nodes."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Haystack is documented as open-source search-RAG with broad egress, while n8n is a workflow platform that stores credentials and processes whatever the workflow handles. The pair can therefore move regulated data into a general-purpose automation system with different retention and residency assumptions. No direct residency mismatch is documented, so this stays medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF the workflow processes regulated data, n8n\u2019s storage and integrations may create compliance obligations.",
+        "IF Haystack outputs are retained in n8n logs or datastore, retention policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workflows.",
+        "Minimize n8n logging for sensitive runs.",
+        "Set explicit retention limits on workflow data.",
+        "Review integration-node destinations before enabling them.",
+        "requires-engineering: document residency and DPA boundaries per workflow."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:39a712547c3e10c933938244688af26e6669963233b9a8dee5ee66d84559a6bf",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
