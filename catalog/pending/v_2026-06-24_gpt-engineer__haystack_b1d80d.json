@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "haystack"
+  ],
+  "verdict_id": "v_2026-06-24_gpt-engineer__haystack_b1d80d",
+  "generated_at": "2026-06-24T01:06:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "High-risk shared-project interaction: gpt-engineer can write and execute code while Haystack can consume MCP/REST inputs, creating prompt-injection, leakage, and cascading-error exposure by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a shared project directory and offers to run generated code, while haystack can ingest MCP/REST inputs. If Haystack reads gpt-engineer outputs from the same workspace or an MCP bridge, attacker-controlled text can be treated as instructions. The shared-project path is plausible, but direct parsing behavior is not documented, so uncertainty stays medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Haystack reads files from the same project directory that gpt-engineer writes to, prompt injection is possible.",
+        "IF an MCP server or REST endpoint forwards gpt-engineer output into Haystack prompts, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Separate the project directories for the two agents.",
+        "Disable automatic ingestion of generated files into Haystack prompts.",
+        "Add a provenance tag and strip instructions from file content before retrieval.",
+        "Review any MCP/REST connector mappings before enabling them."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "gpt-engineer has broad network egress and handles OPENAI_API_KEY, while Haystack can call REST APIs and MCP servers. If both touch the same workspace, generated code or secrets can flow from A into B and then out over B's API paths. The profiles do not prove secret sharing, but the shared directory plus outbound surfaces make leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF the shared project directory contains secrets or API keys, Haystack can retrieve them from files written by gpt-engineer.",
+        "IF Haystack forwards retrieved context to external REST/MCP services, those secrets can leave the local environment."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared project directory.",
+        "Mount a read-only sanitized workspace for Haystack.",
+        "Block outbound API calls from Haystack during review runs.",
+        "Rotate any exposed keys after a joint run."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "gpt-engineer can write the project directory and spawn subprocesses, and Haystack can use MCP/REST integrations with broad network egress. They overlap on mutable project state and external side effects, so concurrent runs can overwrite each other's artifacts or race on shared files. No locking is documented, so the conflict is real but not as severe as unrestricted git-state contention.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same project directory at the same time, file overwrite races can occur.",
+        "IF Haystack writes retrieved outputs back into the shared workspace, concurrent mutation conflicts can occur."
+      ],
+      "mitigations": [
+        "Run only one agent at a time in the shared directory.",
+        "Use per-agent subdirectories with explicit handoff files.",
+        "Enable filesystem snapshots before each run.",
+        "Disable write access for Haystack unless needed."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "gpt-engineer produces code and file edits, and Haystack can consume those outputs through retrieval or MCP/REST workflows. If Haystack treats gpt-engineer artifacts as authoritative without verification, a bad generated fact or code snippet can cascade into downstream actions or responses. The pair lacks documented verification gates, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Haystack uses gpt-engineer-generated files as retrieval sources without validation, errors can propagate.",
+        "IF Haystack turns retrieved code or claims into user-facing answers or actions, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Require a human review step before Haystack consumes generated artifacts.",
+        "Add source-citation checks for any retrieved claim.",
+        "Reject executable code unless it passes tests.",
+        "Keep gpt-engineer outputs in a staging folder until validated."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and the profiles do not show a direct residency or certification mismatch. gpt-engineer handles OPENAI_API_KEY and writes project files, while Haystack only lists anonymous usage statistics, so the main compliance concern is limited to local handling of secrets rather than a documented cross-border or regulated-data breach. The other agent is not cited because no mismatch is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared project directory, compliance review is required.",
+        "IF Haystack is configured to send retrieved content to a non-approved external service, policy violations may occur."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Document the external services Haystack may call.",
+        "Add a short data-classification checklist before runs.",
+        "Review retention settings for any connected APIs."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:eef17619b07f4a6c640ae15cae37da4057ac4d6a1e5e92661186b6e147735356",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
