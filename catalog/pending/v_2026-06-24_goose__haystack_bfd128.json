@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "haystack"
+  ],
+  "verdict_id": "v_2026-06-24_goose__haystack_bfd128",
+  "generated_at": "2026-06-24T01:23:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "Highest risk is medium: shared filesystem/MCP and broad egress create prompt-injection, leakage, and workflow-conflict pathways between Goose and Haystack.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP; Haystack can also use MCP and broad network egress. That creates a plausible bridge where content from one can be fed into the other through shared files or MCP outputs. No direct provenance or isolation is documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Goose writes attacker-controlled text into a shared file that Haystack later ingests as instructions, injection is possible.",
+        "IF both agents are connected through the same MCP server without provenance tracking, prompt injection risk increases."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces.",
+        "Disable shared MCP servers between the two agents.",
+        "Require provenance tags on all inter-agent files.",
+        "Review any file or MCP payload before passing it across agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd and has broad network egress; Haystack also has broad egress and can call APIs. If they share a workspace, sensitive code or local files can flow from Goose into Haystack and then out through Haystack's API calls. The profiles do not show explicit isolation, so shared-workspace leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Goose and Haystack share the same cwd or filesystem, file contents can be exposed across agents.",
+        "IF Haystack forwards retrieved context to external APIs, any shared sensitive file content can leave the environment."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Restrict Haystack to non-sensitive inputs only.",
+        "Turn off network egress for one agent during sensitive tasks.",
+        "Redact secrets before any handoff between agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose can write the filesystem and modify git state, and its concurrency model says shared state with other instances is via filesystem. Haystack can also use MCP and broad egress, so both can act on shared mutable resources without documented locking. That matches the high-risk overlap pattern for concurrent writes and git-state corruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or inconsistent state can occur.",
+        "IF both agents modify the same git repository without locks, commit or index corruption is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working tree.",
+        "Serialize git operations through one operator.",
+        "Add file locks around shared mutable paths.",
+        "Pause one agent before the other edits the repo."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can produce code or file changes, and Haystack can consume external inputs through APIs/MCP. If Haystack treats Goose's output as authoritative, errors can cascade into downstream retrieval or actions. The profiles do not document a verification step, so the safer choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Haystack ingests Goose-generated text without validation, incorrect facts can propagate.",
+        "IF Goose writes a malformed artifact that Haystack indexes or acts on, downstream outputs can be wrong."
+      ],
+      "mitigations": [
+        "Require human review before Haystack consumes Goose output.",
+        "Add schema validation on Goose-produced artifacts.",
+        "Keep Goose outputs read-only until checked.",
+        "Log and compare source citations before acting."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only Goose explicitly handles model-provider keys and extension tokens; Haystack lists anonymous usage statistics. No residency, certification, or retention mismatch is documented, so a compliance issue is not established. Goose's secrets handling is the only concrete compliance-relevant surface, and Haystack is not shown to receive regulated data by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Goose and then forwarded to Haystack, compliance review is required.",
+        "IF Haystack is configured to retain or export Goose secrets, policy mismatch becomes material."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Disable retention on any shared logs.",
+        "Review secret-handling paths before deployment.",
+        "Document data flow boundaries for both agents."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:eef17619b07f4a6c640ae15cae37da4057ac4d6a1e5e92661186b6e147735356",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
