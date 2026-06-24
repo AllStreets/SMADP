@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_gpt-engineer__slim_7dd602",
+  "generated_at": "2026-06-24T22:40:23Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High: shared project-directory writes and broad egress create default risks of prompt injection, data leakage, and cascading errors between gpt-engineer and slim.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a per-project directory and has no self-isolation by default; slim also reads and writes filesystem artifacts in its target session. Because the pair shares a project directory surface, attacker-controlled content from one can be consumed by the other as instructions or commands. The interaction is plausible in default use, though not proven by direct evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same project directory or mounted workspace, prompt injection becomes reachable.",
+        "IF either agent parses file contents as trusted instructions, injected text can steer tool use."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Disable automatic execution of file-derived instructions.",
+        "Review generated files before passing them to the other agent.",
+        "Use read-only mounts for one agent where possible.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "gpt-engineer touches generated source code and handles OPENAI_API_KEY while slim touches filesystem artifacts, environment variables, certificate private keys, and registry credentials. Both have broad network egress and filesystem access, so a shared workspace can expose sensitive artifacts to the other agent and onward to third-party APIs. The blast radius includes secrets and compliance-sensitive files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same workspace contains secrets, keys, or environment files, either agent can read them.",
+        "IF either agent forwards file contents to its configured model or registry APIs, leakage can occur."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared project directory.",
+        "Mount sensitive files read-only or not at all.",
+        "Use separate credentials for each agent.",
+        "Block outbound network except to required endpoints.",
+        "requires-engineering: add secret-scanning and redaction before model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write the filesystem, and use broad network egress. gpt-engineer also writes files in a per-project directory, while slim operates on container images and filesystem artifacts. With shared mutable state and no locking or coordination primitive documented, concurrent writes can overwrite each other or corrupt artifacts. Uncertainty favors the higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or artifact set, write conflicts are possible.",
+        "IF either agent modifies files while the other is reading them, race-induced corruption can occur."
+      ],
+      "mitigations": [
+        "Run the agents on separate workspaces.",
+        "Serialize access with a simple operator-managed lock.",
+        "Snapshot the workspace before each run.",
+        "Avoid concurrent writes to the same git or image artifacts.",
+        "requires-engineering: implement file-level locking or transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "gpt-engineer produces code and offers to run it, while slim performs interactive command execution on container artifacts. If slim consumes gpt-engineer's output without verification, mistakes can cascade into unsafe commands or broken images. The pathway exists in default workflows, but the blast radius is usually bounded to the current project or image session.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF slim treats gpt-engineer's generated files or commands as authoritative, errors propagate.",
+        "IF the operator allows generated code to be executed without review, downstream harm increases."
+      ],
+      "mitigations": [
+        "Insert a manual review step between agents.",
+        "Require tests or dry-runs before execution.",
+        "Compare outputs against expected file diffs.",
+        "Limit slim to inspection-only runs when fed generated code.",
+        "requires-engineering: add validation gates before command execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "gpt-engineer handles OPENAI_API_KEY and writes generated source code, while slim handles registry credentials, certificate private keys, and environment variables. Their documented data classes and network paths create a plausible retention and residency mismatch if the same regulated artifacts are processed by both. The profiles do not specify a shared jurisdiction, so I cannot raise higher than medium, but the mismatch is still credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or personal data are placed in the shared workspace, compliance obligations apply.",
+        "IF either agent logs or uploads those artifacts to external services, retention and residency issues arise."
+      ],
+      "mitigations": [
+        "Exclude regulated data from the shared workspace.",
+        "Use separate retention policies per agent.",
+        "Disable verbose logging for sensitive runs.",
+        "Confirm jurisdiction and DPA coverage before processing regulated data.",
+        "requires-engineering: implement policy-based data routing and deletion."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
