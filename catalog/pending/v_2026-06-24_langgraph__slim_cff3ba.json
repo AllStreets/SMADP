@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_langgraph__slim_cff3ba",
+  "generated_at": "2026-06-24T22:34:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High: shared writable state and broad egress make LangGraph\u2192slim interactions risky for leakage, conflicts, and unchecked downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can pass state between nodes and has shared_state_with_other_instances via a checkpointer store, while slim reads/writes filesystem artifacts and executes commands. If slim output is routed into LangGraph state or files, attacker-controlled content could be treated as instructions. No direct shared channel is documented, so this is inferred from both profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph nodes ingest slim-produced files or stdout as prompts or state, injection becomes plausible.",
+        "IF the orchestrator stores slim output in shared checkpointer state without provenance tags, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Add provenance labels to every slim output before LangGraph consumes it.",
+        "Parse slim output as structured data only, not free text.",
+        "Disable automatic prompt concatenation from files or stdout.",
+        "Review any shared checkpointer keys used by both agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Both agents have broad network egress and filesystem read/write. LangGraph explicitly handles model provider API keys and application-defined files; slim touches container images, certificate private keys, environment variables, and registry credentials. If they share a workspace or checkpointer, sensitive artifacts can flow from one to the other and out over the network. The pairwise leakage path is plausible in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents run against the same workspace or checkpointer store, secrets can cross between them.",
+        "IF slim is pointed at images containing keys or env vars, LangGraph can later read and transmit them via its tools."
+      ],
+      "mitigations": [
+        "Separate workspaces and checkpointer namespaces.",
+        "Mount secret-bearing paths read-only or exclude them.",
+        "Restrict outbound network destinations for both agents.",
+        "Rotate any credentials exposed to slim.",
+        "Add a redaction step before LangGraph logs or forwards artifacts."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can write the filesystem and spawn subprocesses. LangGraph supports multiple instances with shared state via a checkpointer store, while slim runs an interactive CLI against a target image session. Concurrent writes to the same directory or shared state can overwrite artifacts or corrupt runs. The profiles do not show locking, so conflict risk exists in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or volume, file clobbering can occur.",
+        "IF both agents share a mutable checkpointer or artifact store without locks, state corruption is possible."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Use per-agent lock files around shared resources.",
+        "Disable concurrent writes to the same volume.",
+        "Snapshot shared state before each run."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is an orchestration framework that can route outputs between nodes, and slim is an interactive CLI that can act on container images and filesystem artifacts. If LangGraph treats slim output as authoritative, downstream nodes may commit or deploy incorrect image changes. Because no verification step is documented, the cascade can propagate bad facts into actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph forwards slim output into action-taking nodes without validation, errors cascade.",
+        "IF slim emits incomplete or misleading image analysis and LangGraph uses it as ground truth, downstream decisions can be wrong."
+      ],
+      "mitigations": [
+        "Insert a verification node between slim and any action node.",
+        "Require schema validation on slim outputs.",
+        "Add human approval before destructive actions.",
+        "Log source artifacts alongside derived conclusions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly touches certificate private keys, environment variables, and registry credentials, while LangGraph handles model provider API keys and application-defined graph state. If either agent processes regulated secrets or residency-bound data, the pair can create retention and access-control mismatches. The profiles do not specify residency or certifications, so this is a compliance-risk inference rather than a confirmed violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or customer data are placed into slim's target image session, retention obligations may be triggered.",
+        "IF LangGraph logs or checkpoints those artifacts, retention and deletion controls may diverge."
+      ],
+      "mitigations": [
+        "Exclude regulated data from target images.",
+        "Set short retention on checkpoints and logs.",
+        "Document which secrets each agent may touch.",
+        "Purge artifacts after each run.",
+        "Review residency and DPA requirements before deployment."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
