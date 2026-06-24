@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-06-24_gpt-engineer__pipecat_137241",
+  "generated_at": "2026-06-24T23:36:38Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High-risk shared-workspace and output-trust issues: gpt-engineer can write project files while pipecat consumes shared-bus state and external APIs, creating leakage and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "gpt-engineer writes files in a per-project directory and has no self-isolation by default; pipecat can operate over a shared bus and ingest text/conversation state. If gpt-engineer outputs attacker-controlled instructions into shared files or bus-fed content, pipecat may parse them as trusted input. The interaction is inferred, not directly documented, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are connected through the same project directory or shared bus, prompt-like content can cross from A to B.",
+        "IF pipecat treats text from shared state as instructions, injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct workspaces.",
+        "Disable any automatic parsing of A's file output as instructions.",
+        "Add a manual review step before B consumes A-produced text.",
+        "Use a provenance tag for all A outputs.",
+        "requires-engineering: add content-sanitization and instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "gpt-engineer reads and writes the project directory and may send file contents to a configured model; pipecat touches text, conversation state, and analytics/metrics and can call multiple third-party APIs. Shared workspace plus outbound API use creates a plausible leakage path for generated source code or conversation data, though the exact pairwise flow is not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same project directory, A's source files can be exposed to B.",
+        "IF B forwards conversation state or text to external STT/LLM/TTS services, shared data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive files out of the shared directory.",
+        "Route B to local-only providers where possible.",
+        "Restrict A to a minimal project subset.",
+        "Review outbound API destinations for B.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "gpt-engineer has filesystem write and subprocess execution; pipecat has shared-bus concurrency and can call external services. They do not both advertise unrestricted git writes, so high is not justified, but overlapping mutable access to the same project directory or bus can still cause write contention and inconsistent state. Uncertainty about the orchestrator escalates to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same project directory, file clobbering can occur.",
+        "IF the shared bus carries mutable state without locking, concurrent updates can race."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Serialize writes with a lock.",
+        "Disable concurrent mutation of shared bus state.",
+        "Use append-only logs for cross-agent handoff.",
+        "requires-engineering: add optimistic-concurrency checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer produces code and files that pipecat can consume as text/conversation state or use in downstream workflows; pipecat also has many external service integrations. If B treats A's output as authoritative, a bad code or prompt artifact from A can cascade into external actions or incorrect runtime behavior. Because defaults include broad egress and shared state, the blast radius can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF pipecat consumes A-produced text without verification, errors propagate downstream.",
+        "IF B uses A-generated configuration to call external services, incorrect actions can be triggered."
+      ],
+      "mitigations": [
+        "Insert a verification gate before B uses A output.",
+        "Require schema validation on all A-produced artifacts.",
+        "Limit B to read-only evaluation of A outputs.",
+        "Log and diff A outputs before execution.",
+        "requires-engineering: add automated provenance and policy checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and no explicit residency, certification, or retention mismatch is documented. gpt-engineer handles generated source code and OPENAI_API_KEY, while pipecat touches conversation state and analytics, but the profiles do not show a concrete compliance conflict. This is a low-risk gap because the relevant policies are unspecified rather than contradictory.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF either deployment routes regulated data through third-party APIs, compliance obligations may change.",
+        "IF retention or residency policies differ in the operator's environment, a mismatch can emerge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workflows.",
+        "Document retention settings for both agents.",
+        "Confirm provider DPAs before enabling external APIs.",
+        "Separate secret-bearing projects from pipecat traffic.",
+        "requires-engineering: add policy enforcement for data classes."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
