@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_continue-dev__slim_a9fae9",
+  "generated_at": "2026-06-24T15:45:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "Highest risk is data leakage: Continue can read workspace files and use MCP, while slim handles container images, secrets, and privileged container operations.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can read workspace files and use MCP, so attacker-controlled content in files or MCP outputs could influence its instructions. slim reads filesystem artifacts and target-container inputs, but no direct shared channel is documented. The interaction is plausible through files, not proven by evidence, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Continue is configured to ingest workspace files as instructions, prompt injection becomes reachable.",
+        "IF slim outputs attacker-controlled text into a file that Continue later reads, the bridge exists."
+      ],
+      "mitigations": [
+        "Disable automatic instruction-following from files in Continue.",
+        "Keep slim outputs in a separate directory from Continue workspaces.",
+        "Require manual review before Continue acts on file-derived content.",
+        "Use read-only mounts for any shared artifacts.",
+        "requires-engineering: add provenance tagging between slim outputs and Continue inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Continue reads workspace files and handles open editor buffers; slim handles container images, filesystem artifacts, environment variables, and certificate private keys. If they share a filesystem, sensitive artifacts processed by slim can be exposed to Continue, and Continue\u2019s broad network egress plus model-provider calls can transmit them onward. The shared-workspace pathway is enough to make this high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or mounted volume, leakage is reachable.",
+        "IF slim processes certificate private keys or environment variables in that shared volume, Continue can read them.",
+        "IF Continue sends file context to a remote model provider, exfiltration can occur."
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces.",
+        "Mount secrets read-only and outside Continue's workspace.",
+        "Disable remote model providers for Continue on sensitive projects.",
+        "Restrict slim to non-secret inputs only.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write filesystems, and use broad network egress. Continue also supports multiple instances via filesystem-shared state, while slim runs in a temporary container with privileged-mode requests. Overlapping write access creates conflict risk on shared directories, though no git-locking overlap is documented, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering is possible.",
+        "IF slim runs with privileged mode on shared artifacts, it can overwrite Continue-managed files.",
+        "IF Continue is launched in multiple IDE windows against the same repo, contention increases."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Run slim in a disposable copy of the target tree.",
+        "Avoid concurrent writes; serialize operations manually.",
+        "Use filesystem snapshots before either agent writes.",
+        "requires-engineering: add locking around shared mutable paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Continue can produce code or file edits that slim may then consume as target artifacts, and slim can transform container images or filesystem artifacts that Continue may later inspect. Neither profile shows a verification gate between them, so one agent\u2019s output can become the other\u2019s input by default. The blast radius is multiple work products, but not clearly irreversible, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Continue-generated files are fed into slim without review, errors can cascade.",
+        "IF slim rewrites artifacts that Continue later treats as authoritative, downstream mistakes propagate."
+      ],
+      "mitigations": [
+        "Insert a manual review step between agents.",
+        "Require checksums or diffs before passing artifacts onward.",
+        "Keep Continue outputs and slim inputs in separate folders.",
+        "Use a validation script before slim consumes Continue output.",
+        "requires-engineering: build an explicit verification pipeline."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly handles certificate private keys, environment variables, and registry credentials, while Continue handles workspace files and model-provider API keys. If either agent is used on regulated or secret-bearing data, the pair can create retention and residency mismatches because Continue may send context to a chosen model provider and slim operates in a temporary container. The profiles do not document matching compliance controls, so medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets are present in the shared workspace, compliance exposure exists.",
+        "IF Continue uses a non-approved remote model provider, residency or retention may diverge.",
+        "IF slim processes private keys or registry credentials, secret-handling obligations apply."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces.",
+        "Use only approved local or compliant model providers in Continue.",
+        "Run slim on non-sensitive images only.",
+        "Review retention settings for both tools before use.",
+        "requires-engineering: document and enforce data-handling policy per agent."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "GOVERN-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
