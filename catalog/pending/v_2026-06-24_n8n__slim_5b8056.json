@@ -1,0 +1,200 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "n8n",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_n8n__slim_5b8056",
+  "generated_at": "2026-06-24T13:08:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: shared server-side write/network surfaces make prompt injection, data leakage, and cascading errors plausible in default n8n\u2192slim workflows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "n8n can ingest workflow inputs and write to the server filesystem, while slim reads files and accepts stdin/stdout plus container artifacts. That creates a plausible content-to-instructions bridge if n8n passes untrusted text into slim or vice versa. No shared clipboard/MCP is shown, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n passes attacker-controlled text into slim command arguments or stdin",
+        "IF slim output is later parsed by n8n as workflow instructions"
+      ],
+      "mitigations": [
+        "Add explicit allowlists for command arguments and parsed fields",
+        "Insert a human review step before executing generated commands",
+        "Strip markdown, shell metacharacters, and control characters",
+        "Log and diff all cross-agent payloads for review",
+        "requires-engineering: isolate the agents with separate workspaces and least-privilege service accounts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Both agents can read and write the server filesystem and both have broad network egress. n8n touches whatever the workflow processes, including secrets stores, while slim handles certificate private keys, environment variables, and registry credentials. In default server-side deployments, either agent can expose sensitive data to external services or logs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows process secrets or customer data",
+        "IF slim analyzes images containing environment variables, certificate keys, or registry credentials",
+        "IF either agent forwards file contents to external APIs or logs"
+      ],
+      "mitigations": [
+        "Restrict both agents to a dedicated non-sensitive workspace",
+        "Disable or proxy outbound network access for sensitive runs",
+        "Rotate any credentials exposed to either agent",
+        "Mask secrets in logs and workflow outputs",
+        "requires-engineering: enforce per-agent filesystem and credential isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have execute_shell, spawn_subprocesses, read_filesystem, and write_filesystem on the server side. n8n also supports shared state via its datastore and connected systems, while slim operates on target images and filesystem artifacts. Concurrent writes to overlapping paths or shared resources can corrupt state or overwrite outputs without locks.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, volume, or credential store",
+        "IF n8n workflows and slim sessions run concurrently against shared artifacts",
+        "IF shared resources lack file locking or transactional coordination"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Serialize access to shared artifacts with a lock file",
+        "Run each agent under a distinct OS user",
+        "Snapshot inputs before mutation",
+        "requires-engineering: add transactional coordination around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "n8n can orchestrate downstream actions from workflow outputs, and slim emits analysis results about images and vulnerabilities. If n8n treats slim's output as authoritative without validation, incorrect findings can cascade into bad automation decisions. The blast radius is meaningful but not inherently irreversible in the shown profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses slim output as a decision input without verification",
+        "IF downstream workflow steps trigger deployments, deletions, or notifications based on slim findings"
+      ],
+      "mitigations": [
+        "Require a validation step before acting on slim output",
+        "Cross-check findings against a second source",
+        "Gate destructive workflow steps behind approval",
+        "Record provenance for each slim-derived field",
+        "requires-engineering: add schema validation for all inter-agent messages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "n8n's data classes are workflow-dependent, while slim explicitly touches certificate private keys, environment variables, registry credentials, and vulnerability data. If the same regulated data flows through both, retention and residency obligations can diverge across the pair. The profiles do not show a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or vulnerability data are processed by both agents",
+        "IF one agent retains logs longer than the other for the same data class",
+        "IF a workflow routes EU or PHI data through these tools without a matching policy"
+      ],
+      "mitigations": [
+        "Classify the data before routing it to either agent",
+        "Set a short shared retention window for logs and artifacts",
+        "Block PHI and highly regulated secrets from the pair",
+        "Document residency and retention for each workflow",
+        "requires-engineering: align compliance controls across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:7f94d0e3395a93cd0a7d122c140010a04220111f867e391d1c239387184f2fab",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

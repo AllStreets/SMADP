@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "github-copilot",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_github-copilot__slim_c8f873",
+  "generated_at": "2026-06-24T13:09:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.545,
+  "headline": "High-risk capability conflict and medium data-leakage risk: Copilot can write repo files while slim runs privileged container/image operations with broad egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Copilot reads repo context and open editor buffers, while slim reads Dockerfiles, filesystem artifacts, and stdin/stdout. There is no documented shared channel or MCP bridge, so direct injection is not default. The only plausible bridge is manual copy/paste or file handoff, which keeps blast radius small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies slim output into Copilot chat or files, prompt injection becomes possible.",
+        "IF both agents are pointed at the same untrusted text file, Copilot may ingest attacker-controlled instructions."
+      ],
+      "mitigations": [
+        "Keep the agents on separate files and terminals.",
+        "Do not paste slim output into Copilot chat without review.",
+        "Use read-only copies for any shared artifacts.",
+        "Strip instructions from logs before opening them in the editor."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Copilot touches source code and open editor buffers and can send context to api.githubcopilot.com; slim handles filesystem artifacts, environment variables, certificate private keys, and registry credentials. If they share a workspace, sensitive material can flow from slim into Copilot\u2019s vendor API. The pairwise leakage path is plausible in default developer setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF slim is run on images containing private keys or registry credentials in a workspace Copilot can read, leakage risk is present.",
+        "IF Copilot is allowed to index the same repo or folder where slim writes artifacts, sensitive data may be transmitted to GitHub."
+      ],
+      "mitigations": [
+        "Exclude secrets and key material from the shared workspace.",
+        "Run slim in a separate directory from Copilot\u2019s repo context.",
+        "Rotate any credentials exposed in container artifacts.",
+        "Disable or pause Copilot on directories containing sensitive outputs.",
+        "Review generated files before syncing them back into the repo."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Copilot can write the filesystem and modify git state in the editor workspace, while slim can execute shell commands, spawn subprocesses, and write the filesystem in a temporary container. If both target the same mutable tree or mounted volume, concurrent edits and git-state corruption are plausible and can be irreversible. No locking mechanism is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF slim writes into a directory also opened by Copilot Workspace, file races can occur.",
+        "IF Copilot applies edits while slim rewrites generated artifacts, git state may diverge or be corrupted."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Freeze git operations while slim is running.",
+        "Commit or stash before invoking slim.",
+        "Review and merge generated files manually.",
+        "Mount slim\u2019s output directory read-only to Copilot."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Copilot produces code edits and Workspace plans, and slim can emit transformed container artifacts and vulnerability data. If one agent\u2019s output is treated as authoritative by the other without verification, errors can cascade into incorrect Dockerfiles, broken images, or unsafe remediation steps. The pathway exists, but Copilot\u2019s human-review posture reduces severity below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF slim output is pasted into Copilot and accepted without review, incorrect fixes can propagate.",
+        "IF Copilot-generated edits are fed back into slim as trusted input, downstream image changes may be wrong."
+      ],
+      "mitigations": [
+        "Require human review of every Copilot edit.",
+        "Validate slim outputs against the original Dockerfile.",
+        "Compare generated artifacts with a diff tool before applying them.",
+        "Keep remediation notes separate from executable files.",
+        "Re-run slim after each accepted change."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Copilot is a vendor-hosted service with GitHub repo context and broad network egress, while slim processes registry credentials, certificate private keys, and environment variables locally in a container. If regulated secrets or EU PII are present in the shared workspace, the pair can create retention and residency mismatches. The other agent is cited because the risk arises from their interaction over shared artifacts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.vendor.handle"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets are present in files Copilot can read, vendor-hosted processing may violate local handling policy.",
+        "IF EU personal data is embedded in slim artifacts and synced into Copilot context, residency controls may be bypassed."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared repo.",
+        "Mask secrets before opening artifacts in Copilot.",
+        "Use a separate compliance-approved workspace for sensitive images.",
+        "Delete transient slim outputs after review.",
+        "Confirm retention settings for any Copilot-connected organization."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3f7d1198f7f784fbf30b0b956cf698e1a50acbc1e95c868a45c1b1a573435144",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
