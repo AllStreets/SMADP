@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-06-24_flowise__whisper_81715f",
+  "generated_at": "2026-06-24T03:31:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.71,
+  "composite_score": 0.425,
+  "headline": "Highest risk is medium data leakage: Flowise can read/write shared files and browse the web, while whisper handles audio files with no network or filesystem write.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise can read files, write files, and run browser-based tools, so attacker-controlled content from whisper-produced files or transcripts could be treated as instructions if bridged into a flow. Whisper itself has no tool-use defenses or output parsing, so the interaction risk is on Flowise\u2019s side. The shared-file pathway is documented; uncertainty about deployment isolation pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF whisper outputs are copied into a Flowise prompt or file input without sanitization, injection is possible.",
+        "IF Flowise flows treat file contents as trusted instructions, attacker text can steer downstream actions."
+      ],
+      "mitigations": [
+        "Add a fixed delimiter and instruction/data separation prompt.",
+        "Strip or escape transcript text before Flowise ingestion.",
+        "Review one sample flow for file-to-prompt trust boundaries.",
+        "Disable browser/tool nodes for untrusted inputs.",
+        "requires-engineering: add provenance tags from whisper outputs into Flowise nodes."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Flowise touches chatflow inputs/outputs and can read/write the server filesystem, while whisper processes audio files and has no network egress. If both are deployed against the same workspace, audio or transcript data can move between them through shared files, creating a sensitive-data exposure path. Whisper\u2019s lack of egress lowers exfiltration risk, but Flowise\u2019s broader I/O makes the shared-workspace pathway plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or uploaded-file directory, audio/transcripts can be exposed across the pair.",
+        "IF Flowise flows forward file contents to external model providers, shared data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Move sensitive audio to a one-time staging folder.",
+        "Audit one Flowise flow for file upload handling.",
+        "Turn off external model calls for sensitive jobs.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Flowise can write the filesystem, but whisper cannot write files, modify git state, or spawn subprocesses. That means there is little direct write-write contention between the pair. The only overlap is Flowise\u2019s own mutable workspace, so conflict risk is limited unless the operator adds shared writable resources not shown in either profile.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF an operator places both agents on the same writable directory, Flowise may overwrite files used by whisper.",
+        "IF shared mutable resources are added outside the profiles, contention can increase."
+      ],
+      "mitigations": [
+        "Use separate output directories.",
+        "Make whisper inputs read-only.",
+        "Avoid shared git worktrees.",
+        "Check for filename collisions before runs.",
+        "requires-engineering: add locking around shared storage."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Flowise can orchestrate graph-based tool flows and browser/API calls, so if whisper transcripts are fed into Flowise as authoritative text, Flowise may act on incorrect or hallucinated transcriptions without verification. Whisper itself is not an action-taking agent, but its outputs can still become upstream inputs. The pair therefore has a plausible unverified-output cascade in default orchestration patterns.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF whisper transcripts are used as the sole source for Flowise actions, transcription errors can cascade.",
+        "IF Flowise nodes execute API or browser actions from transcript text, downstream mistakes can become external actions."
+      ],
+      "mitigations": [
+        "Require human review before action nodes.",
+        "Compare one transcript against the source audio.",
+        "Add confidence thresholds before automation.",
+        "Log transcript-to-action mappings.",
+        "requires-engineering: insert verification steps between whisper and Flowise."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Whisper is open-source and local-only by capability profile, while Flowise can send data to model providers and search/HTTP tools. If regulated audio or speech data is processed through Flowise after transcription, residency or retention obligations may differ from the local whisper step. The other agent is cited because the compliance mismatch arises from the pair\u2019s combined handling path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio or speech data is routed from whisper into Flowise model-provider calls, compliance scope expands.",
+        "IF retention policies differ between Flowise chatflows and whisper storage, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Classify audio before routing it onward.",
+        "Keep regulated audio out of external model calls.",
+        "Document retention for both stages.",
+        "Delete temporary transcripts after use.",
+        "requires-engineering: align residency and retention controls across the pipeline."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
