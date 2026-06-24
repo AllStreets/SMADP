@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "data-engineering-zoomcamp",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-24_data-engineering-zoomcamp__open-interpreter_39c8d4",
+  "generated_at": "2026-06-24T02:24:24Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and shell overlap: Open Interpreter can modify the user machine while the course profile is unisolated, creating prompt-injection, leakage, and cascading-action exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Profile A is a course artifact with no runtime surfaces, while agent_b reads clipboard/files and executes shell commands with filesystem-wide access. If A\u2019s content is copied into B or stored in a shared workspace, B can treat attacker-controlled text as instructions. The pairwise bridge is plausible, but not documented directly, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF agent_a content is copied into agent_b via clipboard or files, then instruction hijacking is possible.",
+        "IF agent_b parses file contents as commands without provenance checks, then prompt injection can succeed."
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents.",
+        "Keep agent_a materials in a read-only folder.",
+        "Require explicit provenance labels before agent_b executes any copied text.",
+        "Use a separate workspace for agent_b runs.",
+        "requires-engineering: add content-sanitization and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent_b can read the entire user filesystem and has broad network egress, so any sensitive data reachable locally can be exposed if it is present in the same workspace or copied from agent_a materials. Agent_a itself has no egress, but the pair still creates a leakage path through shared local files and B\u2019s outbound connectivity. The blast radius can include multiple work products.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive files are present on the local machine and agent_b can read them, then leakage is possible.",
+        "IF agent_b sends copied file contents to configured model providers, then local data can leave the machine."
+      ],
+      "mitigations": [
+        "Run agent_b in a dedicated empty user profile.",
+        "Remove secrets from the filesystem before starting agent_b.",
+        "Restrict agent_b to a narrow working directory.",
+        "Disable network egress for the session if possible.",
+        "requires-engineering: enforce per-directory access controls and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Agent_b can write the filesystem and modify git state, and its concurrency model explicitly shares state via filesystem. Agent_a has no runtime coordination or locking surfaces, so if its course files are used as shared artifacts, B can overwrite or race them. The default setup is dangerous because B\u2019s writes can corrupt shared work and git history.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory, then write conflicts can occur.",
+        "IF agent_b modifies git state while agent_a artifacts are being edited, then repository corruption or lost work is possible."
+      ],
+      "mitigations": [
+        "Give agent_b a separate checkout.",
+        "Pause agent_b before editing shared files manually.",
+        "Use git branches for all agent_b changes.",
+        "Make the shared directory read-only for agent_b.",
+        "requires-engineering: add file locks or transactional workspace management."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Agent_b can execute shell commands and act on filesystem contents, so if it consumes outputs from agent_a as authoritative course material or task instructions, errors can cascade into real actions. Agent_a is not an action-taking agent, but its outputs can still be treated as input by B. The pathway exists in default usage, though verification can reduce it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a outputs as instructions without verification, then incorrect actions can be executed.",
+        "IF agent_a content contains stale or misleading steps, then agent_b may automate the mistake."
+      ],
+      "mitigations": [
+        "Require a human review step before execution.",
+        "Ask agent_b to summarize before acting.",
+        "Keep agent_a outputs as reference only, not commands.",
+        "Limit agent_b to dry-run mode where available.",
+        "requires-engineering: add verification gates before shell execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Agent_a is a public course repository with no touched data classes, while agent_b can access anything on the local machine and may handle model-provider API keys. This creates a modest compliance gap if regulated data is stored locally, but the profiles do not show PHI, EU PII, or a residency mismatch. Only agent_b is cited because the compliance risk is driven by its local-machine access.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored on the local machine, then agent_b may process it outside the intended compliance boundary.",
+        "IF model-provider API keys are present, then logging or retention controls must cover them."
+      ],
+      "mitigations": [
+        "Exclude regulated datasets from the working directory.",
+        "Rotate any exposed API keys after the session.",
+        "Use a separate non-regulated test account.",
+        "Review retention settings for model-provider logs.",
+        "requires-engineering: enforce data-class filtering and residency controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1d36e642e82aa93375510c42a2582f0192e10eeb5670994d10f60641833bdee8",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
