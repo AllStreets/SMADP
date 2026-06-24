@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mentat",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_mentat__slim_e5449e",
+  "generated_at": "2026-06-24T14:30:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "Highest risk is medium: shared filesystem and broad egress create prompt-injection, leakage, and write-conflict pathways between Mentat and slim.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Mentat reads and writes files and shares state via filesystem; slim also reads/writes filesystem and processes files in a container workflow. That creates a plausible bridge where one agent\u2019s file output can be treated as input by the other. No direct provenance or isolation is documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Mentat writes instructions into a file that slim later parses as input, injection is possible.",
+        "IF both agents operate on the same workspace directory, file-based instruction smuggling is possible."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent's inputs and outputs.",
+        "Rename or quarantine any files produced by one agent before the other reads them.",
+        "Require manual review of file contents before passing between agents.",
+        "Disable automatic ingestion of generated files where possible.",
+        "requires-engineering: add provenance tags or allowlists to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch filesystem artifacts and both have broad network egress, so sensitive source code or container artifacts can flow from one agent\u2019s workspace into the other\u2019s outputs or remote calls. Mentat handles model-provider API keys, while slim handles registry credentials and certificate/private-key material, increasing the chance of cross-agent exposure in a shared workspace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Mentat and slim share a workspace, files containing secrets can be read by both agents.",
+        "IF either agent uploads workspace contents to a remote service, those secrets can leave the local boundary."
+      ],
+      "mitigations": [
+        "Store each agent's secrets in separate, non-shared locations.",
+        "Remove private keys and credentials from any shared directory before handoff.",
+        "Restrict outbound network access during shared-workspace runs.",
+        "Review generated diffs and logs for secret material before saving.",
+        "requires-engineering: enforce per-agent workspace ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Mentat can write the filesystem and modify git state, while slim can execute shell commands, spawn subprocesses, and write the filesystem. In a shared directory, that is a direct write/write conflict with irreversible repo or artifact changes. The profiles explicitly note Mentat shared state via filesystem; slim has no locking mechanism documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git checkout, concurrent edits can overwrite each other.",
+        "IF slim mutates files while Mentat is preparing diffs, the resulting patch set can become inconsistent."
+      ],
+      "mitigations": [
+        "Run the agents in separate working copies.",
+        "Serialize access to any shared repository.",
+        "Freeze git operations while slim is active.",
+        "Have Mentat re-read files after slim finishes before proposing diffs.",
+        "requires-engineering: add file locks or transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals, and slim performs interactive command execution in a container-analysis workflow. If slim consumes Mentat\u2019s output as authoritative instructions or edits without verification, errors can cascade into incorrect container changes or destructive commands. The interaction is inferred rather than directly documented, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF slim executes commands derived from Mentat-generated text without validation, a bad suggestion can become an action.",
+        "IF Mentat\u2019s proposed diff is treated as ground truth by slim, downstream mistakes can propagate."
+      ],
+      "mitigations": [
+        "Require human approval before executing any generated command.",
+        "Compare Mentat diffs against the current filesystem state before applying them.",
+        "Have slim validate commands against a denylist of destructive operations.",
+        "Keep Mentat outputs in a review-only channel, not an execution channel.",
+        "requires-engineering: add schema validation between proposal and execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Mentat handles model-provider API keys and source code, while slim handles registry credentials, certificate private keys, environment variables, and vulnerability data. If they share a workspace or logs, compliance-sensitive material can mix with different retention and handling expectations. No residency or certification mismatch is documented, so this is a data-handling compliance risk rather than a jurisdictional one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF shared logs retain registry credentials or private keys beyond intended scope, retention policy mismatch occurs.",
+        "IF source code and vulnerability data are exported together, handling obligations may diverge."
+      ],
+      "mitigations": [
+        "Separate logs and artifacts by agent.",
+        "Redact secrets from transcripts before storage.",
+        "Set short retention on any shared run logs.",
+        "Review whether private keys are ever written to disk.",
+        "requires-engineering: implement policy-based data classification and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:caf12a153078caa56158bcf7b8361c9272129c91ef71c0f5d5459fbfc3063884",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

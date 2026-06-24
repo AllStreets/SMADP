@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_cline__slim_5d4548",
+  "generated_at": "2026-06-24T14:29:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High-risk shared-workspace interaction: Cline can write/egress broadly while slim can mutate container artifacts, creating default-path data leakage and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline ingests workspace files and MCP outputs by default, and slim reads/writes filesystem artifacts in a container session. If slim-produced files are opened or parsed by Cline, attacker-controlled content can steer tool use. The pair has a shared filesystem bridge, so the pathway is plausible without extra assumptions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF slim writes instructions into a workspace file that Cline later opens",
+        "IF Cline is configured to parse generated artifacts as trusted instructions"
+      ],
+      "mitigations": [
+        "Separate workspaces so Cline never reads slim output files",
+        "Disable automatic parsing of generated files in Cline",
+        "Review slim outputs before opening them in Cline",
+        "Use read-only mounts for shared artifacts",
+        "requires-engineering: add provenance tagging between the agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cline has broad network egress and handles model-provider API keys; slim touches certificate private keys, environment variables, and registry credentials. If they share a workspace, sensitive artifacts can be exposed to Cline and then transmitted outward. The profiles do not prove a direct leak, but the default shared-filesystem pathway is enough to rate medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF slim places secrets or certificate keys in a shared workspace",
+        "IF Cline reads those files and sends context to its model provider or other APIs"
+      ],
+      "mitigations": [
+        "Keep secrets outside the shared workspace",
+        "Mount slim inputs read-only for Cline",
+        "Redact keys before Cline access",
+        "Restrict Cline network egress during shared runs",
+        "requires-engineering: enforce per-file secret classification"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write the filesystem and execute shells, and Cline also modifies git state while slim runs in a temporary container with filesystem artifact mutation. Their shared-state model is via filesystem, so concurrent edits can clobber each other or corrupt git/container artifacts. Because the default overlap includes irreversible repo state changes, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory tree",
+        "IF Cline commits or rewrites git state while slim writes artifacts concurrently"
+      ],
+      "mitigations": [
+        "Run the agents in separate directories",
+        "Serialize write access with a lock file",
+        "Disable git writes for one agent during the other's run",
+        "Snapshot the workspace before concurrent execution",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cline can generate code or analysis from browser and filesystem context, while slim can emit container/image findings and vulnerability data. If Cline treats slim output as authoritative, downstream edits or remediation steps may propagate an unverified error. The pair lacks a built-in verification bridge, so the cascade is plausible but not proven severe.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Cline consumes slim reports without independent verification",
+        "IF Cline acts on slim findings by editing files or recommending changes"
+      ],
+      "mitigations": [
+        "Require a human review step between agents",
+        "Have Cline cross-check slim findings against source files",
+        "Limit Cline to drafting, not applying, fixes",
+        "Mark slim outputs as untrusted in the workflow",
+        "requires-engineering: add validation rules for downstream actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Cline handles model-provider API keys and browser screenshots, while slim touches certificate private keys, environment variables, and registry credentials. If regulated secrets or personal data are present in the shared workspace, the pair can create retention and residency mismatches through external API calls and container tooling. The profiles do not specify a DPA or residency guarantee, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or personal data are placed in the shared workspace",
+        "IF either agent forwards those data to external services without a documented DPA or retention policy"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace",
+        "Use local-only models for Cline during sensitive runs",
+        "Restrict slim to non-sensitive images",
+        "Document retention and residency for both tools",
+        "requires-engineering: add policy enforcement for sensitive artifacts"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-5.2"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

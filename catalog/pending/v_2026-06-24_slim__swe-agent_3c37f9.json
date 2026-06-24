@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "slim",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-24_slim__swe-agent_3c37f9",
+  "generated_at": "2026-06-24T14:29:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.575,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and write-conflict pathways plausible; no direct pairwise isolation evidence is provided.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystems, so if SWE-agent consumes slim-produced artifacts or logs as instructions, prompt injection is plausible. Slim\u2019s CLI workflow and SWE-agent\u2019s file-based task loop create a bridge even without MCP. No direct shared channel is documented, so this is inferred rather than observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent parses slim-generated files or logs as instructions without sanitization",
+        "IF both agents are pointed at the same workspace or artifact directory"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Treat all cross-agent files as untrusted input",
+        "Add a manual review step before SWE-agent consumes slim output",
+        "Rename or quarantine generated artifacts",
+        "requires-engineering: add provenance tagging to shared files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Slim touches certificate private keys, environment variables, and registry credentials, while SWE-agent handles model provider API keys and GitHub tokens. Because both have filesystem access and broad network egress, a shared workspace could expose secrets from one agent to the other or to remote services. The exact sharing mechanism is not documented, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are launched in the same directory or mounted volume",
+        "IF either agent uploads workspace contents to a remote backend or registry"
+      ],
+      "mitigations": [
+        "Use separate mounted volumes",
+        "Rotate any exposed credentials immediately",
+        "Restrict outbound network destinations",
+        "Store secrets outside shared paths",
+        "requires-engineering: enforce per-agent secret isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read/write files, and use broad network egress. SWE-agent also modifies git state, while slim can alter filesystem artifacts and container images. In a shared mutable workspace, concurrent writes and state changes can collide and corrupt outputs; no locking mechanism is documented, so the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same filesystem tree",
+        "IF SWE-agent commits or rewrites files while slim is generating artifacts"
+      ],
+      "mitigations": [
+        "Run agents in separate directories",
+        "Serialize access with a lock file",
+        "Disable git writes during slim runs",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "SWE-agent is designed to act on repository tasks, so if it consumes slim\u2019s outputs as authoritative analysis, errors can cascade into incorrect edits or actions. Slim produces container and vulnerability artifacts, but no verification boundary between the agents is documented. Because the downstream harm is plausible but not directly evidenced, medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent uses slim output as a source of truth without independent validation",
+        "IF slim output is converted into tasks, patches, or commands for SWE-agent"
+      ],
+      "mitigations": [
+        "Require human review of slim outputs",
+        "Add a validation step before SWE-agent acts",
+        "Pass only structured summaries, not raw logs",
+        "Mark slim outputs as advisory only",
+        "requires-engineering: implement confidence checks between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Slim handles certificate private keys, environment variables, and registry credentials, while SWE-agent handles model provider API keys and GitHub tokens. If these are processed under different retention or residency rules, the pair can create a compliance mismatch on the same sensitive data class. No specific residency or certification mismatch is documented, so this remains medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or personal data are placed into both agents' workspaces",
+        "IF one agent retains logs longer than the other for the same data class"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either workspace",
+        "Set short log retention on both systems",
+        "Document data-handling boundaries",
+        "Purge temporary artifacts after each run",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:60d4985eae117b8b5ca24e75a44577239cd849ba476d10078590aa66e82765f8",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
