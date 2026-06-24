@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "n8n",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-06-24_n8n__pipecat_60537b",
+  "generated_at": "2026-06-24T23:08:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High: n8n can write and execute server-side workflows while pipecat can relay text/audio through shared buses and third-party APIs, creating default-path leakage and cascading misexecution risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "n8n can read/write the server filesystem and execute workflow code, while pipecat processes text and conversation state over shared buses and can ingest outputs from LLM/STT/TTS services. If n8n-generated content is fed into pipecat prompts or transcripts without provenance checks, instruction hijacking is plausible. The interaction is inferred, not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflow output is copied into pipecat prompt/transcript inputs without sanitization, injection is possible.",
+        "IF pipecat treats upstream text as instructions rather than data, attacker-controlled content can steer behavior."
+      ],
+      "mitigations": [
+        "Add a fixed delimiter and schema for all n8n-to-pipecat text.",
+        "Strip tool directives from workflow outputs before handoff.",
+        "Require human review for any prompt-like content.",
+        "Log provenance tags on every transferred message.",
+        "requires-engineering: enforce typed message contracts between systems."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "n8n touches whatever the workflow processes and has broad network egress plus server filesystem access; pipecat handles audio, video, images, text, and conversation state and can send data to many external STT/LLM/TTS providers. In a shared workflow, sensitive data can flow from n8n into pipecat and then onward to third parties by default, creating exfiltration risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n processes secrets, PHI, or customer data and forwards it into pipecat, leakage risk is present.",
+        "IF pipecat is configured with any external STT/LLM/TTS provider, data may leave the local boundary."
+      ],
+      "mitigations": [
+        "Disable external providers for sensitive flows.",
+        "Redact secrets before n8n hands data to pipecat.",
+        "Use a local-only pipecat backend for protected data.",
+        "Restrict n8n credentials to least privilege.",
+        "requires-engineering: add DLP checks at the handoff boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "n8n can write the server filesystem and spawn subprocesses; pipecat supports shared-bus state and multiple instances. If both operate on the same mutable workspace or shared bus, concurrent writes or state overwrites can occur. The profiles do not prove a shared directory, so uncertainty keeps this below high, but the overlap is real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or datastore, race conditions are possible.",
+        "IF n8n workflows and pipecat sessions share mutable conversation state, one can overwrite the other."
+      ],
+      "mitigations": [
+        "Separate working directories per agent.",
+        "Serialize writes with a lock file or queue.",
+        "Avoid shared mutable state for session data.",
+        "Snapshot state before cross-agent handoff.",
+        "requires-engineering: add optimistic concurrency/version checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is an orchestration layer that can execute commands and call integrations, while pipecat is a real-time voice/chat framework that can pass along conversation state and invoke external LLM services. If n8n-produced facts or actions are consumed by pipecat without verification, errors can cascade into downstream actions or user-facing speech. The pairwise pathway is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n output is treated as authoritative input to pipecat, incorrect facts can propagate.",
+        "IF pipecat speaks or acts on n8n-generated content without verification, downstream harm can occur."
+      ],
+      "mitigations": [
+        "Insert a verification step before pipecat consumes n8n output.",
+        "Require citations or source IDs on all n8n-produced facts.",
+        "Use confidence thresholds before action-taking.",
+        "Keep n8n and pipecat responsibilities separate.",
+        "requires-engineering: add policy gates for action execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "n8n stores secrets on its server and processes whatever the workflow handles; pipecat touches audio, video, images, text, and analytics and can route data to multiple external providers. If regulated data such as EU PII or PHI enters both systems, retention, residency, or processor obligations may diverge. The profiles do not specify certifications, so uncertainty escalates to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data flows through both agents, retention and residency controls must align.",
+        "IF either agent sends regulated data to a third-party API without a DPA, compliance risk increases."
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents.",
+        "Block regulated data from external pipecat providers.",
+        "Set explicit retention limits in n8n and pipecat.",
+        "Review vendor DPAs for every external API.",
+        "requires-engineering: implement residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:7f94d0e3395a93cd0a7d122c140010a04220111f867e391d1c239387184f2fab",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
