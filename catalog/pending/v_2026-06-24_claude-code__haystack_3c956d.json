@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "haystack"
+  ],
+  "verdict_id": "v_2026-06-24_claude-code__haystack_3c956d",
+  "generated_at": "2026-06-24T01:17:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High risk: shared filesystem/MCP and broad egress create default pathways for prompt injection, data leakage, and cascading errors between Claude Code and haystack.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Claude Code reads/writes repo files and can use MCP; haystack also uses MCP and REST APIs. That creates a plausible bridge where one agent\u2019s outputs can be consumed by the other, especially through shared files or MCP content. The pair lacks provenance controls in the profiles, so injection risk exists even though direct parsing behavior is not fully documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are connected to the same MCP server or shared workspace, injected instructions can traverse between them.",
+        "IF haystack ingests Claude Code-generated files or API responses as prompts, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Restrict both agents to separate workspaces.",
+        "Disable MCP on one side for the session.",
+        "Add a provenance tag to all inter-agent files.",
+        "Require manual review of any text passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Claude Code touches source code, git history, shell environment, and files in cwd, while haystack has broad network egress and can call REST APIs/MCP servers. If they share a workspace, sensitive repo or environment data can flow into haystack and then out over the network. The profiles do not show isolation or DLP, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or directory, Claude Code data can be exposed to haystack.",
+        "IF haystack forwards retrieved context to external APIs, shared files may leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Remove secrets from the shared workspace before running haystack.",
+        "Block outbound network for haystack during sensitive tasks.",
+        "Rotate any credentials present in the Claude Code environment."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Claude Code can write the filesystem, modify git state, and spawn subprocesses; haystack can also use MCP and broad network egress. In a shared repo, concurrent writes and git mutations can race without locking, corrupting state or overwriting work. The profiles show no coordination primitive or lock, so the conflict is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git checkout, concurrent edits can overwrite each other.",
+        "IF haystack writes artifacts into the same directory Claude Code edits, file races can corrupt outputs."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Serialize writes with a simple lock file.",
+        "Disable git writes for one agent during the other\u2019s run.",
+        "Review diffs before any commit."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Claude Code can generate code, shell commands, and repo changes that haystack may treat as retrieved context or authoritative input. Haystack\u2019s search/RAG role makes it likely to reuse upstream text, but the profiles do not prove verification before acting. That creates a realistic cascade from one agent\u2019s output into the other\u2019s downstream behavior.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF haystack uses Claude Code output as retrieval context without validation, errors can propagate.",
+        "IF Claude Code writes incorrect artifacts that haystack summarizes or serves, downstream consumers may act on them."
+      ],
+      "mitigations": [
+        "Require a verification step before haystack uses Claude Code outputs.",
+        "Mark generated files clearly as untrusted.",
+        "Compare outputs against source-of-truth data.",
+        "Limit haystack to read-only access for generated artifacts."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Claude Code handles git history, shell environment, and source code, while haystack\u2019s documented data class is anonymous usage statistics. The profiles do not show a residency or certification mismatch, so only a limited compliance gap is visible. Because the pairwise compliance pathway is not documented, the risk stays low and is driven mainly by Claude Code\u2019s broader local data exposure.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, Claude Code may process it outside a documented compliance boundary.",
+        "IF haystack is configured to retain query logs containing sensitive content, retention mismatch can arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Disable or minimize logging on haystack.",
+        "Document retention settings for both tools.",
+        "Use a separate environment for compliance-sensitive work."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:eef17619b07f4a6c640ae15cae37da4057ac4d6a1e5e92661186b6e147735356",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
