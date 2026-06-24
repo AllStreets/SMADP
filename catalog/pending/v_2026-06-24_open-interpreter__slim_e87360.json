@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_open-interpreter__slim_e87360",
+  "generated_at": "2026-06-24T23:02:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.665,
+  "headline": "High-risk shared filesystem and broad shell/write access create prompt-injection, leakage, and cascading-error exposure between Open Interpreter and slim.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the whole filesystem and uses clipboard/stdin-stdout, while slim also reads/writes files and executes shell commands. Their shared filesystem bridge makes attacker-controlled content from one agent plausibly parsed by the other as instructions, even without MCP. The pathway is documented by both profiles, so this is more than speculative.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF either agent writes instructions into a shared file that the other later reads as text, prompt injection is possible.",
+        "IF the operator copies outputs between agents via clipboard, malicious content can be reinterpreted as commands."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Disable clipboard-based handoff between agents.",
+        "Require manual review of any text file before the other agent reads it.",
+        "Run one agent at a time when exchanging artifacts.",
+        "requires-engineering: add provenance tagging to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Open Interpreter can access anything reachable on the local machine and broad network egress, while slim touches container images, certificate private keys, environment variables, and registry credentials. If they share a workspace, sensitive artifacts can move from A into B's outputs or from B into A's filesystem reads, creating a realistic exfiltration path in default-style local use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or host filesystem, sensitive files can be exposed across the pair.",
+        "IF either agent processes secrets-bearing artifacts and then emits logs or summaries, those secrets may leak into outputs."
+      ],
+      "mitigations": [
+        "Separate workspaces and mount points.",
+        "Remove secrets from the shared directory before running either agent.",
+        "Restrict network egress for the agent handling secrets.",
+        "Rotate any credentials present in the workspace after use.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Open Interpreter explicitly shares state via filesystem while slim runs interactive command execution in a temporary container. If they target the same directory, concurrent writes can corrupt files, git state, or container artifacts. The overlap is directly documented in both profiles, so the conflict is substantial.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or corruption can occur.",
+        "IF Open Interpreter modifies git state while slim writes artifacts in the same repo, concurrent state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize write-heavy tasks.",
+        "Avoid running git operations while slim is active.",
+        "Use a lock file around shared resources.",
+        "requires-engineering: add orchestrator-level concurrency locks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate shell commands and file edits that slim may consume as inputs or artifacts, and slim can then act on those artifacts without an explicit verification layer. That creates a plausible chain where one agent's mistaken output becomes the other's authoritative input. Both profiles show interactive execution and file-based handoff surfaces, but not a fully automated action loop.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF slim consumes files produced by Open Interpreter without validation, errors can cascade into downstream actions.",
+        "IF Open Interpreter's generated commands are executed by slim or copied into slim inputs, mistakes can propagate."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Validate file schemas before passing artifacts onward.",
+        "Keep generated commands in read-only review folders.",
+        "Require checksums for transferred artifacts.",
+        "requires-engineering: add automated output verification."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can touch anything reachable on the local machine, while slim explicitly handles certificate private keys, environment variables, and registry credentials. If regulated or secret-bearing data is present on the host, the pair can move it into logs, summaries, or external APIs via configured model providers or registry endpoints. The profiles do not show a specific residency mismatch, so this is a general compliance exposure rather than a jurisdictional breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data or secrets are present on the host, either agent may process them outside the intended control boundary.",
+        "IF model-provider or registry endpoints are configured to retain logs, retention obligations may be violated."
+      ],
+      "mitigations": [
+        "Exclude regulated datasets from the working directory.",
+        "Review logging settings for model providers and registries.",
+        "Purge temporary artifacts after each run.",
+        "Limit runs to non-sensitive test data.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

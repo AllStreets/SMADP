@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_autogen__slim_e72ed0",
+  "generated_at": "2026-06-24T23:02:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad shell/network defaults make prompt injection, data leakage, and cascading errors plausible; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystems and use stdin/stdout, so one agent\u2019s outputs can be placed where the other may ingest them. AutoGen\u2019s multi-agent orchestration and Slim\u2019s interactive CLI/command execution create a plausible file- or prompt-bridge even without MCP. No direct provenance tracking is documented, so injection is possible in default shared-workspace setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory, then one agent can place instruction-like content for the other to read.",
+        "IF the orchestrator forwards stdout/stderr from one agent into the other\u2019s prompt, then prompt injection becomes feasible."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Disable automatic prompt ingestion from files and logs.",
+        "Add a manual review step before passing outputs between agents.",
+        "Prefix all inter-agent artifacts with provenance labels.",
+        "requires-engineering: enforce content filtering on shared channels."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen touches application data and model-provider API keys, while Slim touches container images, filesystem artifacts, environment variables, and certificate private keys. Both have broad network egress and filesystem access, so a shared workspace can expose sensitive artifacts from one agent to the other and potentially out to model or registry endpoints. The pairwise leakage path is plausible in default shared deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace containing secrets or private keys, then either agent can read them.",
+        "IF either agent forwards file contents to an external API or registry, then those secrets can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate secret-bearing directories from shared workspaces.",
+        "Rotate any exposed API keys or registry credentials.",
+        "Restrict outbound network access for nonessential runs.",
+        "Mount sensitive files read-only where possible.",
+        "requires-engineering: add per-agent data-loss prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. AutoGen can run code via local/Docker/Jupyter executors, while Slim performs interactive command execution against container artifacts. If they share mutable paths, concurrent writes can corrupt files, container metadata, or generated outputs; uncertainty is limited because both write-capable surfaces are explicit.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or git checkout, then concurrent writes can conflict.",
+        "IF the orchestrator does not serialize file mutations, then one agent can overwrite the other\u2019s artifacts."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer at a time.",
+        "Snapshot the workspace before each agent run.",
+        "Use file locks for shared mutable paths.",
+        "requires-engineering: add transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "AutoGen is a multi-agent orchestration framework that can emit tool calls and code-execution outputs, and Slim is an interactive CLI that can act on container artifacts. If Slim consumes AutoGen-produced instructions or summaries without verification, errors can cascade into destructive container or filesystem actions. The pathway is default-plausible because neither profile documents a built-in verification gate between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Slim treats AutoGen output as authoritative command input, then a mistaken AutoGen result can trigger downstream actions.",
+        "IF AutoGen emits malformed commands or paths, then Slim can propagate the error into container operations."
+      ],
+      "mitigations": [
+        "Require human approval before Slim executes AutoGen-generated actions.",
+        "Validate paths, commands, and image references before execution.",
+        "Compare AutoGen outputs against a second source.",
+        "Log and diff proposed versus executed actions.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "AutoGen handles model-provider API keys and application data, while Slim handles certificate private keys, environment variables, and registry credentials. If these data classes are co-located or shared across jurisdictions or retention regimes, the pair can create a compliance mismatch. The profiles do not specify residency or certifications, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data or regulated secrets are placed into a shared workspace, then retention and residency controls must cover both agents.",
+        "IF one agent logs secrets longer than the other, then retention policy mismatch exists."
+      ],
+      "mitigations": [
+        "Classify data before either agent runs.",
+        "Keep regulated data out of shared workspaces.",
+        "Align log-retention settings across both tools.",
+        "Review vendor and deployment residency constraints.",
+        "requires-engineering: implement policy-based data routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
