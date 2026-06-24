@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "slim"
+  ],
+  "verdict_id": "v_2026-06-24_goose__slim_31ec49",
+  "generated_at": "2026-06-24T22:57:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "Highest risk is data leakage and capability conflict: Goose can share filesystem state and broad egress with slim, which also writes sensitive container artifacts.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP, while slim reads/writes container artifacts and files. A shared filesystem bridge makes prompt injection plausible if slim outputs are later treated as instructions by Goose. No direct evidence of a parser bridge exists, so this is inferred from documented surfaces on both agents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Goose ingests slim-generated files from the shared workspace as instructions",
+        "IF slim writes attacker-controlled text into files Goose later parses"
+      ],
+      "mitigations": [
+        "Separate workspaces per agent",
+        "Require manual review of slim outputs before Goose reads them",
+        "Prefix all machine-generated files with a non-executable format marker",
+        "Disable MCP paths that read shared workspace files",
+        "requires-engineering: add provenance tags to inter-agent files"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Goose touches source code and files in cwd with broad network egress; slim touches container images, filesystem artifacts, certificate private keys, and registry credentials. If they share a workspace or credentials, sensitive build artifacts can leak through Goose\u2019s outbound model/provider or MCP paths. The pairwise leakage pathway is credible from both profiles, though not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Goose is pointed at the same directory that contains slim\u2019s certificate private keys or registry credentials",
+        "IF Goose sends workspace contents to configured model providers or MCP servers"
+      ],
+      "mitigations": [
+        "Move secrets out of the shared workspace",
+        "Rotate any registry credentials used during slim runs",
+        "Run Goose with a scrubbed directory containing no private keys",
+        "Restrict Goose network egress during slim processing",
+        "requires-engineering: enforce secret redaction before any outbound call"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose has unrestricted filesystem write, shell, and modify_git_state; slim also has shell, read/write filesystem, and broad network egress. Goose\u2019s shared_state_with_other_instances is via filesystem, while slim has no shared-state protection. Concurrent writes to the same repo or artifacts can corrupt git state or build outputs, and the profiles do not show locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout",
+        "IF Goose and slim write to the same artifact directory without external locking"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Pause one agent while the other mutates git state",
+        "Use a lock file around shared writes",
+        "Commit from only one agent per branch",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate code or operational instructions, and slim can execute shell commands and manipulate container artifacts. If slim treats Goose\u2019s output as authoritative, an error in Goose can cascade into incorrect image slimming or destructive commands. The profiles do not show verification between them, but the action-taking pathway is present.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF slim executes commands derived from Goose output without human verification",
+        "IF Goose\u2019s generated file edits are fed directly into slim\u2019s container-processing workflow"
+      ],
+      "mitigations": [
+        "Require a human approval step before slim executes Goose-derived commands",
+        "Compare Goose output against the original source before acting",
+        "Limit slim to dry-run mode for first pass",
+        "Keep Goose outputs in a review-only folder",
+        "requires-engineering: add schema validation for Goose-produced instructions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Goose handles model provider keys and extension tokens, while slim handles registry credentials and certificate private keys. If both are run on the same regulated workspace, retention and residency obligations can diverge across secrets and build artifacts. The profiles do not specify HIPAA/GDPR status, so this is a documented-policy mismatch risk rather than a confirmed violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or private keys are present in the shared workspace",
+        "IF Goose or slim logs or retains those secrets beyond the operator\u2019s policy"
+      ],
+      "mitigations": [
+        "Store regulated secrets outside the shared workspace",
+        "Review retention settings for both tools before use",
+        "Delete temporary artifacts after each run",
+        "Use separate credentials for each agent",
+        "requires-engineering: align logging and retention policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
