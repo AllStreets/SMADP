@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ai-engineering-hub",
+    "autogen"
+  ],
+  "verdict_id": "v_2026-06-24_ai-engineering-hub__autogen_30d147",
+  "generated_at": "2026-06-24T03:20:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "High-risk default workspace overlap: AutoGen can write and execute code while ai-engineering-hub is an unverified MCP/RAG agent repo, creating prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen exposes files and stdin/stdout and can execute tool calls; ai-engineering-hub is an agent/RAG/MCP repository, so a shared workspace or copied outputs could let attacker-controlled content steer downstream prompts. The exact bridge is undocumented, so I cannot call it high, but the interaction pathway is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to read the same working directory, prompt injection becomes reachable.",
+        "IF ai-engineering-hub ingests file or MCP content as instructions, attacker-controlled text can steer AutoGen-driven outputs."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Disable automatic ingestion of untrusted file content.",
+        "Add a provenance banner to all inter-agent handoffs.",
+        "Require manual review before any prompt is forwarded.",
+        "requires-engineering: add content-sanitizing adapters between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write local files and send model-provider API traffic; ai-engineering-hub is an agent repo with no stated isolation. If both touch the same workspace, application data or secrets passed to AutoGen can be exposed through outputs or provider calls. The profiles do not prove PHI or a shared principal, so medium is the highest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a filesystem workspace, files readable by AutoGen can be surfaced in its outputs.",
+        "IF application data passed to AutoGen includes secrets, those secrets may flow to configured model providers."
+      ],
+      "mitigations": [
+        "Use separate per-agent directories.",
+        "Remove secrets from shared inputs.",
+        "Turn off file sharing between agents.",
+        "Review outbound provider destinations.",
+        "requires-engineering: enforce redaction before model calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGen has write_filesystem, execute_shell, and broad network egress; ai-engineering-hub is an agent framework repo that may coordinate other agents. Overlapping mutable access can cause race conditions or conflicting edits if they share a directory. Because ai-engineering-hub's runtime surfaces are not fully specified, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering becomes possible.",
+        "IF either agent modifies shared artifacts without locking, concurrent runs can diverge."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer per workspace.",
+        "Add file locks around shared artifacts.",
+        "Avoid concurrent runs on the same repo checkout.",
+        "requires-engineering: implement optimistic concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen is designed for multi-agent group chat and code execution, so its outputs can become authoritative inputs for another agent. ai-engineering-hub appears to be an agent/RAG repository, making a downstream trust chain plausible. The profiles do not show explicit verification steps, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF ai-engineering-hub consumes AutoGen outputs without verification, errors can cascade into later actions.",
+        "IF AutoGen-generated facts are used as instructions, downstream agents may act on them."
+      ],
+      "mitigations": [
+        "Insert a human verification step.",
+        "Require citations for all forwarded claims.",
+        "Mark AutoGen output as untrusted by default.",
+        "Limit downstream actions to read-only review.",
+        "requires-engineering: add schema validation for inter-agent messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No PHI, residency, or certification mismatch is documented for ai-engineering-hub, while AutoGen explicitly handles model-provider API keys and application data. The only supported compliance concern is generic secret handling, which is narrower than a residency or regulated-data breach, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is passed through AutoGen, compliance review is required.",
+        "IF model-provider keys are stored in shared logs, secret-handling policy is violated."
+      ],
+      "mitigations": [
+        "Do not pass regulated data.",
+        "Keep API keys out of shared workspaces.",
+        "Review logging settings.",
+        "Restrict outputs to non-sensitive summaries.",
+        "requires-engineering: add retention and deletion controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:9d0964d006a10d6172eccb32fb637bd223a9bb4ed685261aeed65fb5ad1c6737",
+    "profile_b_hash": "sha256:9e3f34db92422dd7062d95fc575990aad5198b2f19dfe7e001d56d9038e588ac",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
