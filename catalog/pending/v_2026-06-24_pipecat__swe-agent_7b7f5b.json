@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-24_pipecat__swe-agent_7b7f5b",
+  "generated_at": "2026-06-24T23:14:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High-risk default data leakage and cascading errors: SWE-agent can read/write and egress broadly while Pipecat handles conversation/audio state and can send to external model APIs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Pipecat runs on a shared bus and processes text/conversation state, so its outputs can be fed into SWE-agent workflows. SWE-agent reads files and executes shell commands, making it plausible that attacker-controlled content from Pipecat is treated as instructions. No direct shared channel is documented beyond the bus, so this is inferred, not observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat outputs are copied into SWE-agent prompts or files without sanitization, injection is possible.",
+        "IF both agents share the same bus or workspace in deployment, attacker-controlled text can bridge them."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and instruction/data separation wrapper.",
+        "Disable automatic ingestion of Pipecat transcripts into SWE-agent.",
+        "Require human review before passing any Pipecat output onward.",
+        "Log and flag prompt-like strings in Pipecat outputs.",
+        "requires-engineering: add provenance tagging across the bus."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Pipecat touches audio, video, images, text, and conversation state, and has broad network egress to model APIs. SWE-agent reads repository files and can write them back out, so sensitive content from Pipecat can be exposed through downstream model calls or file handling. The pair lacks isolation guarantees beyond separate runtimes, so the default interaction is risky.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat conversation state or media contains sensitive data and is forwarded into SWE-agent tasks, leakage can occur.",
+        "IF SWE-agent is configured with a third-party model provider, repository contents or transcripts may leave the sandbox."
+      ],
+      "mitigations": [
+        "Restrict SWE-agent to redacted inputs only.",
+        "Disable external model egress for sensitive runs.",
+        "Separate Pipecat and SWE-agent workspaces.",
+        "Rotate and scope API keys per task.",
+        "requires-engineering: enforce data-loss-prevention filters on handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Pipecat supports multiple instances with shared bus state, while SWE-agent can write the filesystem and modify git state inside its container. If both are pointed at the same mutable workspace or shared bus, concurrent writes and state drift are plausible. The profiles do not prove a shared directory, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git checkout or shared directory, write conflicts can occur.",
+        "IF Pipecat instances share bus state across sessions, stale or overwritten state is possible."
+      ],
+      "mitigations": [
+        "Use separate worktrees per agent.",
+        "Serialize git writes with a lock file.",
+        "Disable concurrent writes to shared paths.",
+        "Snapshot state before each task.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Pipecat produces conversation state and text that SWE-agent can consume, and SWE-agent has authority to edit files and modify git state. If SWE-agent treats Pipecat output as authoritative, a mistaken transcript or hallucinated fact can cascade into code changes or commits. This interaction is plausible from the profiles alone and the blast radius can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent uses Pipecat output as task instructions without verification, errors can propagate into code changes.",
+        "IF SWE-agent commits or patches based on unreviewed Pipecat text, downstream damage can persist."
+      ],
+      "mitigations": [
+        "Require explicit verification before edits.",
+        "Insert a human approval step before commits.",
+        "Compare Pipecat claims against source files.",
+        "Limit SWE-agent to dry-run mode first.",
+        "requires-engineering: add automated fact-checking gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Pipecat handles audio, video, images, text, and conversation state, which can include regulated personal data, while SWE-agent handles repository code and may send data to a configured model provider. The profiles do not specify residency or certifications, so a compliance mismatch is plausible but not proven. I cite both because the risk arises from their combined data flow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data enters Pipecat and is forwarded to SWE-agent's model provider, residency or retention obligations may be violated.",
+        "IF the deployment lacks a DPA or equivalent controls, cross-border processing risk increases."
+      ],
+      "mitigations": [
+        "Classify data before handoff.",
+        "Block regulated data from SWE-agent tasks.",
+        "Use region-locked model endpoints.",
+        "Review retention settings for both agents.",
+        "requires-engineering: document a data-processing agreement and residency map."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
