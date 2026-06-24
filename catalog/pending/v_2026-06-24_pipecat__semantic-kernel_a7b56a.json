@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-24_pipecat__semantic-kernel_a7b56a",
+  "generated_at": "2026-06-24T23:53:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-bus + MCP pair: prompt injection, data leakage, and cascading errors are plausible by default; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A uses a shared bus and stdin/stdout, while agent B uses MCP and function-calling against plugins. That creates a plausible bridge where A\u2019s outputs can be consumed by B as instructions. No direct proof of a permissive parser exists, so uncertainty is not low; the shared-channel pathway is enough to rate medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent A output is forwarded into agent B prompts or MCP inputs without provenance tagging, injection is possible.",
+        "IF B treats A-generated text as instructions rather than data, malicious content can steer tool use."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and provenance tag around A outputs before B reads them.",
+        "Disable automatic prompt ingestion from shared bus messages.",
+        "Require B to ignore any tool directives inside A-produced text.",
+        "Log and review one sample A\u2192B message path for instruction-like content.",
+        "requires-engineering: add content-sanitization and schema validation between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches audio, video, images, text, and conversation state; B reads and writes filesystem and handles plugin credentials. A\u2019s broad network egress plus B\u2019s application-defined files and memory-store sharing make cross-agent leakage plausible in default deployments. The profiles do not prove a shared workspace, so medium is the cautious choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF A stores conversation state or media on a shared path that B can read, leakage can occur.",
+        "IF B forwards plugin credentials or file contents to external APIs, A-originated sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Separate A and B into distinct directories with OS permissions.",
+        "Disable B access to any A transcript or media folder.",
+        "Rotate any plugin/API secrets used by B.",
+        "Review one run for unexpected file reads from A-owned paths.",
+        "requires-engineering: enforce per-agent storage isolation and DLP controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A has shared-bus shared-state concurrency and B can read/write filesystem while using MCP. Even though B cannot modify git or spawn shells, both can mutate shared state through different surfaces, so race/conflict risk is real. Because the profiles show overlapping mutable surfaces and no locking, the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF A and B write to the same shared bus topic or memory-store key, last-writer-wins conflicts can corrupt state.",
+        "IF B writes files that A later reads as authoritative state, stale or partial writes can miscoordinate actions."
+      ],
+      "mitigations": [
+        "Assign disjoint namespaces for A and B state.",
+        "Add a simple lock file or mutex around shared writes.",
+        "Turn on versioned writes for shared memory-store entries.",
+        "Inspect one shared-state key for concurrent overwrite patterns.",
+        "requires-engineering: implement transactional coordination across the bus and file writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A produces conversational and media outputs, and B is an orchestration layer that can act on plugin/tool outputs. If B treats A\u2019s output as authoritative, errors can cascade into downstream actions. No verification step is documented, so the interaction is dangerous by default and merits high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated text as facts for tool calls, incorrect content can propagate into actions.",
+        "IF A emits hallucinated or stale state and B does not verify it, downstream outputs can be wrong at scale."
+      ],
+      "mitigations": [
+        "Insert a verification step before B acts on A outputs.",
+        "Require citations or structured fields from A before tool execution.",
+        "Have B cross-check A outputs against source data.",
+        "Review one end-to-end task for unverified handoff points.",
+        "requires-engineering: add confidence gating and provenance-aware planning."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A handles audio, video, images, text, and conversation state, while B handles application context and plugin credentials. The profiles do not specify residency or certifications, so a concrete breach cannot be proven. Still, the combination of broad data classes and B\u2019s external API/plugin use creates a plausible retention/residency mismatch, warranting medium severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF A processes regulated media or transcripts and B sends related context to external plugins, residency or retention obligations may be violated.",
+        "IF the deployment requires deletion/export guarantees and B persists application context separately, subject-rights handling can fail."
+      ],
+      "mitigations": [
+        "Confirm which data classes are regulated before enabling the pair.",
+        "Disable persistence of sensitive transcripts in B\u2019s memory store.",
+        "Document retention periods for A and B separately.",
+        "Check one sample record for residency and deletion behavior.",
+        "requires-engineering: align logging, retention, and DPA controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
