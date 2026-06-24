@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-24_pipecat__plandex_d63d9a",
+  "generated_at": "2026-06-24T23:42:14Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: Pipecat\u2019s shared-bus, multi-API voice pipeline can feed Plandex\u2019s shell/write workflow, creating default-path prompt injection, leakage, and cascading action risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Pipecat\u2019s shared bus and stdin/stdout plus broad LLM/transport integrations can carry attacker-controlled text into downstream consumers. Plandex reads files and runs shell/subprocesses, so if Pipecat output is bridged into Plandex input, instructions can be hijacked. This is inferred from docs-only profiles, so uncertainty pushes upward from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat output is copied or piped into Plandex prompts or files, injection is possible.",
+        "IF Plandex auto-applies plan text derived from Pipecat transcripts, malicious instructions can steer actions."
+      ],
+      "mitigations": [
+        "Disable any copy/paste or piping bridge between the two agents.",
+        "Require a human review step before Plandex consumes Pipecat output.",
+        "Strip instructions from Pipecat transcripts before forwarding.",
+        "Use separate workspaces for each agent.",
+        "requires-engineering: add provenance tagging and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Pipecat touches audio, video, images, text, conversation state, and can call many third-party APIs; Plandex reads and writes the project directory and sends context to model providers. If they share a workspace or transcript files, sensitive content can flow from Pipecat into Plandex and then onward to external services. The shared path is plausible but not directly evidenced, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat stores transcripts or media in a directory Plandex reads, leakage occurs.",
+        "IF Plandex forwards shared files to a model provider, copied Pipecat content leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep Pipecat artifacts in a separate directory from Plandex.",
+        "Turn off automatic file ingestion in Plandex for shared folders.",
+        "Redact audio transcripts before any handoff.",
+        "Use per-agent credentials and API keys.",
+        "requires-engineering: enforce workspace ACLs and data-loss-prevention checks."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Pipecat can share state across instances on a shared bus, while Plandex can execute shell commands, modify git state, read/write the filesystem, and spawn subprocesses. If both operate on the same repo or directory, concurrent writes and git mutations can race and corrupt state. Because both write-capable surfaces are documented, the conflict is a default-path concern and can cause irreversible repo damage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same working tree, git state conflicts can occur.",
+        "IF Pipecat shared-bus state is used to coordinate edits without locks, races are likely."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Pause one agent while the other writes git state.",
+        "Disable auto-apply in Plandex for shared repos.",
+        "Serialize file writes with a manual lock file.",
+        "requires-engineering: add transactional coordination around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Pipecat can generate conversational text and structured outputs from multiple model services, and Plandex is a planner that can act on file and shell changes. If Plandex treats Pipecat output as authoritative, a mistaken or malicious transcript can cascade into code edits, commits, or commands. The pairwise action chain is plausible from the profiles alone, so the safer high severity applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Plandex uses Pipecat-generated text as plan input without verification, errors cascade.",
+        "IF Pipecat emits hallucinated facts that Plandex converts into shell or git actions, downstream harm occurs."
+      ],
+      "mitigations": [
+        "Require explicit verification before Plandex acts on Pipecat output.",
+        "Separate factual summaries from executable instructions.",
+        "Log and diff all proposed actions before apply.",
+        "Limit Plandex to review-only mode for Pipecat-fed tasks.",
+        "requires-engineering: add schema validation for handoff messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Pipecat handles audio, video, images, text, and conversation state and can egress to many third-party APIs; Plandex handles source code and model-provider keys with project-directory access. If regulated content such as customer audio or PII is routed from Pipecat into Plandex\u2019s code workspace or external model calls, retention and residency obligations can diverge. No specific certification mismatch is documented, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio or PII is stored in the Plandex project directory, compliance scope expands.",
+        "IF Pipecat content is sent through Plandex to a model provider lacking the needed residency terms, a policy breach occurs."
+      ],
+      "mitigations": [
+        "Keep regulated data out of Plandex-managed folders.",
+        "Use a provider approved for the relevant data class.",
+        "Delete transient transcripts after review.",
+        "Separate keys and tenants by environment.",
+        "requires-engineering: document and enforce residency/retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
