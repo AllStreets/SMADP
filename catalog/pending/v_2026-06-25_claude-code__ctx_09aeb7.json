@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "claude-code",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-06-25_claude-code__ctx_09aeb7",
+  "generated_at": "2026-06-25T04:39:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.755,
+  "headline": "High risk: ctx\u2019s hooks can observe Claude Code outputs and both agents share filesystem/MCP channels, creating prompt-injection, leakage, and cascading-action exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Claude Code ingests files, stdin/stdout, and user-configured MCP servers; ctx explicitly observes Claude Code PostToolUse and Stop events via hooks. That creates a direct instruction-bearing channel from agent A into agent B, with no provenance or isolation documented. The pairwise interaction is documented enough to treat injection as dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ctx parses Claude Code hook output as instructions or state, injected content can steer downstream actions.",
+        "IF either agent forwards raw tool output into the other without provenance tags, prompt injection is reachable."
+      ],
+      "mitigations": [
+        "Disable hook-driven instruction parsing for ctx.",
+        "Add provenance labels to all Claude Code outputs before ctx reads them.",
+        "Restrict ctx to read-only observation of hook events.",
+        "Use a separate workspace for each agent.",
+        "requires-engineering: add allowlisted event schemas for hook ingestion."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Claude Code touches source code, git history, shell environment, and files in cwd, while ctx touches graph data, audit/runtime logs, and MCP servers. Claude Code also runs as the invoking user with filesystem access, and ctx can observe Claude Code events. Shared filesystem/MCP paths make sensitive code or secrets likely to flow into ctx logs or outputs by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository or cwd, ctx can observe files and logs containing code or secrets.",
+        "IF ctx persists audit/runtime logs from Claude Code events, sensitive context can be retained outside the original workspace."
+      ],
+      "mitigations": [
+        "Run each agent in a separate workspace directory.",
+        "Redact secrets from hook payloads before ctx stores them.",
+        "Disable logging of raw tool outputs in ctx.",
+        "Rotate or remove git credentials from the shared environment.",
+        "requires-engineering: enforce per-agent access controls on filesystem and logs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Claude Code can execute shell, modify git state, install packages, and write the filesystem; ctx also uses filesystem and MCP/stdio hooks and can run browsers. Both support multiple instances, but no locking or coordination primitive is documented. Concurrent writes to the same repo or git state can corrupt work or overwrite changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or git branch, last-writer-wins conflicts are possible.",
+        "IF ctx and Claude Code run concurrently without external locking, package installs or file edits can race."
+      ],
+      "mitigations": [
+        "Assign separate branches or worktrees.",
+        "Pause one agent while the other writes.",
+        "Use file locks around shared outputs.",
+        "Avoid concurrent package installation.",
+        "requires-engineering: add orchestrator-level locking for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is explicitly configured to observe Claude Code PostToolUse and Stop events, so A\u2019s outputs become B\u2019s inputs. Claude Code can emit code, shell plans, or tool results that ctx may treat as authoritative context. Without a documented verification step, errors or hallucinations can cascade into downstream actions or records.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ctx uses Claude Code event payloads as ground truth, incorrect outputs propagate into logs or graphs.",
+        "IF ctx triggers follow-on automation from observed events, a single bad Claude Code action can cascade."
+      ],
+      "mitigations": [
+        "Require human review before ctx acts on observed events.",
+        "Add validation checks for Claude Code outputs before ingestion.",
+        "Store raw events separately from derived records.",
+        "Limit ctx to summarization, not action-taking.",
+        "requires-engineering: implement schema validation and confidence gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Claude Code handles git credentials and source code, while ctx stores audit/runtime logs and graph data. The profiles do not specify residency, retention, or certification alignment, so a compliance mismatch is plausible but not proven. Because the pairwise data flow is documented only indirectly, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF audit/runtime logs retain source code or secrets beyond policy, retention obligations may be violated.",
+        "IF either agent processes regulated data without matching residency or certification controls, compliance gaps emerge."
+      ],
+      "mitigations": [
+        "Review both agents\u2019 retention settings.",
+        "Exclude secrets from logged hook payloads.",
+        "Confirm residency and DPA requirements before use.",
+        "Limit regulated data in shared workspaces.",
+        "requires-engineering: align certification and retention controls across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:11e6f32dce32469b07f61ef7fd238164912ed2154b21f9e8bba490f98ef97a34",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
