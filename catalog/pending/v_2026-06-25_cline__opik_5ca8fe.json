@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "opik"
+  ],
+  "verdict_id": "v_2026-06-25_cline__opik_5ca8fe",
+  "generated_at": "2026-06-25T01:05:57Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "High: Cline\u2019s workspace/file and browser access can leak or misapply data when paired with Opik\u2019s REST/API egress, while shared filesystem coupling creates prompt-injection and cascading-error risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline reads and writes workspace files and can use MCP, so attacker-controlled content can enter its instruction stream. Opik exposes a REST API surface and broad egress, so if Cline outputs are forwarded into Opik workflows, prompt-like content can be reinterpreted. The shared-filesystem coupling is documented for Cline; Opik\u2019s ingestion path is less explicit, so I choose medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Cline reads attacker-controlled workspace files that Opik later ingests via REST/API workflows, injected instructions can propagate.",
+        "IF the pair is connected through a shared filesystem or MCP bridge, prompt content can cross agent boundaries without provenance checks."
+      ],
+      "mitigations": [
+        "Restrict shared folders to non-executable text artifacts.",
+        "Disable MCP endpoints that accept untrusted content.",
+        "Add a provenance tag to every file passed between agents.",
+        "Require manual review before Opik consumes Cline-generated text.",
+        "requires-engineering: enforce content-sanitization at the handoff boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cline touches source code and browser screenshots and has broad network egress; Opik has REST API access and broad egress. The pair therefore has a plausible path for sensitive workspace data to leave the local environment if Cline forwards files or screenshots into Opik-backed services. No direct evidence shows automatic exfiltration, so medium fits the documented but indirect pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Cline sends workspace files or browser screenshots to any Opik-backed API, those contents may leave the workstation.",
+        "IF both agents operate on the same project directory, sensitive source code can be exposed through cross-agent handoff."
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive workspaces.",
+        "Turn off screenshot capture when handling secrets.",
+        "Block outbound API calls for sensitive projects.",
+        "Review API payloads before submission.",
+        "requires-engineering: add DLP/redaction at the API boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Cline can write the filesystem, modify git state, and run shell commands in a per-workspace session; Opik is not runnable but does have REST API interaction and broad egress. The main conflict is indirect: Cline can mutate shared workspace state while Opik may concurrently consume or evaluate that state. Because Opik lacks local write capability, this is not high, but overlapping mutable-resource access still exists.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Opik consumes artifacts from the same workspace that Cline edits, stale reads or conflicting updates can occur.",
+        "IF Cline commits or rewrites files while Opik is evaluating them, the pair can diverge on the same mutable resource."
+      ],
+      "mitigations": [
+        "Freeze the workspace during evaluation runs.",
+        "Use separate branches for agent-produced changes.",
+        "Add a lock file before Cline edits shared artifacts.",
+        "Have Opik read immutable snapshots only.",
+        "requires-engineering: implement optimistic-concurrency checks on shared files."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cline can generate code and browser-derived outputs, and Opik\u2019s REST/API role makes it plausible that those outputs are later consumed or evaluated downstream. If Opik treats Cline output as authoritative, errors can cascade into incorrect evaluations or actions. The profiles do not show direct autonomous actuation, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Opik ingests Cline-produced text without verification, any hallucination or malformed artifact can propagate.",
+        "IF Cline\u2019s browser-derived facts are used as ground truth in Opik workflows, downstream outputs may be wrong."
+      ],
+      "mitigations": [
+        "Require a verification step before Opik accepts Cline output.",
+        "Keep source citations attached to every transferred artifact.",
+        "Compare outputs against original files before acting.",
+        "Limit Opik to read-only evaluation of Cline artifacts.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show no explicit residency, certification, or retention mismatch. Cline handles model-provider API keys and workspace/browser data, while Opik\u2019s profile lists only REST API access and no sensitive data classes. With no documented compliance gap, the residual risk is low and mainly arises if the operator routes regulated data through the pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through Cline into an Opik service lacking the required controls, a compliance mismatch can arise.",
+        "IF the operator stores retention-sensitive artifacts in the shared workspace, policy divergence may matter."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workspaces.",
+        "Confirm retention settings before uploading artifacts.",
+        "Keep API keys out of project files.",
+        "Document the data class allowed for each workflow.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
