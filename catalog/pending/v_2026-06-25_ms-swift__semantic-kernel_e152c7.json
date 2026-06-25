@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-06-25_ms-swift__semantic-kernel_e152c7",
+  "generated_at": "2026-06-25T06:16:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk shared filesystem and MCP-based orchestration create prompt-injection, leakage, and cascading-error exposure between ms-swift and Semantic Kernel.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift reads/writes files and consumes stdin/stdout, while Semantic Kernel can use MCP servers and plugins. That creates a plausible bridge where attacker-controlled content from one can be treated as instructions by the other. The interaction is inferred from documented capabilities, not directly reproduced, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift outputs untrusted text into files or stdout that Semantic Kernel later parses as instructions",
+        "IF Semantic Kernel connects to an MCP server or plugin that forwards ms-swift-generated content without provenance checks"
+      ],
+      "mitigations": [
+        "Add a strict provenance tag to all cross-agent messages",
+        "Route inter-agent text through a schema validator",
+        "Disable automatic instruction-following on imported files",
+        "Review MCP/plugin inputs before execution",
+        "requires-engineering: isolate the agents with separate workspaces and trust boundaries"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ms-swift touches datasets, checkpoints, logs, and secrets, and Semantic Kernel can read/write application-defined files while using broad network egress and plugin credentials. If they share a workspace or memory store, sensitive artifacts from ms-swift can flow into Semantic Kernel outputs or third-party APIs. The profiles do not prove a shared workspace by default, so this remains medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or memory store",
+        "IF Semantic Kernel forwards imported files or context to an external model provider or plugin"
+      ],
+      "mitigations": [
+        "Separate workspaces and credentials per agent",
+        "Redact secrets before handoff",
+        "Disable file ingestion for sensitive directories",
+        "Audit outbound plugin/API destinations",
+        "requires-engineering: add DLP controls on shared storage"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can write files and read files, and Semantic Kernel explicitly supports multiple instances with shared state via a memory store. ms-swift also runs shell commands and subprocesses, increasing the chance of concurrent mutation if both target the same resources. No locking is documented, so overlapping writes are a realistic default-risk conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem path or shared memory store",
+        "IF ms-swift shell actions and Semantic Kernel plugin actions target the same mutable resource"
+      ],
+      "mitigations": [
+        "Assign disjoint directories per agent",
+        "Use file locks around shared artifacts",
+        "Serialize writes through one orchestrator",
+        "Turn off shared memory for concurrent runs",
+        "requires-engineering: add optimistic concurrency checks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Semantic Kernel is an orchestration layer that can act on plugin outputs, and ms-swift can generate model outputs, logs, and evaluation artifacts that may be consumed downstream. If Semantic Kernel treats ms-swift output as authoritative, errors can cascade into external actions or incorrect agent behavior. Because the profiles do not show a verification gate, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel uses ms-swift output as input to a plugin or tool call without validation",
+        "IF downstream plugins can send emails, modify records, or call external APIs"
+      ],
+      "mitigations": [
+        "Insert a human review step before tool execution",
+        "Validate ms-swift outputs against a schema",
+        "Require citations or source links for factual claims",
+        "Log and diff tool inputs before action",
+        "requires-engineering: add policy checks before plugin invocation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift handles hub tokens, SDK tokens, datasets, checkpoints, and logs, while Semantic Kernel handles model provider API keys and plugin credentials. If regulated or residency-bound data is routed through Semantic Kernel plugins or external model providers, retention and jurisdiction can diverge. The profiles do not specify a concrete residency mismatch, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into ms-swift datasets or logs and then forwarded through Semantic Kernel plugins",
+        "IF the chosen model provider or plugin stores data outside the required jurisdiction"
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents",
+        "Block regulated data from external plugins",
+        "Use region-locked providers only",
+        "Set short retention on logs and traces",
+        "requires-engineering: implement residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
