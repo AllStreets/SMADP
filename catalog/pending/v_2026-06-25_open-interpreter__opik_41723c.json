@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "opik"
+  ],
+  "verdict_id": "v_2026-06-25_open-interpreter__opik_41723c",
+  "generated_at": "2026-06-25T01:50:40Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and network overlap: Open Interpreter can modify the local machine while opik can exfiltrate via REST APIs, creating leakage and conflict pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter reads/writes the user filesystem and clipboard, so attacker-controlled content can reach its instruction stream. opik exposes a REST API surface, but no direct ingestion path from Open Interpreter is documented. The pair therefore has a plausible shared-content bridge via files/clipboard, though not a proven automatic one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter ingests file or clipboard content as instructions",
+        "IF opik consumes content originating from the same shared workspace or clipboard"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents",
+        "Use separate working directories for each agent",
+        "Require manual review of any text copied from Open Interpreter into opik",
+        "Run Open Interpreter in Docker mode",
+        "requires-engineering: add provenance tagging for shared artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read the entire local filesystem and handle model-provider API keys, while opik has broad network egress and a REST API surface. If they share a workspace or credentials, sensitive local data can flow out through opik or through Open Interpreter's own provider calls. The profiles do not prove a default shared workspace, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory or files",
+        "IF sensitive files or API keys are present in Open Interpreter's reachable filesystem",
+        "IF opik forwards received content to its REST backend or another third party"
+      ],
+      "mitigations": [
+        "Store secrets outside the shared workspace",
+        "Use separate OS users or containers",
+        "Restrict opik to non-sensitive test data",
+        "Rotate any API keys exposed to Open Interpreter",
+        "requires-engineering: enforce per-agent data-loss-prevention controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter has unrestricted filesystem write and modify_git_state, and its concurrency model says shared state with other instances is via filesystem. opik is not documented as writable, but if it also writes to the same workspace or repository, concurrent edits can corrupt files or git state. Uncertainty about opik's write scope pushes this to high because the filesystem-sharing pathway is explicit on the Open Interpreter side.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF opik writes to the same filesystem tree or repository as Open Interpreter",
+        "IF both agents operate on the same git checkout without locking",
+        "IF either agent modifies files while the other is reading or patching them"
+      ],
+      "mitigations": [
+        "Assign separate directories per agent",
+        "Pause one agent before the other writes",
+        "Use git locks or a single-writer workflow",
+        "Keep opik read-only against shared artifacts",
+        "requires-engineering: add file-locking and transaction boundaries"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate code or file changes that opik may later ingest through a shared workspace or API workflow. opik's REST/API surface suggests it could render or act on upstream outputs, but the profiles do not show automatic action-taking. The main risk is unverified propagation of Open Interpreter outputs into opik, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF opik consumes Open Interpreter outputs without validation",
+        "IF Open Interpreter writes artifacts that opik later treats as authoritative",
+        "IF downstream automation is attached to opik's API responses"
+      ],
+      "mitigations": [
+        "Insert a human review step before opik uses Open Interpreter outputs",
+        "Require schema validation on exchanged artifacts",
+        "Mark Open Interpreter outputs as untrusted by default",
+        "Limit opik to read-only evaluation of generated content",
+        "requires-engineering: add verification and provenance checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and no residency, certification, or retention mismatch is documented. Open Interpreter touches local-machine data and model-provider keys, while opik only shows a REST API surface; there is no evidence of regulated data flow between them. The other agent is not cited beyond noting the absence of a documented mismatch.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through either agent",
+        "IF a deployment policy requires residency or retention guarantees not documented here"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair",
+        "Review vendor DPAs before deployment",
+        "Disable logging of sensitive prompts and outputs",
+        "Use separate environments for regulated and non-regulated workloads",
+        "requires-engineering: document retention and residency controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
