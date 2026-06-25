@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-06-25_aider__ctx_ab7b4d",
+  "generated_at": "2026-06-25T04:14:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt-injection and cascading errors: ctx observes tool events while Aider edits shared git state, creating a default trust-bridge.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider can read and write repo files and shares state via a git repo; ctx observes Claude Code PostToolUse/Stop events and uses MCP hooks, so a content-to-instructions bridge is plausible. Neither profile shows provenance filtering or isolation, but the exact ingestion path between them is indirect, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.onexus.frameworks_detected"
+        }
+      ],
+      "conditions": [
+        "IF ctx ingests Aider-authored files or logs as instructions without provenance checks, injection is possible.",
+        "IF both agents operate in the same repo or hook chain, attacker-controlled repo content can cross the boundary."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all Aider-generated files and ignore untagged instructions.",
+        "Disable automatic parsing of repo text as commands in ctx.",
+        "Run the pair in separate repos for a quick test.",
+        "Require manual approval before ctx acts on any Aider output.",
+        "requires-engineering: add content-sanitization and provenance enforcement in the hook pipeline."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code, git history, and provider API keys, while ctx touches agent entities, harness records, graph data, and runtime logs. Aider has broad network egress and file access; ctx calls external services including GitHub and Claude Code. Shared repo or logs can expose sensitive code or metadata across the pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx stores Aider outputs in runtime logs or graph data, code and history may leak.",
+        "IF Aider writes secrets or code into shared files that ctx uploads or indexes, leakage occurs."
+      ],
+      "mitigations": [
+        "Remove secrets from the repo before running either agent.",
+        "Point ctx at a scratch workspace with no sensitive files.",
+        "Turn off verbose logging for one session.",
+        "Review outbound API destinations for both agents.",
+        "requires-engineering: segregate storage and retention for logs versus source code."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem, modify git state, and spawn subprocesses; ctx also uses filesystem and MCP-based automation. Aider explicitly shares state via a shared git repo, so concurrent writes and git mutations can collide by default. The overlap can corrupt work or overwrite changes, and no locking is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents edit the same repo concurrently, git conflicts or lost updates can occur.",
+        "IF ctx writes files while Aider auto-commits, one agent can overwrite the other's changes."
+      ],
+      "mitigations": [
+        "Run only one agent at a time in the shared repo.",
+        "Use separate branches for each agent.",
+        "Pause ctx hooks during Aider commits.",
+        "Check git status before each write.",
+        "requires-engineering: add file-level locking or transactional merge coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Aider produces code changes and git commits; ctx observes tool events and manages context, so ctx may treat Aider output as authoritative operational input. With no documented verification step between them, an error from Aider can cascade into ctx logs, graph state, or downstream actions. The default trust chain is risky and can amplify mistakes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ctx records or acts on Aider output without verification, errors will propagate.",
+        "IF Aider emits incorrect code or commands and ctx preserves them as context, later decisions may be biased."
+      ],
+      "mitigations": [
+        "Require human review of Aider output before ctx records it.",
+        "Mark Aider outputs as untrusted in ctx metadata.",
+        "Compare Aider changes against git diff before acceptance.",
+        "Limit ctx to passive observation for one run.",
+        "requires-engineering: implement verification gates between tool events and stored context."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Aider handles model provider API keys and source code; ctx handles audit/runtime logs and graph data. The profiles do not show a clear residency or certification mismatch, so only a modest compliance concern is visible: logs or code may be retained differently across the pair. The other agent is cited because the mismatch arises from their combined handling of the same data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx retains runtime logs longer than the repo retention policy, compliance drift occurs.",
+        "IF Aider sends code to external model providers while ctx stores derived logs, subject-rights handling may diverge."
+      ],
+      "mitigations": [
+        "Confirm retention settings for both tools.",
+        "Avoid placing regulated data in the shared repo.",
+        "Delete temporary logs after the session.",
+        "Document which provider receives which data.",
+        "requires-engineering: align retention and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
