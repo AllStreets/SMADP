@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-06-25_ctx__langgraph_8da4df",
+  "generated_at": "2026-06-25T04:08:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt injection and cascading errors from ctx\u2019s MCP/file observation into LangGraph\u2019s writable, networked orchestration graph.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and uses MCP stdio, while LangGraph can wire developer-defined tools and run agent graphs. That creates a plausible content-to-instruction bridge if ctx output is fed into LangGraph nodes, but the exact bridge is not documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF ctx output is routed into a LangGraph node without provenance filtering",
+        "IF Claude Code event text is treated as instructions by downstream nodes"
+      ],
+      "mitigations": [
+        "Add a provenance tag to ctx outputs before passing them onward",
+        "Insert a prompt-injection filter on all ctx-derived text",
+        "Require a human review step before LangGraph executes ctx-derived instructions",
+        "Restrict LangGraph nodes to read-only parsing for ctx outputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches filesystem, audit/runtime logs, graph data, and MCP servers; LangGraph reads and writes application-defined files and sends data to model providers. If they share a workspace or checkpointer, sensitive runtime data can flow from ctx into LangGraph and then to third-party APIs. The shared-workspace path is not explicit, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF ctx and LangGraph share a filesystem, checkpointer, or log directory",
+        "IF LangGraph forwards ctx-derived state to model providers"
+      ],
+      "mitigations": [
+        "Separate ctx and LangGraph storage directories",
+        "Disable logging of ctx-derived secrets before LangGraph ingestion",
+        "Redact audit/runtime logs before any model-provider call",
+        "Use distinct credentials for each agent",
+        "Add a denylist for sensitive file paths in LangGraph"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx can install packages and use filesystem-backed MCP tooling, while LangGraph can execute shells, write/read files, spawn subprocesses, and use broad network egress. Both can mutate the same local resources, and LangGraph explicitly supports shared state across instances; without locking, concurrent writes can corrupt state or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or checkpointer",
+        "IF ctx package installation or MCP hooks run concurrently with LangGraph file writes"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize writes with a lock file",
+        "Disable package installation in ctx during shared runs",
+        "Use per-agent checkpointer namespaces",
+        "Run both agents under separate OS users"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is designed to observe Claude Code events, so its outputs are likely to be treated as operational context; LangGraph then orchestrates tool-using nodes that may act on that context. If LangGraph consumes ctx output without verification, a mistaken or malicious ctx summary can cascade into downstream actions or incorrect state updates.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph uses ctx summaries as authoritative inputs",
+        "IF downstream LangGraph nodes trigger tool calls or external API actions"
+      ],
+      "mitigations": [
+        "Require schema validation on ctx outputs",
+        "Add a verification node before any action-taking node",
+        "Log and diff ctx claims against source artifacts",
+        "Limit downstream nodes to advisory mode until reviewed"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx explicitly touches audit/runtime logs and graph data, while LangGraph handles model-provider API keys and can persist graph state via checkpointers. If regulated or sensitive data enters the shared graph, retention and residency obligations can diverge between the two systems. The profiles do not specify a concrete jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in ctx logs or LangGraph checkpointer state",
+        "IF retention or deletion requests must cover both systems"
+      ],
+      "mitigations": [
+        "Document a shared retention policy",
+        "Exclude regulated data from ctx logs",
+        "Set a deletion workflow for LangGraph checkpointer entries",
+        "Store secrets only in a dedicated secret manager",
+        "Review residency of any external model-provider calls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
