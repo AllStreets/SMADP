@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-06-25_continue-dev__ctx_2ca563",
+  "generated_at": "2026-06-25T03:43:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.545,
+  "headline": "High risk of prompt injection and cascading errors: Continue\u2019s filesystem/MCP inputs can feed ctx\u2019s hook-driven observation path, creating unsafe default interaction.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Continue reads workspace files and uses MCP with broad egress, while ctx observes Claude Code PostToolUse/Stop events and handles MCP servers. That creates a plausible default bridge where attacker-controlled file or tool output from Continue can be treated as instructions by ctx. The interaction is documented only indirectly, so uncertainty pushes severity up.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Continue content from workspace files is forwarded into ctx hooks without provenance tags, injection is possible.",
+        "IF ctx treats observed tool events as authoritative instructions, attacker-controlled text can steer actions."
+      ],
+      "mitigations": [
+        "Add provenance labels to all cross-agent messages.",
+        "Disable automatic forwarding from Continue outputs into ctx hooks.",
+        "Require a human approval step before ctx acts on Continue-derived text.",
+        "Restrict ctx to read-only observation for one test session.",
+        "requires-engineering: implement content-sanitization and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code and open editor buffers, and ctx touches audit/runtime logs, graph data, and harness records. Both have filesystem access surfaces, so shared-workspace leakage is plausible in default setups. The profiles do not show direct third-party exfiltration of these data classes, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents share the same workspace directory, file contents can cross between them.",
+        "IF ctx logs Continue-derived content into audit/runtime logs, sensitive code context may persist."
+      ],
+      "mitigations": [
+        "Separate the agents into different workspaces.",
+        "Turn off verbose logging in ctx for one run.",
+        "Limit Continue to a narrow project subfolder.",
+        "Review logs after the session and delete sensitive entries.",
+        "requires-engineering: add per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Continue can write the filesystem and spawn subprocesses; ctx also has filesystem access and supports multiple instances. Even though ctx\u2019s write capability is not explicit, shared filesystem state via the host makes concurrent mutation plausible. Because one side\u2019s write scope is not fully specified, uncertainty escalates to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory, file races can occur.",
+        "IF ctx writes derived artifacts while Continue edits workspace files, concurrent overwrite is possible."
+      ],
+      "mitigations": [
+        "Run only one agent at a time on shared files.",
+        "Use separate output directories.",
+        "Snapshot the workspace before starting.",
+        "Disable background writes for the session.",
+        "requires-engineering: add file locking or transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Continue can produce tool-assisted code and file edits, and ctx is a harness/knowledge-graph agent that observes tool events. If ctx treats Continue output as authoritative, errors can cascade into logs, graph data, or downstream automation. The default observation pattern makes this interaction risky even without direct proof of a specific action chain.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ctx ingests Continue-generated text without verification, mistakes propagate.",
+        "IF ctx triggers downstream automation from observed events, a bad Continue output can cascade."
+      ],
+      "mitigations": [
+        "Require explicit verification before ctx records Continue output.",
+        "Limit ctx to passive monitoring for one session.",
+        "Compare Continue outputs against source files before acting.",
+        "Disable downstream automations tied to observed events.",
+        "requires-engineering: add validation gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only and do not state regulated data handling, residency, or certification mismatches. Continue handles source code and editor buffers; ctx handles logs and graph data, but no PHI, EU PII, or residency conflict is evidenced. This is a compliance gap only if regulated data is introduced into the shared workflow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is placed into the shared workspace, compliance review is required.",
+        "IF either agent logs regulated content to a third-party service, policy mismatch may arise."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Review retention settings before use.",
+        "Disable logging of sensitive prompts and outputs.",
+        "Use a local-only test project.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.6.1",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
