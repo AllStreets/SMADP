@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "langchain4j"
+  ],
+  "verdict_id": "v_2026-06-25_goose__langchain4j_4c495c",
+  "generated_at": "2026-06-25T04:47:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk filesystem and MCP overlap in Goose can drive prompt injection, data leakage, and cascading errors when paired with langchain4j.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose reads/writes the user filesystem and uses MCP servers, so attacker-controlled files or shared MCP outputs can be treated as instructions. langchain4j has no documented isolation or parsing safeguards in the profile, so the pairwise bridge is plausible but not directly evidenced. The interaction is inferred from Goose\u2019s documented surfaces and langchain4j\u2019s lack of constraints.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF Goose ingests content from a shared directory or MCP server as instructions, prompt injection is possible.",
+        "IF langchain4j is configured to consume Goose-produced text without provenance checks, injected directives can propagate."
+      ],
+      "mitigations": [
+        "Restrict Goose to a dedicated workspace directory.",
+        "Disable or whitelist MCP servers for the session.",
+        "Add a provenance tag to Goose outputs before langchain4j reads them.",
+        "Require manual review of any file-based instructions before execution.",
+        "requires-engineering: add content-sanitization and instruction/data separation in the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd, has broad network egress, and handles model-provider and extension tokens. langchain4j is documented as having no network egress in the profile, but the pair still creates a leakage path if Goose forwards shared files or secrets into its provider/MCP calls. The evidence is indirect, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Goose is pointed at a workspace containing secrets or credentials, those contents can leave the machine via its networked providers.",
+        "IF langchain4j receives Goose outputs that include copied file contents, those contents may be re-exposed in downstream logs or prompts."
+      ],
+      "mitigations": [
+        "Move secrets out of the shared workspace.",
+        "Run Goose with a minimal project directory.",
+        "Rotate any tokens exposed to Goose during the session.",
+        "Disable unnecessary provider or extension integrations.",
+        "requires-engineering: enforce redaction before any cross-agent handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Goose can write the filesystem, modify git state, and supports multiple instances with shared state via filesystem. langchain4j has no concurrency controls or write limits documented, so if it also writes to the same repo or workspace, the pair can race on shared mutable state. Because the shared-write pathway is plausible and defaults are not isolated, uncertainty is escalated to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model"
+        }
+      ],
+      "conditions": [
+        "IF langchain4j writes to the same repository or workspace as Goose, file races can corrupt outputs.",
+        "IF both agents modify git state without external locking, commits or working-tree changes can conflict."
+      ],
+      "mitigations": [
+        "Serialize access to the repo with a lock file.",
+        "Assign separate working directories to each agent.",
+        "Pause one agent while the other writes git state.",
+        "Review and reconcile diffs before any commit.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate code or file edits that langchain4j may consume, but the profile does not show langchain4j taking autonomous external actions. That makes the main risk a mistaken handoff where B treats A\u2019s output as authoritative without verification. The pathway exists, but the blast radius is limited to downstream work products rather than direct external harm.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF langchain4j uses Goose output as a source of truth without validation, errors can cascade into later responses or actions.",
+        "IF Goose emits incorrect code or facts into shared files, langchain4j may propagate them unchanged."
+      ],
+      "mitigations": [
+        "Require a verification step before langchain4j consumes Goose output.",
+        "Compare Goose output against source files or tests.",
+        "Mark Goose-generated artifacts clearly in filenames or headers.",
+        "Limit Goose to draft-only changes.",
+        "requires-engineering: add automated validation gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Goose is documented as handling source code, files in cwd, and model-provider keys, which can create residency or retention concerns. langchain4j\u2019s profile does not document any sensitive-data handling or residency obligations, so only Goose is directly implicated. The pairwise compliance risk is limited and not enough evidence exists for a higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Goose processes regulated data in the workspace, provider-side retention or logging may create compliance obligations.",
+        "IF the deployment requires strict residency controls, Goose\u2019s configured providers must satisfy them."
+      ],
+      "mitigations": [
+        "Keep regulated data out of Goose\u2019s workspace.",
+        "Use only approved providers for the session.",
+        "Review provider retention settings before use.",
+        "Document the data classes allowed in the shared repo.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1",
+      "MEASURE-1",
+      "MANAGE-1"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:928bb0af20e46bb520b8126cfe0279c05855e1de1b1fa58d0e1c45ec50aecace",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
