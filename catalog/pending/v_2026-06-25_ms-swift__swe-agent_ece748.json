@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-25_ms-swift__swe-agent_ece748",
+  "generated_at": "2026-06-25T05:34:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.545,
+  "headline": "Highest risk is capability conflict: both agents can write and execute shell commands, while SWE-agent also modifies git state and ms-swift can handle secrets and broad files.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No shared clipboard, MCP, or browser bridge is documented, so direct prompt injection between ms-swift and SWE-agent is not the default path. The remaining pathway is manual copy-paste or file handoff via shared files, which is weaker and user-mediated. Both agents can read files, so injected instructions could be carried in content, but the blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies ms-swift output into SWE-agent prompts without review, injection becomes plausible.",
+        "IF both agents are pointed at the same writable text file, file-based instruction smuggling becomes possible."
+      ],
+      "mitigations": [
+        "Use separate prompt/input files for each agent.",
+        "Manually strip instructions from copied text before forwarding.",
+        "Keep a human review step between ms-swift output and SWE-agent input.",
+        "Disable any shared clipboard workflow.",
+        "requires-engineering: add provenance tags to forwarded content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ms-swift touches secrets and broad data classes, while SWE-agent reads repository files and can send context to a configured model provider. A shared workspace is not stated, but if one exists, ms-swift outputs or logs could expose sensitive material to SWE-agent and onward through its API calls. The interaction is inferred from documented file and network surfaces on both agents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift writes secrets or training artifacts into a directory SWE-agent can read, leakage becomes possible.",
+        "IF SWE-agent is configured with a remote model provider, any copied sensitive context can leave the local environment."
+      ],
+      "mitigations": [
+        "Keep separate per-agent workspaces.",
+        "Do not place secrets in shared directories.",
+        "Redact logs before handing them to SWE-agent.",
+        "Use a local-only model provider for SWE-agent.",
+        "requires-engineering: enforce filesystem ACLs between agent workspaces."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, read and write files, and install packages. SWE-agent additionally can modify git state, so if they share a repository or sandbox, concurrent writes can corrupt files or commits. ms-swift's broader file scope and SWE-agent's git mutation make the overlap dangerous by default unless the orchestrator isolates them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or repository, write-write conflicts can occur.",
+        "IF SWE-agent commits while ms-swift is editing files, git state corruption or lost work can occur."
+      ],
+      "mitigations": [
+        "Run each agent in a separate directory.",
+        "Serialize access to any shared repository.",
+        "Disable git writes for SWE-agent when ms-swift is active.",
+        "Take a snapshot before either agent edits files.",
+        "requires-engineering: add lock coordination around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can generate outputs from datasets, checkpoints, and evaluation artifacts, and SWE-agent can act on repository context and shell results. If SWE-agent treats ms-swift output as authoritative without verification, errors can cascade into incorrect code changes or operational actions. The pairwise pathway is plausible but not directly evidenced beyond their documented I/O roles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift output is pasted into SWE-agent as ground truth, downstream actions may be based on unverified claims.",
+        "IF SWE-agent is instructed to implement changes from ms-swift summaries, mistakes can propagate into code or commits."
+      ],
+      "mitigations": [
+        "Require source verification before acting on ms-swift output.",
+        "Ask SWE-agent to cite file or command evidence for each claim.",
+        "Use a checklist for any action derived from ms-swift output.",
+        "Limit SWE-agent to draft-only mode for high-stakes tasks.",
+        "requires-engineering: add automated validation gates before commits."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift explicitly handles hub tokens, SDK tokens, and diverse data classes, while SWE-agent handles model provider API keys and GitHub tokens. Both are open-source, but their documented secret-handling and logging/file surfaces create a retention and exposure risk if the same regulated data is routed through both. No specific residency mismatch is documented, so the concern is policy mismatch rather than a proven violation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in files accessible to both agents, retention and access controls must be aligned.",
+        "IF either agent logs secrets or sensitive prompts, those logs may violate internal retention policy."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through both agents.",
+        "Separate secret-bearing and non-secret workspaces.",
+        "Review logging settings before execution.",
+        "Delete temporary files after each task.",
+        "requires-engineering: implement retention and deletion controls per data class."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
