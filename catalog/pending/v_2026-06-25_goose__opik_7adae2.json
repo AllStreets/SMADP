@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "goose",
+    "opik"
+  ],
+  "verdict_id": "v_2026-06-25_goose__opik_7adae2",
+  "generated_at": "2026-06-25T01:45:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "High-risk shared filesystem and broad egress create prompt-injection, leakage, and conflict pathways; no direct pairwise evidence for opik increases uncertainty.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Goose can read/write the user filesystem and use MCP, while opik exposes a REST API and broad egress. Goose\u2019s shared_state_with_other_instances via filesystem creates a plausible bridge where opik-generated content could be consumed as instructions. The interaction is inferred, not directly documented, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Goose ingests files or MCP payloads produced by opik without provenance checks, injection is possible.",
+        "IF opik outputs are copied into Goose\u2019s workspace, Goose may treat attacker-controlled text as instructions."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of opik outputs into Goose workspaces.",
+        "Add provenance tags to files exchanged between the agents.",
+        "Restrict MCP servers to allowlisted, read-only endpoints.",
+        "Review any shared filesystem handoff before execution.",
+        "requires-engineering: add content-sanitization and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Goose touches source code and files in cwd, and its shared filesystem model can expose those files to other instances. Opik has broad network egress and REST API access, so if it receives or forwards workspace content, sensitive code or local files can leak. The pairwise flow is inferred from profiles, not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF opik is configured to receive workspace artifacts from Goose, those artifacts can leave the local environment.",
+        "IF Goose and opik share a filesystem or copied files, source code in cwd may be exposed beyond the original boundary."
+      ],
+      "mitigations": [
+        "Keep opik isolated from Goose workspaces.",
+        "Remove secrets from files before any handoff.",
+        "Use separate OS users or containers for each agent.",
+        "Audit outbound requests from opik for file-content payloads.",
+        "requires-engineering: enforce data-loss-prevention on shared artifacts."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Goose can write the filesystem, modify git state, and spawn subprocesses; opik is not runnable but does have broad network egress and REST API surfaces. The main conflict is Goose\u2019s mutable workspace colliding with any opik-driven artifact exchange or shared files, which can overwrite or race on code and git state. Lack of explicit locking raises the severity above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same working tree, file and git conflicts can occur.",
+        "IF opik-triggered updates are mirrored into Goose-managed files, last-writer-wins races are possible."
+      ],
+      "mitigations": [
+        "Assign separate directories to each agent.",
+        "Pause one agent before the other writes shared files.",
+        "Use git branches per agent.",
+        "Check for uncommitted changes before each write.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Goose can generate and modify code, while opik exposes a REST API that could consume Goose outputs as evaluation inputs or downstream actions. If opik treats Goose\u2019s output as authoritative, errors can cascade from code or analysis into further automated decisions. Because verification is not documented, uncertainty warrants medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF opik consumes Goose output without an independent verification step, incorrect outputs can propagate.",
+        "IF Goose writes code or facts that opik later reuses, downstream automation may amplify mistakes."
+      ],
+      "mitigations": [
+        "Insert a human review step between Goose and opik.",
+        "Require schema validation on Goose outputs before opik uses them.",
+        "Limit opik to read-only evaluation of Goose artifacts.",
+        "Log and diff all Goose-generated changes before reuse.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show no explicit regulated-data handling, residency, or certification mismatch. Goose touches source code and local files, but opik\u2019s profile does not indicate PHI, EU PII, or special compliance constraints. With no documented mismatch, only a low residual compliance concern remains.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.vendor.type"
+        },
+        {
+          "profile_field": "agent_b.vendor.type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into Goose or opik workflows, compliance review is required.",
+        "IF deployment policies require residency or retention guarantees, the current profiles do not document them."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces.",
+        "Confirm retention settings before enabling logging.",
+        "Separate environments for regulated and non-regulated projects.",
+        "Review vendor policies before deployment.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:fd9f430e4e7443be3b75921b2919dfafce3a5c5681eb708b8fb10059e063fb93",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
