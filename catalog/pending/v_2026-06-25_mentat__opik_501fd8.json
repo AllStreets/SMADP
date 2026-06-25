@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mentat",
+    "opik"
+  ],
+  "verdict_id": "v_2026-06-25_mentat__opik_501fd8",
+  "generated_at": "2026-06-25T01:11:24Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem writes and broad egress create default conflict and leakage risks; prompt-injection and compliance risks are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Mentat reads and writes files and shares state via filesystem, so Opik can receive attacker-shaped content if its REST/API workflow ingests those files or outputs. No direct shared channel is documented for the pair, so this is inferred rather than observed, but the filesystem bridge makes instruction smuggling plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Opik ingests Mentat-produced files or text as prompts without provenance checks, injection is possible.",
+        "IF both agents operate on the same workspace directory, attacker-controlled content can bridge them."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Add provenance tags to all files passed between agents.",
+        "Require human review before Opik consumes Mentat output.",
+        "Strip instructions from file content before reuse.",
+        "requires-engineering: add content-sanitization and trust-boundary enforcement."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Mentat has broad network egress and handles model-provider API keys, while Opik exposes a REST API surface. If they share files or credentials in the same workspace, source code or secrets can flow from Mentat into Opik-backed services. The pairwise leakage path is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Mentat and Opik share a filesystem or copied artifacts, source code can be exposed to Opik.",
+        "IF Opik forwards received content to a third-party backend, any shared secrets become externally exposed."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories.",
+        "Use separate API keys per agent.",
+        "Disable automatic upload of shared artifacts.",
+        "Review outbound destinations for both agents.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Mentat can write the filesystem and modify git state, and its concurrency model explicitly shares state via filesystem. Opik has broad network egress and a REST API surface, so if it also mutates shared project state through that API or workspace, the pair can race on the same resources. Uncertainty about Opik's write scope escalates this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Opik writes to the same repository or workspace that Mentat edits, concurrent conflicts can corrupt state.",
+        "IF both agents act on shared mutable resources without locking, last-writer-wins races occur."
+      ],
+      "mitigations": [
+        "Run agents on separate branches.",
+        "Serialize writes with a lock file.",
+        "Disable concurrent edits to the same directory.",
+        "Review and merge diffs manually.",
+        "requires-engineering: add transactional coordination around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Mentat produces diff-based edit proposals, and Opik exposes a REST API that could consume those outputs as authoritative inputs. Without a documented verification step between them, errors from Mentat can cascade into Opik-driven actions or reports. The pathway is inferred, not directly documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Opik treats Mentat diffs or summaries as authoritative, mistakes can propagate.",
+        "IF Opik triggers downstream actions from Mentat output without validation, cascading errors occur."
+      ],
+      "mitigations": [
+        "Require independent verification before Opik acts.",
+        "Compare Mentat output against source files.",
+        "Add a human approval gate.",
+        "Log and diff all proposed changes.",
+        "requires-engineering: implement schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Mentat explicitly handles model-provider API keys and source code, while Opik's profile does not document regulated-data handling or residency constraints. No concrete residency or certification mismatch is evidenced, so only a low compliance risk is supportable. The other agent is not cited because no compliance-sensitive profile field is present for Opik.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Mentat's source-code workspace, retention and logging policies must be checked.",
+        "IF Opik is configured to store the same data class with different retention, a policy mismatch can arise."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workspaces.",
+        "Review retention settings before use.",
+        "Separate secrets from code artifacts.",
+        "Document data-class handling for both tools.",
+        "requires-engineering: add compliance policy enforcement per data class."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-unknown"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:caf12a153078caa56158bcf7b8361c9272129c91ef71c0f5d5459fbfc3063884",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
