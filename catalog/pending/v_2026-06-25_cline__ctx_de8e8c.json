@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cline",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-06-25_cline__ctx_de8e8c",
+  "generated_at": "2026-06-25T03:15:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: Cline\u2019s broad filesystem/network/MCP powers combined with ctx\u2019s filesystem and Claude Code hooks create default-path prompt-injection, leakage, and cascading-action risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cline can read workspace files, use MCP, and run browsers; ctx observes Claude Code PostToolUse/Stop events and touches MCP servers. That creates a plausible shared-content path where one agent\u2019s outputs can be fed into the other as trusted instructions. The interaction is documented only indirectly, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Cline reads ctx-produced files or MCP messages as instructions, injection is possible.",
+        "IF ctx forwards Claude Code event content into prompts without provenance checks, injection is possible."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all inter-agent files/messages.",
+        "Disable automatic parsing of agent-generated text as instructions.",
+        "Route shared artifacts through a read-only handoff folder.",
+        "Review one sample exchange for instruction-like content before enabling automation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cline has broad filesystem read/write and broad network egress, while ctx touches filesystem, audit/runtime logs, and MCP servers. If they share a workspace, sensitive source code or logs can flow from one agent into the other and then out through Cline\u2019s network path. The profiles do not prove a leak by default, but the shared workspace path is credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same workspace directory, file leakage is possible.",
+        "IF ctx logs contain secrets and Cline reads those logs, exfiltration is possible via Cline network egress."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Redact secrets from logs before sharing them.",
+        "Block network egress for the agent that only needs local processing.",
+        "Inspect one shared directory for sensitive files before running both agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cline can modify git state and write the filesystem; ctx also has filesystem access and can run browsers/install packages. The profiles indicate overlapping mutable access to the same workspace, and Cline\u2019s session scope is per-VS Code workspace with shared state via filesystem. Without explicit locking, concurrent writes and git-state races are dangerous in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository checkout, file races are possible.",
+        "IF both agents modify git state without external locking, branch or index corruption is possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Serialize git operations with a manual lock file.",
+        "Pause one agent before the other writes.",
+        "Run a quick git status check after each agent finishes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cline can generate code and browser-derived content, and ctx observes Claude Code events and manages agent/runtime records. That makes it plausible for ctx to treat Cline output as authoritative without verification, causing downstream mistakes to propagate. The profiles do not show direct autonomous action like email or deployment, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ctx ingests Cline output without validation, errors can cascade.",
+        "IF Cline writes generated artifacts that ctx later reuses as ground truth, propagation is possible."
+      ],
+      "mitigations": [
+        "Require a human review step before reuse.",
+        "Compare outputs against source files or logs.",
+        "Mark generated artifacts as untrusted by default.",
+        "Sample-check one downstream action for provenance before enabling automation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Cline is documented as handling model provider API keys and browser screenshots, while ctx touches audit/runtime logs and agent entities. This suggests a compliance mismatch risk around logging and secret handling, but the profiles do not show a specific residency or regulated-data breach. I cite both because the risk arises from their combined handling of sensitive operational data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into shared logs, retention mismatch becomes relevant.",
+        "IF browser screenshots or API keys are stored in ctx logs, policy violations are possible."
+      ],
+      "mitigations": [
+        "Exclude secrets from shared logs.",
+        "Set a short retention window for runtime logs.",
+        "Keep regulated data out of browser screenshots.",
+        "Review one log sample for sensitive fields before use."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1b1eef28bbeddec37dbd7b538afac8985c69d2f09c524c14c9099b57b23de3e3",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
