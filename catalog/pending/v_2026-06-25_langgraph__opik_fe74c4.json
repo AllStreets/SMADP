@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "opik"
+  ],
+  "verdict_id": "v_2026-06-25_langgraph__opik_fe74c4",
+  "generated_at": "2026-06-25T01:28:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.55,
+  "composite_score": 0.515,
+  "headline": "High: shared-state orchestration plus broad egress creates default data-leak and cascading-error risk; prompt-injection is lower but still plausible via shared graph state.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A can read/write application-defined files and shares state via a checkpointer store; if Agent B consumes that shared graph state or REST-fed content as instructions, prompt injection is plausible. B is a REST API audio-speech system with broad egress, so the interaction path is indirect and undocumented, not provably blocked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Agent B ingests shared graph-state text from Agent A without provenance checks, injection is possible.",
+        "IF the orchestrator exposes A-written files or state to B as trusted prompts, injection risk materializes."
+      ],
+      "mitigations": [
+        "Add provenance tags to all shared state entries.",
+        "Separate A and B into distinct workspaces.",
+        "Require a strict allowlist for prompt fields consumed by B.",
+        "Strip instructions from any A-generated text before B reads it.",
+        "requires-engineering: add content-signing or schema validation on shared state."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent A explicitly touches graph state and model-provider API keys, and can write/read files; Agent B has broad network egress and REST API access. If they share a workspace or checkpointer-backed state, sensitive application data can flow from A into B and then out over B's network path. The profiles do not prove a leak, but the pathway exists in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.network_egress"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF A and B share the same checkpointer or filesystem workspace, data leakage is possible.",
+        "IF B forwards received context to its REST backend, shared state can leave the local boundary."
+      ],
+      "mitigations": [
+        "Place A and B in separate storage namespaces.",
+        "Disable sharing of secrets-bearing fields in graph state.",
+        "Review B's outbound payloads for copied context.",
+        "Rotate any exposed API keys immediately if shared state is suspected.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "A can write the filesystem and spawn subprocesses; B exposes a REST API and broad egress. Even though B's write capabilities are not documented, the pair can still contend over shared mutable resources if the orchestrator routes both through the same workspace or external service. Uncertainty about B's write surface pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same workspace or external API resource, write conflicts can occur.",
+        "IF the orchestrator lacks locking around shared state, concurrent updates can race."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes through one coordinator.",
+        "Add optimistic-lock checks on shared records.",
+        "Avoid concurrent runs against the same external resource.",
+        "requires-engineering: implement distributed locking for shared mutable state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A is a low-level orchestration framework that can emit graph state, and B is an evaluation/observability system with REST API access. If B treats A's outputs as authoritative, A's mistakes can cascade into B's reports or actions without verification. Because A can also execute shell and browsers, downstream errors can be operationally broad and hard to reverse.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF B renders or acts on A-produced outputs without independent verification, cascading error occurs.",
+        "IF A-generated state is used as ground truth for B's evaluation pipeline, errors propagate."
+      ],
+      "mitigations": [
+        "Insert a verification step before B consumes A outputs.",
+        "Require human review for any action derived from A.",
+        "Log source provenance on every A-to-B handoff.",
+        "Limit A outputs to structured, typed fields.",
+        "requires-engineering: add automated consistency checks between A and B."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated data handling, residency, or retention commitments. A handles model-provider API keys and graph state, while B lists no sensitive data classes. No concrete compliance breach is evidenced, but if regulated data is routed through A's broad egress into B's REST API, policy mismatch could arise.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into A's graph state and then sent to B's REST API, compliance review is required.",
+        "IF deployment policy requires residency or retention guarantees, neither profile documents them."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared graph state.",
+        "Document retention for A and B separately.",
+        "Review outbound API destinations before enabling sensitive workloads.",
+        "Add a data-class allowlist for both agents.",
+        "requires-engineering: obtain vendor compliance attestations before production use."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
