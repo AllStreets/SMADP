@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "replit-agent"
+  ],
+  "verdict_id": "v_2026-06-25_ctx__replit-agent_ad3243",
+  "generated_at": "2026-06-25T04:27:03Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk filesystem and network overlap: Replit Agent can write/egress while ctx observes Claude Code events and files, creating prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse and Stop events and touches filesystem/MCP servers, while Replit Agent can write workspace files and run shell commands. That creates a plausible shared-file bridge where attacker-controlled content from one side can be treated as instructions by the other. The interaction is inferred, not directly documented, so uncertainty pushes upward from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF ctx reads files produced by Replit Agent without provenance checks, injection is possible.",
+        "IF Replit Agent writes instruction-like content into shared workspace files, ctx may ingest it as trusted context."
+      ],
+      "mitigations": [
+        "Add provenance tags to shared files before ctx consumes them.",
+        "Restrict ctx to a read-only allowlist of paths.",
+        "Require manual review of any file that contains instructions or tool directives.",
+        "Separate workspaces so Replit Agent cannot write into ctx-observed paths.",
+        "requires-engineering: add content-signing or checksum verification for inter-agent handoff files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Replit Agent explicitly touches secrets and deployment configuration and has broad network egress, while ctx touches audit/runtime logs, harness records, and MCP servers. If they share a workspace or handoff files, sensitive material can flow from B into A's outputs or external APIs. Because B's egress is broad and A's file/MCP surfaces are documented, the leakage pathway is credible and dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or exported logs, secrets can be exposed.",
+        "IF ctx forwards file contents into external services, sensitive data may leave the environment."
+      ],
+      "mitigations": [
+        "Keep secrets out of any shared directory.",
+        "Disable or redact log export before ctx processes files.",
+        "Use separate Repls or containers for sensitive work.",
+        "Review outbound network destinations for ctx before enabling file ingestion.",
+        "requires-engineering: enforce per-path access controls and secret redaction at the orchestrator layer."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write to filesystem-like state: ctx via filesystem/MCP-adjacent workflows and Replit Agent via write_filesystem plus modify_git_state. Replit also supports multiple instances with persistent shared Repl filesystem, so concurrent edits can collide and corrupt git or workspace state. This is a default-dangerous overlap with potentially irreversible repository damage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repo or workspace, concurrent writes can conflict.",
+        "IF git state is modified without locking, commits or branches can be corrupted."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch or workspace.",
+        "Pause one agent before the other writes to the repo.",
+        "Use a lock file around git operations.",
+        "Review diffs before any commit or push.",
+        "requires-engineering: add optimistic concurrency control for shared filesystem writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is a context-management harness that observes tool events, and Replit Agent is a full-app builder that can act on code and deployment configuration. If ctx-generated summaries or extracted facts are fed into Replit Agent without verification, errors can cascade into code changes, package installs, or deployment actions. The pairwise handoff is inferred from documented behaviors, so I choose high over medium due to the action-taking blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx output is used as authoritative input to Replit Agent, mistakes can propagate.",
+        "IF Replit Agent acts on unverified summaries, it may install or deploy incorrect changes."
+      ],
+      "mitigations": [
+        "Require a human approval step between ctx output and Replit actions.",
+        "Have Replit Agent re-read source files instead of trusting summaries.",
+        "Limit ctx to producing notes, not directives.",
+        "Add a verification checklist before shell or deployment actions.",
+        "requires-engineering: implement schema-validated handoff contracts between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Replit Agent explicitly handles secrets and deployment configuration in a cloud Repl, while ctx touches audit/runtime logs and harness records. That creates a plausible retention and residency mismatch if regulated data or secrets are routed through the pair. The profiles do not document a specific jurisdiction or certification conflict, so this is a medium compliance risk rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Replit Secrets or workspace files, retention rules may differ from local expectations.",
+        "IF audit/runtime logs contain personal or regulated data, the cloud workspace may retain them longer than intended."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared files or secrets stores.",
+        "Set a short log-retention policy for the workspace.",
+        "Confirm data residency before using the pair on regulated projects.",
+        "Redact identifiers from harness records before transfer.",
+        "requires-engineering: document and enforce retention/deletion workflows across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.7.4",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:4dba9684be7ec2398f4537dd5fa793110312a55636a8e9a027d03b0f6f101edf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
