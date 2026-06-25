@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "awesome-prompts",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-25_awesome-prompts__open-interpreter_9bc479",
+  "generated_at": "2026-06-25T00:54:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.575,
+  "headline": "High-risk filesystem and shell overlap: Open Interpreter can modify the local machine while the prompt-list agent can feed untrusted instructions into that workflow.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Profile A is a prompt/content-writing source and Profile B reads files, clipboard, and stdin/stdout by default. That creates a plausible instruction-injection bridge if A\u2019s content is copied into B or stored in a shared workspace. The pathway is not proven by direct evidence, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a content is copied into agent_b stdin/stdout or clipboard",
+        "IF agent_b is pointed at a shared workspace containing agent_a-generated prompt files"
+      ],
+      "mitigations": [
+        "Disable clipboard-based handoff between the agents",
+        "Keep agent_a outputs in a read-only folder",
+        "Require manual review before agent_b executes any copied prompt text",
+        "Use separate user accounts or directories for each agent",
+        "requires-engineering: add provenance tags to files before agent_b consumes them"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Profile B can read the entire user filesystem and has broad network egress, so any sensitive files reachable locally can be exposed if agent_a\u2019s prompt artifacts are placed in the same workspace. Profile A has no network egress, so it is not the leak source; the risk is B exfiltrating data that A may help surface or organize. The shared-filesystem pathway is documented in B, but the pairwise flow is inferred.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_a stores prompts or notes in a directory readable by agent_b",
+        "IF agent_b is allowed to access files containing secrets or personal data"
+      ],
+      "mitigations": [
+        "Keep sensitive files outside agent_b\u2019s working directory",
+        "Run agent_b with a restricted filesystem mount",
+        "Disable or proxy agent_b network egress",
+        "Separate API keys and credentials from shared folders",
+        "requires-engineering: enforce per-agent workspace ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Profile B has unrestricted filesystem write, modify_git_state, shell, and subprocess capabilities, while Profile A is a content-writing source that can generate files or instructions for those actions. Because B\u2019s concurrency model shares state via filesystem, simultaneous use can corrupt or overwrite shared artifacts and git state. This is dangerous by default when both touch the same repo or directory.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b write to the same directory",
+        "IF agent_b operates on a git repository that agent_a also edits or generates files for"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Pause one agent before the other writes to the repo",
+        "Use git worktrees or branches per agent",
+        "Avoid concurrent runs against the same filesystem tree",
+        "requires-engineering: add file locks around shared mutable paths"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Profile A can produce prompt or content artifacts, and Profile B can act on local files and shell commands. If B treats A\u2019s output as authoritative, errors can cascade into incorrect edits or commands. The profiles do not show an explicit verification layer, but the harmful chain is inferred rather than directly evidenced, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a output without a human or programmatic verification step",
+        "IF agent_a output is used to generate shell commands or file edits"
+      ],
+      "mitigations": [
+        "Require a review step before agent_b executes generated instructions",
+        "Limit agent_b to dry-run mode for generated actions",
+        "Compare agent_a outputs against a checklist before execution",
+        "Log and diff all file changes made from agent_a content",
+        "requires-engineering: add schema validation for agent_a outputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Profile B touches anything reachable on the local machine and can egress broadly, which can conflict with residency or retention obligations for local personal data. Profile A is a docs-only prompt list with no data classes touched, so it is not the compliance driver. The mismatch is plausible but not tied to a specific regulated class, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF agent_b processes regulated local data such as personal data, secrets, or customer records",
+        "IF the deployment requires data residency or retention controls not enforced by agent_b"
+      ],
+      "mitigations": [
+        "Keep regulated data out of agent_b\u2019s workspace",
+        "Disable broad egress or route through an approved proxy",
+        "Set short retention for logs and transcripts",
+        "Review whether local files include regulated data before running",
+        "requires-engineering: add residency and retention policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8562cdeace34c1a6123e4d5bf0d4b637d7286fa7b58fd55d758bd0f0a7f65b22",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
