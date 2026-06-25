@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "ms-swift"
+  ],
+  "verdict_id": "v_2026-06-25_langgraph__ms-swift_90bdf2",
+  "generated_at": "2026-06-25T05:55:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad shell/network capabilities create default risks of prompt injection, data leakage, and cascading errors between LangGraph and ms-swift.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can read/write application-defined files and persists shared state via a checkpointer store, while ms-swift reads/writes datasets, models, checkpoints, logs, and config files. That creates a default file-based bridge where one agent can ingest the other\u2019s outputs as trusted content. No explicit provenance or isolation is documented for either agent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace, shared store, or log directory, then prompt-like content can cross from one agent to the other.",
+        "IF either agent parses file contents as instructions or tool directives, injected content can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Separate workspaces and checkpointer stores per agent.",
+        "Disable automatic ingestion of logs/configs as instructions.",
+        "Add provenance tags to all inter-agent files.",
+        "Review any file-parsing prompts before enabling shared paths.",
+        "requires-engineering: enforce read-only handoff files with schema validation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files, and LangGraph explicitly handles model provider API keys while ms-swift handles hub_token and sdk-token. If they share a workspace, sensitive artifacts can move between them; ms-swift also calls external APIs by default, so leaked context may leave the local environment. The pairwise leakage path is plausible from profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the agents share a filesystem or checkpointer-backed workspace, then secrets or sensitive artifacts written by one can be read by the other.",
+        "IF ms-swift is configured to send those artifacts to external model or hub APIs, then the data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Store secrets outside shared directories.",
+        "Use separate service accounts and tokens per agent.",
+        "Redact logs and checkpoints before handoff.",
+        "Restrict ms-swift API calls to non-sensitive jobs.",
+        "requires-engineering: add DLP scanning on shared files."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted shell, subprocess, read, and write filesystem capabilities. LangGraph\u2019s shared-state model plus ms-swift\u2019s CLI/Python workflow means they can concurrently mutate the same files or directories unless the operator adds locking. That is a default conflict risk with potentially destructive overwrite or corruption outcomes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, checkpoint store, or artifact path, then concurrent writes can overwrite each other.",
+        "IF the orchestrator does not provide locking, then race conditions can corrupt shared state or outputs."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Enable file or DB locking around shared state.",
+        "Serialize write-heavy steps.",
+        "Run one agent read-only during the other\u2019s writes.",
+        "requires-engineering: add transactional state management."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is an orchestration framework that can emit structured outputs from nodes, and ms-swift can consume files, configs, and CLI/Python inputs. If LangGraph\u2019s output is treated as authoritative by ms-swift, errors can cascade into downstream actions or model runs without verification. The profiles do not show a built-in validation barrier, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph outputs are fed directly into ms-swift configs, prompts, or training/eval jobs, then upstream mistakes propagate downstream.",
+        "IF ms-swift executes those inputs without a verification step, then the cascade can affect multiple work products or runs."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Validate schemas before ms-swift consumes LangGraph output.",
+        "Use allowlists for fields passed downstream.",
+        "Log and diff intermediate artifacts.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both profiles touch logs, configuration, checkpoints, and other potentially sensitive artifacts, but neither profile states residency, certification, or retention guarantees. Because ms-swift is unverified and LangGraph is docs-only, compliance mismatch is plausible but not proven. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as customer records or secrets are stored in shared logs or checkpoints, then retention and residency controls must match across both agents.",
+        "IF one deployment has stricter deletion or export obligations than the other, then the pair can violate policy when data crosses between them."
+      ],
+      "mitigations": [
+        "Classify data before sharing between agents.",
+        "Keep regulated data out of checkpoints and logs.",
+        "Document retention and deletion rules for both systems.",
+        "Use region-pinned storage where required.",
+        "requires-engineering: map each data class to a compliance owner."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:8b55891618aa6e5b0a45bb24d6296352f5f263e479fb39dbf604041793a159aa",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
