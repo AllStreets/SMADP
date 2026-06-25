@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-25_ctx__n8n_6e6839",
+  "generated_at": "2026-06-25T03:03:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt injection, data leakage, and cascading workflow errors when ctx observes and n8n executes shared filesystem/API-driven outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse and Stop events and touches filesystem/MCP-related context, while n8n can read/write server filesystem and drive workflows via integrations. That creates a plausible content-to-instruction bridge if ctx output is later ingested by n8n or copied into a workflow. The exact bridge is not fully documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ctx output is ingested into an n8n workflow node as text or JSON",
+        "IF n8n workflows parse ctx-generated files or logs as instructions"
+      ],
+      "mitigations": [
+        "Add a strict schema validator before any n8n node consumes ctx output",
+        "Separate ctx and n8n workspaces at the filesystem level",
+        "Disable any workflow step that treats free-form text as commands",
+        "Log and review all ctx-to-n8n handoffs for prompt-like content",
+        "requires-engineering: add provenance tags to ctx outputs and enforce them in n8n"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs, graph data, and MCP servers; n8n processes whatever the workflow handles and has broad network egress plus server filesystem access. If the same workspace or credentials are shared, sensitive context can flow from ctx into n8n and then out through integrations. The profiles do not prove a default shared workspace, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx writes logs or graph data into a directory that n8n reads",
+        "IF an n8n workflow sends ctx-derived files or records to an external integration"
+      ],
+      "mitigations": [
+        "Restrict n8n credentials to least privilege",
+        "Move ctx logs and graph data to a separate directory",
+        "Mask secrets before n8n ingests any ctx artifact",
+        "Review outbound n8n nodes for sensitive destinations",
+        "requires-engineering: enforce per-data-class egress policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx can use filesystem and MCP surfaces, while n8n can execute shell commands, write the server filesystem, and spawn subprocesses. Both also support multiple instances, and n8n explicitly shares state via datastore/connected systems. If they target the same mutable paths or workflow state, concurrent writes and race conditions can corrupt artifacts or overwrite each other; the profiles do not show locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF ctx and n8n write to the same directory or datastore",
+        "IF n8n Execute Command nodes mutate files that ctx also updates"
+      ],
+      "mitigations": [
+        "Assign disjoint filesystem roots to ctx and n8n",
+        "Disable n8n Execute Command for shared paths",
+        "Serialize writes with an external lock file",
+        "Run a quick audit for overlapping writable directories",
+        "requires-engineering: add transactional locking around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is a context-management agent that observes tool events, and n8n is a workflow orchestrator whose AI Agent node can call tools. If n8n consumes ctx-produced summaries or recommendations without verification, errors can cascade into automated actions across integrations. Because n8n has broad egress and action-taking authority, the blast radius can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n AI Agent nodes treat ctx output as authoritative",
+        "IF ctx summaries are forwarded into n8n actions without a human verification step"
+      ],
+      "mitigations": [
+        "Insert a human approval step before any n8n action",
+        "Require n8n to verify ctx claims against source data",
+        "Limit n8n workflows to read-only actions until reviewed",
+        "Add explicit confidence fields to ctx outputs",
+        "requires-engineering: implement policy gates before tool execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs and graph data, while n8n processes arbitrary workflow data and stores secrets per-credential on its server. That combination can create retention and residency mismatches if regulated data enters n8n workflows. The profiles do not specify HIPAA/GDPR/FedRAMP status, so I cite the documented data-handling surfaces rather than inventing a specific regime.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into ctx logs or graph data",
+        "IF n8n workflows retain or export that data beyond the source system's policy"
+      ],
+      "mitigations": [
+        "Classify data before it enters either system",
+        "Shorten n8n retention for workflow executions",
+        "Avoid storing regulated data in ctx logs",
+        "Review credential and secret storage settings",
+        "requires-engineering: map residency and retention controls end to end"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
