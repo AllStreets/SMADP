@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-25_ctx__open-interpreter_d4df76",
+  "generated_at": "2026-06-25T05:06:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High-risk filesystem and browser-enabled interaction: Open Interpreter can read/write the user filesystem while ctx observes Claude Code events and files, creating prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse and Stop events and touches filesystem/MCP servers; Open Interpreter can read/write the user filesystem and use clipboard/stdin. A shared file or copied output can carry attacker-controlled instructions into ctx, so the pathway exists in default-ish workflows, though not via a direct built-in bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ctx ingests file contents or copied text as trusted instructions",
+        "IF Open Interpreter writes attacker-controlled content into a file that ctx later reads",
+        "IF the operator bridges the agents through clipboard or a shared workspace"
+      ],
+      "mitigations": [
+        "Disable copy-paste handoff between agents",
+        "Use separate directories for each agent",
+        "Review any file before ctx consumes it",
+        "Run Open Interpreter in confirmation mode, not --auto_run",
+        "requires-engineering: add provenance tagging on shared artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Open Interpreter can read the entire user filesystem and has broad network egress; ctx touches audit/runtime logs, harness records, graph data, and MCP servers. If ctx outputs sensitive context into files or logs, Open Interpreter can read and potentially exfiltrate it. The pair shares filesystem-based exposure, so leakage is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx writes sensitive records to a shared filesystem location",
+        "IF Open Interpreter is run with access to the same user account",
+        "IF Open Interpreter sends read files to a configured model provider or remote API"
+      ],
+      "mitigations": [
+        "Place ctx and Open Interpreter in separate OS users",
+        "Restrict Open Interpreter to a narrow working directory",
+        "Move sensitive ctx outputs off the shared filesystem immediately",
+        "Disable network egress for Open Interpreter when handling sensitive files",
+        "requires-engineering: add filesystem ACLs or container isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx supports multiple instances and uses filesystem/MCP surfaces; Open Interpreter can write the filesystem, modify git state, and execute shell commands. Both can mutate shared files, and Open Interpreter explicitly shares state via filesystem, so concurrent writes and git conflicts are a default danger without coordination.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory",
+        "IF either agent modifies git state while the other is active",
+        "IF ctx and Open Interpreter run concurrently without locking"
+      ],
+      "mitigations": [
+        "Use separate working trees",
+        "Serialize writes with a lock file",
+        "Avoid concurrent git operations",
+        "Run one agent read-only during the other's write phase",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx observes tool events and Open Interpreter can act on shell and filesystem outputs. If ctx-generated summaries or files are treated as authoritative by Open Interpreter, mistakes can cascade into real actions or commits. The pair lacks a documented verification barrier, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Open Interpreter consumes ctx output without independent verification",
+        "IF ctx writes a mistaken instruction into a file that Open Interpreter executes",
+        "IF Open Interpreter is run with --auto_run or equivalent"
+      ],
+      "mitigations": [
+        "Require human review before execution",
+        "Keep ctx outputs advisory, not executable",
+        "Disable auto-run modes",
+        "Add a verification step before shell or git actions",
+        "requires-engineering: enforce typed handoff contracts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs and harness records, while Open Interpreter can access anything reachable on the local machine and handles model provider API keys. This creates a compliance mismatch risk around retention and sensitive local data, but the profiles do not show a specific residency or certification conflict, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ctx stores regulated data in logs or harness records",
+        "IF Open Interpreter processes those files under a different retention policy",
+        "IF model provider APIs retain prompts or file contents"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared files",
+        "Purge logs after each run",
+        "Confirm provider retention settings",
+        "Use a local-only model for sensitive tasks",
+        "requires-engineering: document data-flow and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
