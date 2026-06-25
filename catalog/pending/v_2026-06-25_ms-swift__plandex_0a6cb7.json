@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-06-25_ms-swift__plandex_0a6cb7",
+  "generated_at": "2026-06-25T06:09:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High: shared filesystem and broad shell/write defaults create prompt-injection, leakage, and conflict risks; Plandex\u2019s review-then-apply helps but does not eliminate pairwise hazards.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift can read/write files and process stdin/stdout, while Plandex reads/writes the project directory and plan-local sandbox. If ms-swift or shared files carry attacker-controlled text, Plandex may ingest it as plan input. No shared clipboard/MCP is shown, so this is not high, but the shared file bridge is enough for a default-pathway risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory, prompt-like content can cross from A to B via files.",
+        "IF ms-swift emits untrusted text into logs or config files that Plandex later reads, instruction hijacking becomes possible."
+      ],
+      "mitigations": [
+        "Use separate workspaces for each agent.",
+        "Disable auto-apply in Plandex.",
+        "Treat files from ms-swift as untrusted input.",
+        "Add a manual review step before Plandex consumes any A-generated file.",
+        "requires-engineering: add provenance tagging for shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch files and secrets: ms-swift handles hub_token/sdk-token and broad data classes, while Plandex handles model provider API keys and a project sandbox. Their allowlisted/broad egress means either can transmit file contents to external services. Shared workspace plus external API calls creates a realistic leakage path in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the same project directory contains secrets or customer data, either agent can read it from disk.",
+        "IF either agent sends file contents to its backend or model provider, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared project directories.",
+        "Use separate credentials for each agent.",
+        "Restrict network access to approved endpoints only.",
+        "Rotate any exposed API keys immediately after a shared run.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, and Plandex also modifies git state. In a shared directory, concurrent edits can overwrite each other or corrupt repository state. Because Plandex supports multiple instances via a backend and ms-swift does not state isolation, the conflict pathway is plausible by default and can cause irreversible repo damage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same git checkout, file overwrites or patch conflicts can occur.",
+        "IF Plandex auto-applies while ms-swift writes concurrently, repository state can become inconsistent."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Disable auto-apply and require manual merges.",
+        "Serialize access with a lock file.",
+        "Commit or snapshot before each agent run.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Plandex is explicitly review-then-apply, which reduces blind trust, but ms-swift can still generate outputs that Plandex may treat as plan material or code suggestions. If A\u2019s output is copied into B\u2019s workflow without verification, errors can cascade into incorrect changes. The review step keeps this below high, but the pathway remains in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift output is pasted or piped into Plandex plans, B may act on unverified content.",
+        "IF Plandex auto-apply is enabled, any mistaken A output can be turned into filesystem changes faster."
+      ],
+      "mitigations": [
+        "Require human verification of A outputs before import.",
+        "Keep Plandex in review-only mode.",
+        "Use structured templates for handoff text.",
+        "Log and diff every imported plan fragment.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift handles hub_token/sdk-token and broad multimodal/training data, while Plandex handles model provider API keys and source code. The profiles do not state residency or certifications, so a compliance mismatch cannot be ruled out. Because both agents can move sensitive data to external services, the safest reading is a medium risk rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed in the shared workspace, both agents may process it under different retention or residency terms.",
+        "IF either backend stores prompts or files outside the required jurisdiction, a policy breach can occur."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair\u2019s workspace.",
+        "Confirm vendor DPAs and residency settings before use.",
+        "Disable retention where configurable.",
+        "Separate regulated and non-regulated projects.",
+        "requires-engineering: document and enforce data-class routing rules."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
