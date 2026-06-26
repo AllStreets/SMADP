@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-interpreter",
+    "risingwave"
+  ],
+  "verdict_id": "v_2026-06-26_open-interpreter__risingwave_9f56d5",
+  "generated_at": "2026-06-26T04:10:30Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High-risk local automation pair: Open Interpreter can write the filesystem and run shell commands, while RisingWave is non-networked and the main pairwise risks are shared-workspace leakage and output-to-action cascades.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read/write the filesystem, use the clipboard, and execute shell commands; its state is shared via filesystem. RisingWave has no documented input channel, so direct injection is not proven, but a shared workspace lets attacker-controlled files influence Open Interpreter by default. Uncertainty about any hidden bridge is resolved upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, files created by one can be parsed by the other.",
+        "IF Open Interpreter is run with auto-run or equivalent reduced confirmation, file-based prompt injection becomes easier."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable auto-run for Open Interpreter.",
+        "Treat all shared files as untrusted input.",
+        "Use a read-only handoff directory for B's outputs.",
+        "requires-engineering: add provenance tagging or content signing between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can read the entire user filesystem and send prompts to configured model providers, so sensitive local data can leave the machine. RisingWave is documented as network-egress none, so it is not the exfiltration path; the pairwise leakage risk is mainly from A ingesting local data that B may have produced in a shared workspace. The shared-filesystem bridge makes this plausible in default setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF the shared workspace contains secrets, Open Interpreter can read them.",
+        "IF Open Interpreter is configured with a third-party model provider, file contents may be transmitted off-machine."
+      ],
+      "mitigations": [
+        "Keep secrets out of the shared workspace.",
+        "Use a local-only model provider for Open Interpreter.",
+        "Mount only the minimum necessary directories.",
+        "Rotate any credentials exposed in shared files.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Open Interpreter has unrestricted filesystem write, shell, subprocess, and git-state modification capabilities, while RisingWave is a data-engineering system with no documented write or locking surface here. Because Open Interpreter shares state via filesystem, concurrent writes to the same directory or repo can corrupt artifacts or git state. The absence of explicit locking pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or output directory, file clobbering can occur.",
+        "IF Open Interpreter modifies git state while another process updates the same repo, conflicts can corrupt history or working tree."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Serialize writes with a lock file.",
+        "Avoid concurrent git operations.",
+        "Run Open Interpreter in a disposable clone.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Open Interpreter can generate and execute actions from its own outputs, and RisingWave is a data-engineering system that may consume upstream artifacts. If B treats A's generated files or summaries as authoritative, errors can cascade into downstream data products. There is no direct evidence of verification or provenance checks, so uncertainty is escalated to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        }
+      ],
+      "conditions": [
+        "IF RisingWave ingests files or SQL generated by Open Interpreter without validation, bad outputs can propagate.",
+        "IF Open Interpreter is allowed to auto-run generated code, erroneous actions can be executed before review."
+      ],
+      "mitigations": [
+        "Require human review before ingestion.",
+        "Validate schemas and checksums on handoff.",
+        "Keep generated SQL/code in a staging area.",
+        "Disable auto-run for Open Interpreter.",
+        "requires-engineering: add provenance-aware verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Open Interpreter touches the entire local machine and may transmit content to configured model providers, creating a compliance surface for local data handling. RisingWave is documented only as an open-source data-engineering system with no residency or retention details here, so no specific mismatch is proven. Because the pairwise compliance pathway is underdocumented, the safer low rating is used.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.verification.status"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed on the local machine and then processed by Open Interpreter, residency or retention obligations may be implicated.",
+        "IF RisingWave is deployed with a different retention policy than the data source, policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workspace.",
+        "Review provider and retention settings for Open Interpreter.",
+        "Document data flow boundaries.",
+        "Use synthetic data for testing.",
+        "requires-engineering: obtain formal residency and retention attestations for both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:beaa1c8384e7987260d82a6613271403be4a54a3b130f61341d027b14f77a186",
+    "profile_b_hash": "sha256:97f5a6c6157065ace3387ebb3ba53f77f05bd57c7f9f4fea730a8bd7f267b13a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
