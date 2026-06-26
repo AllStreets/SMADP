@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "risingwave",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-06-26_risingwave__swe-agent_cf6374",
+  "generated_at": "2026-06-26T03:28:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.425,
+  "headline": "High: shared-file and shell-capable pair creates default data-leak and conflict risk; prompt-injection is limited by no direct bridge from RisingWave.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "RisingWave has no documented shared communication channel or output parser, while SWE-agent can read/write files and use stdin/stdout in a Docker task sandbox. The only plausible bridge is manual file handoff or copied content, so injection is possible but not default and the blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies RisingWave-generated text into SWE-agent prompts or files, injection becomes possible.",
+        "IF both agents are pointed at the same workspace without provenance checks, malicious instructions can propagate."
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces.",
+        "Require explicit human review before copying outputs between agents.",
+        "Prefix transferred text as untrusted data.",
+        "Disable automatic prompt ingestion from files where possible."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "RisingWave is documented with network_egress none, but SWE-agent has broad network egress and reads repository files inside its sandbox. If both touch the same workspace, SWE-agent can transmit repository contents or secrets it reads to external model providers, creating a default leakage path for shared files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same repository or workspace, SWE-agent can read those files and send them to its backend.",
+        "IF secrets are present in the shared workspace, they can be exposed through SWE-agent's networked inference path."
+      ],
+      "mitigations": [
+        "Use separate sandboxes per agent.",
+        "Remove secrets from any shared workspace before running SWE-agent.",
+        "Mount only the minimum required files into SWE-agent.",
+        "Turn off network access for SWE-agent when handling sensitive repositories.",
+        "Review outbound prompts/logs after each task."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "RisingWave is a data-engineering system with no write permissions shown, while SWE-agent can write files and modify git state inside its Docker sandbox. The pair can conflict if both are aimed at the same repo or mutable workspace; the profiles do not show locking or coordination, so concurrent edits are a realistic default hazard.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents are assigned the same git checkout or directory, concurrent writes can collide.",
+        "IF SWE-agent commits while RisingWave-generated artifacts are being updated, git state can diverge."
+      ],
+      "mitigations": [
+        "Assign each agent a separate checkout.",
+        "Serialize write phases with a human gate.",
+        "Disable git writes for SWE-agent unless needed.",
+        "Use branch-per-agent workflows.",
+        "Run a quick diff before merging outputs."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "RisingWave can produce repository or pipeline artifacts, and SWE-agent is built to act on repository code under analysis. If SWE-agent treats RisingWave output as authoritative without verification, errors can cascade into incorrect edits or commits. No verification or provenance controls are documented in either profile, so the interaction is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF RisingWave output is fed directly into SWE-agent tasks, SWE-agent may act on incorrect assumptions.",
+        "IF the operator asks SWE-agent to implement changes from RisingWave-generated artifacts without review, errors can propagate."
+      ],
+      "mitigations": [
+        "Require a human review step between agents.",
+        "Ask SWE-agent to restate assumptions before editing.",
+        "Compare outputs against source files before committing.",
+        "Limit SWE-agent to read-only analysis for the first pass.",
+        "Keep a changelog of transferred claims."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "RisingWave is open-source with no touched data classes listed, while SWE-agent explicitly handles model-provider API keys and GitHub tokens for issue mode. The main compliance concern is local secret handling and logging, not a documented residency or certification mismatch. The other agent is not cited for a residency issue because none is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_b.permissions_requested"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        }
+      ],
+      "conditions": [
+        "IF GitHub tokens or model API keys are present in the task environment, they may be exposed in logs or prompts.",
+        "IF the operator uses SWE-agent on regulated data, local handling controls must be verified."
+      ],
+      "mitigations": [
+        "Rotate any exposed tokens after the run.",
+        "Mask secrets in logs and prompts.",
+        "Avoid placing regulated data in the SWE-agent workspace.",
+        "Confirm retention settings for any external model provider.",
+        "Use a dedicated low-privilege token for issue mode."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:052fd9671d94df767f385f02fd1fc62e7f2adc0828e85ab6e4e8f44f9e0af119",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
