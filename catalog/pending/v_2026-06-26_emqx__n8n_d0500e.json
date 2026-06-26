@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "emqx",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-06-26_emqx__n8n_d0500e",
+  "generated_at": "2026-06-26T06:34:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-workflow pair: n8n\u2019s writable, networked automation can amplify EMQX outputs into data leakage and cascading errors; prompt-injection risk is lower but present via shared file/API channels.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "EMQX can emit content over HTTP APIs and n8n can read/write the server filesystem and call many integration nodes, so a shared file/API bridge exists. That makes instruction-like content from EMQX plausibly consumable by n8n in default workflows. The pair is not documented directly, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows ingest EMQX-produced files or API payloads as text for downstream parsing",
+        "IF EMQX outputs are copied into n8n nodes without provenance filtering"
+      ],
+      "mitigations": [
+        "Add a provenance tag to every EMQX payload before n8n parses it",
+        "Restrict n8n nodes to structured JSON schemas only",
+        "Disable any workflow step that treats free-form text as instructions",
+        "requires-engineering: isolate EMQX-to-n8n handoff on a separate queue with validation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "EMQX touches IoT data and has broad network egress; n8n reads/writes the server filesystem and sends data through integration nodes. In a shared workflow, sensitive IoT data can flow from EMQX into n8n outputs or third-party integrations. This is a default-path risk because n8n\u2019s integrations are enabled by workflow design, not by a special hardening step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF EMQX payloads are routed into n8n workflows containing external integrations",
+        "IF the workflow stores EMQX data on the n8n server filesystem"
+      ],
+      "mitigations": [
+        "Remove sensitive fields before handing EMQX data to n8n",
+        "Limit n8n credentials to least-privilege scopes",
+        "Turn off file-based persistence for sensitive workflow steps",
+        "Audit outbound integrations for data-class handling",
+        "requires-engineering: segregate IoT and automation tenants"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "EMQX exposes HTTP APIs and n8n can execute shell commands, spawn subprocesses, write the filesystem, and use broad network egress. If both operate on the same host or shared directory, concurrent writes and side effects can collide, and n8n\u2019s execution model lacks a universal lock. The interaction is not directly documented, so uncertainty does not reduce the risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF EMQX and n8n share a writable directory or host resources",
+        "IF n8n Execute Command nodes mutate files that EMQX also reads or writes"
+      ],
+      "mitigations": [
+        "Place EMQX and n8n on separate hosts",
+        "Use per-service directories with strict permissions",
+        "Disable Execute Command for workflows touching shared state",
+        "Add file-locking around any shared artifacts",
+        "requires-engineering: introduce an orchestrator-level mutex"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n\u2019s AI Agent node can orchestrate tools as sub-nodes, so EMQX outputs can become workflow inputs that trigger actions. If EMQX emits malformed or misleading telemetry and n8n treats it as authoritative, downstream integrations may send emails, mutate systems, or launch subprocesses incorrectly. That is a classic default cascade from producer to actuator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows use EMQX output as authoritative input without verification",
+        "IF downstream n8n nodes perform external actions based on that input"
+      ],
+      "mitigations": [
+        "Insert a validation step before any action node",
+        "Require human approval for high-impact workflow branches",
+        "Constrain EMQX inputs to typed schemas",
+        "Log and diff EMQX payloads before execution",
+        "requires-engineering: add policy gates for action-taking nodes"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "EMQX is an IoT broker touching IoT data, while n8n processes whatever the workflow handles and stores credentials on its server. If regulated IoT or personal data enters n8n workflows, retention and residency controls may diverge from EMQX\u2019s handling. The profiles do not prove a specific jurisdiction mismatch, so this stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT or personal data is routed through n8n workflows",
+        "IF n8n retention or credential storage exceeds the policy applied to EMQX data"
+      ],
+      "mitigations": [
+        "Classify the data before routing it into n8n",
+        "Shorten n8n retention for sensitive workflow runs",
+        "Separate regulated and non-regulated workflows",
+        "Review credential storage settings in n8n",
+        "requires-engineering: align residency and retention controls across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d8cb137a68ad9e483463ca2ec80ebbb627d8da133031d75f1628ffaf87147125",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
