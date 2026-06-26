@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "next-ai-draw-io",
+    "roo-cline"
+  ],
+  "verdict_id": "v_2026-06-26_next-ai-draw-io__roo-cline_372215",
+  "generated_at": "2026-06-26T01:25:24Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk shared-workspace and MCP interaction: Roo Code can write/modify workspace state while next-ai-draw-io can ingest files and use broad egress, creating prompt-injection, leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Roo Code has filesystem write and MCP access in a shared VS Code workspace, while next-ai-draw-io ingests files and uses MCP/browser flows. That creates a plausible instruction-hijack path through shared artifacts even without direct proof of a specific bridge. Uncertainty about exact parsing behavior keeps this at medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents read the same workspace or MCP-served artifact without provenance tags, injected instructions can cross from B to A or vice versa.",
+        "IF either agent treats file content as trusted instructions, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable MCP on one side for the shared task.",
+        "Add provenance labels to all shared files.",
+        "Require manual review before executing file-derived instructions.",
+        "requires-engineering: add content-sanitization and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Roo Code explicitly shares state via filesystem and reads workspace files; next-ai-draw-io processes PDFs, text, images, and diagrams and has broad network egress to multiple model APIs. Shared workspace data can therefore flow into both agents' inference backends, creating a realistic leakage path for sensitive documents or code.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive PDFs, text files, or diagrams are placed in the shared workspace, both agents can access them.",
+        "IF either agent forwards file contents to external model APIs, those contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Use separate directories for sensitive and non-sensitive work.",
+        "Turn off network egress for one agent during sensitive tasks.",
+        "Redact secrets before opening shared files.",
+        "Restrict API keys to least-privilege test accounts.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Roo Code can write files, modify git state, and run shell commands in a workspace; next-ai-draw-io can also operate on files and multiple instances. Because Roo Code shares state via filesystem, concurrent edits to the same workspace or repo can race and corrupt outputs or git history. The overlap is direct and dangerous by default, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or repository, concurrent writes can conflict.",
+        "IF Roo Code commits or rewrites files while next-ai-draw-io is generating diagrams from those files, state divergence can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate workspace.",
+        "Pause one agent before the other edits shared files.",
+        "Use git branches per agent.",
+        "Review diffs before any commit.",
+        "requires-engineering: add workspace locking and optimistic-concurrency checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "next-ai-draw-io produces AI-assisted visualizations from documents, and Roo Code can act on workspace files and shell commands. If Roo Code consumes next-ai-draw-io outputs as authoritative, a mistaken diagram or extracted fact can cascade into code changes, commits, or terminal actions. The pair therefore has a strong default pathway from generated content to downstream action.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Roo Code uses next-ai-draw-io output as ground truth without verification, errors propagate downstream.",
+        "IF the output is used to drive shell commands or git commits, the blast radius includes persistent repository changes."
+      ],
+      "mitigations": [
+        "Require human verification of generated diagrams before action.",
+        "Keep next-ai-draw-io outputs read-only.",
+        "Disable auto-commit workflows.",
+        "Cross-check extracted facts against source documents.",
+        "requires-engineering: add provenance-aware validation before any action-taking step."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both agents handle files and secrets, but only next-ai-draw-io explicitly touches PDFs, text, images, and diagram files while Roo Code handles workspace code and browser screenshots. The profiles do not document a specific residency or certification mismatch, so this is a generic compliance-risk medium rather than high. The other agent is cited because the risk arises from their combined handling of shared data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI, EU PII, or secrets is placed into the shared workspace, both agents may process it.",
+        "IF either agent sends that data to external model APIs, retention and residency obligations may be implicated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Use non-production test data.",
+        "Review vendor data-processing terms before use.",
+        "Disable logging of sensitive prompts and files.",
+        "requires-engineering: implement residency-aware routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e34d59019d4bbcbdfde498a321bfa8366d0d55e92e9799fe9e39905b7057877f",
+    "profile_b_hash": "sha256:949cdf8df13998a818cc854ba3a708cc3ded5ce180da56a6db368abdd8d03e4b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
