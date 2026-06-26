@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "emqx"
+  ],
+  "verdict_id": "v_2026-06-26_cursor__emqx_fae28c",
+  "generated_at": "2026-06-26T06:29:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High-risk shared filesystem and broad egress create prompt-injection, leakage, and cascading-action exposure between Cursor and emqx.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor can read/write workspace files, open buffers, clipboard, and use MCP; its shared_state_with_other_instances is via local filesystem. emqx exposes HTTP API and broad network egress. That creates a plausible bridge where attacker-controlled content from one side can be consumed by the other, though no direct parser bridge is documented, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Cursor reads content from a shared workspace file that emqx can influence, prompt injection is possible.",
+        "IF emqx ingests text originating from Cursor without provenance checks, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Separate workspaces and disable shared local filesystem exchange.",
+        "Require provenance tags on any file or message passed between agents.",
+        "Disable MCP endpoints not needed for the task.",
+        "Review and sanitize any text before feeding it into either agent.",
+        "requires-engineering: add content-origin filtering in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cursor touches source code, open files, and clipboard contents, and can write/read the filesystem. emqx touches IoT data and has broad network egress plus an HTTP API. A shared workspace or copied content could leak sensitive material from Cursor into emqx outputs or network traffic; the profiles do not prove a default leak, but the pathway exists.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same local workspace, sensitive files can flow from Cursor to emqx.",
+        "IF Cursor clipboard contents are pasted into emqx-facing inputs, clipboard data may be exposed."
+      ],
+      "mitigations": [
+        "Use separate OS users or containers for each agent.",
+        "Keep sensitive files out of any shared directory.",
+        "Disable clipboard-based transfer between agents.",
+        "Restrict emqx egress to approved destinations.",
+        "requires-engineering: add DLP/redaction before any cross-agent handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor has unrestricted filesystem write, modify_git_state, shell, and broad egress; its shared state is via local filesystem. emqx has broad network egress and an HTTP API. If both operate on the same mutable workspace or repo, concurrent writes and git-state changes can collide and corrupt state. The overlap is directly supported by both profiles, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering can occur.",
+        "IF Cursor modifies git state while emqx writes artifacts into the repo, repository corruption or lost updates can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint directories to each agent.",
+        "Pause one agent while the other performs writes.",
+        "Use git locks or a single-writer policy.",
+        "Snapshot the workspace before concurrent runs.",
+        "requires-engineering: add orchestrator-level locking for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cursor can generate code, files, and agent outputs; emqx exposes an HTTP API and broad egress, so downstream automation could consume Cursor output as authoritative. The profiles do not show explicit verification between them, making a mistaken output-to-action chain plausible. Because the action authority is indirect rather than explicit, medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF emqx consumes Cursor-produced text or config without validation, errors can cascade into downstream actions.",
+        "IF Cursor emits malformed instructions that emqx forwards via HTTP API, the mistake propagates."
+      ],
+      "mitigations": [
+        "Insert a human review step before any actioning.",
+        "Validate schemas on all Cursor-to-emqx handoffs.",
+        "Require emqx to reject unsigned or unverified inputs.",
+        "Log and diff handoffs before execution.",
+        "requires-engineering: implement typed contracts between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Cursor is closed-source and handles source code, open files, clipboard contents, and model-provider APIs; emqx is open-source and touches IoT data with HTTP API exposure. The profiles do not show a concrete residency or certification mismatch, so only a low compliance concern is supported. I do not cite only one agent because the risk is about the pair's combined data flow.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT data from emqx is routed into Cursor's cloud-backed model providers, policy review is needed.",
+        "IF source code or clipboard data from Cursor is retained alongside IoT data in emqx logs, retention mismatch may arise."
+      ],
+      "mitigations": [
+        "Review data retention settings in both tools.",
+        "Avoid sending regulated data into Cursor prompts.",
+        "Minimize logging on emqx-facing inputs.",
+        "Document the data flow for compliance review.",
+        "requires-engineering: align residency and retention controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:a8cfc01683481de30b6cec2c9303220d1b21ace6aec40cced9f815907295f3a6",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

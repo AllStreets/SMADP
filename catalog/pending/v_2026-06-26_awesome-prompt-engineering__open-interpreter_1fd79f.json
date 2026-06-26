@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "awesome-prompt-engineering",
+    "open-interpreter"
+  ],
+  "verdict_id": "v_2026-06-26_awesome-prompt-engineering__open-interpreter_1fd79f",
+  "generated_at": "2026-06-26T06:29:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High-risk filesystem and shell overlap: Open Interpreter can modify the user machine while the paired content-writing repo offers no isolation or runtime controls.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Profile A is a content-writing repo with no runnable agent or I/O surfaces, so it cannot directly ingest B's outputs by default. The only plausible bridge is manual copy-paste into Open Interpreter, which is a low-risk prompt-injection path. Because A has no execution surface and B's clipboard/files are user-mediated, the pairwise pathway is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF the operator manually copies A-generated text into B's prompt or clipboard, injection becomes possible.",
+        "IF B is run with --auto_run, copied instructions can be executed with less friction."
+      ],
+      "mitigations": [
+        "Keep A and B on separate workflows; do not paste A outputs into B without review.",
+        "Disable clipboard-based transfer between the two tools.",
+        "Run B without --auto_run.",
+        "Use a fixed prompt template that strips instructions from pasted content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "B can read the entire local filesystem and has broad network egress, while A is a docs-only repository with no runtime isolation or data-handling controls. If A's content is copied into B or B is pointed at files related to A, B can exfiltrate local data to model providers or other endpoints. The interaction is inferred from B's documented surfaces; A provides no containment.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF B is given access to directories containing sensitive files, those files can be read and transmitted.",
+        "IF the operator pastes A-derived content containing secrets into B, B may forward it to configured model providers."
+      ],
+      "mitigations": [
+        "Restrict B to a dedicated empty workspace.",
+        "Remove secrets from any directory B can read.",
+        "Use local-only model providers for B where possible.",
+        "Review and redact pasted content before sending it to B."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "B has write_filesystem, modify_git_state, and per-process shared state via filesystem, so concurrent instances can collide on the same mutable resources. A is a content-writing repo with no locking or runtime coordination fields, so there is no evidence of conflict prevention. Uncertainty about A's runtime behavior does not reduce the risk; the documented overlap is enough to treat shared writes as dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF two B instances target the same directory, file and git state races can occur.",
+        "IF A-generated artifacts are stored in the same workspace B edits, B can overwrite them without coordination."
+      ],
+      "mitigations": [
+        "Assign each B instance a separate working directory.",
+        "Avoid concurrent git operations on the same repo.",
+        "Use filesystem locks or a single-writer policy.",
+        "Snapshot the workspace before running B."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A can supply content that B may treat as source material, and B's tool-use pattern allows acting on generated code blocks after confirmation. There is no documented verification layer between them, so A's output can cascade into B's actions or edits. A is not an execution agent, but B's authority makes the downstream error path real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF A's text is copied into B as instructions or code, B may execute or write based on it.",
+        "IF B is run in auto-run mode, the verification barrier is reduced."
+      ],
+      "mitigations": [
+        "Require human review of A outputs before feeding them to B.",
+        "Keep B out of auto-run mode.",
+        "Ask B to summarize and verify A's claims before acting.",
+        "Limit B to non-destructive commands during the workflow."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "A is a public open-source repository with no data classes touched, while B can access anything reachable on the local machine and may handle model-provider API keys. The pair does not show a specific residency or regulated-data mismatch, but B's broad local access creates a compliance gap if regulated files are present. A is not cited for data residency because it does not process such data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present on the local machine and B can read that directory, compliance obligations may be triggered.",
+        "IF model-provider API keys are stored in files B can access, retention and logging policies become relevant."
+      ],
+      "mitigations": [
+        "Exclude regulated directories from B's workspace.",
+        "Store secrets outside B-readable paths.",
+        "Document which data classes B may touch.",
+        "Use a separate machine for regulated workloads."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5dd0729d06faa79a830d37e859fd2b43b224bb13e181dcd4083edaeb77658e67",
+    "profile_b_hash": "sha256:b603a4574b06510beb2b22675a33f7fb69d94b1488a8f2ccfe7ba196d7818307",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
