@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "production-agentic-rag-course"
+  ],
+  "verdict_id": "v_2026-06-26_gpt-engineer__production-agentic-rag-course_f3ad75",
+  "generated_at": "2026-06-26T01:19:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High risk of shared-workspace data leakage and capability conflict; prompt-injection and cascading-error risks are moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents read and write project-local files by default, and agent_a explicitly uses a per-project shared directory while agent_b runs local development workflows. That creates a plausible file-based instruction bridge even without MCP or clipboard. The interaction is inferred from docs, not directly observed, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF agent_b ingests files from the shared project directory as instructions, injected content can steer its outputs.",
+        "IF agent_a writes attacker-controlled text into files that agent_b later parses, prompt injection becomes feasible."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Disable automatic file ingestion for agent_b.",
+        "Review any generated markdown or prompt files before reuse.",
+        "Use a read-only handoff file for inter-agent communication.",
+        "requires-engineering: add provenance tagging for shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents have filesystem read/write access and touch sensitive classes: agent_a handles generated source code and agent_b handles configuration secrets plus paper data. A shared project or local development workspace can expose files across the pair. Because the profiles document local file access but not direct cross-agent isolation, the leakage pathway is plausible and medium severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same project directory, files written by one are readable by the other.",
+        "IF agent_b loads .env or notebook files from the shared workspace, configuration secrets may be exposed."
+      ],
+      "mitigations": [
+        "Move secrets to a separate directory outside the shared workspace.",
+        "Restrict file permissions on .env and notebook artifacts.",
+        "Run each agent in a different working directory.",
+        "Delete transient outputs after each run.",
+        "requires-engineering: enforce per-agent filesystem sandboxing."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can execute shells, install packages, and write files, so they can contend for the same mutable workspace. Neither profile states locking or coordination primitives, and agent_a explicitly shares state via the project directory. This is a default-capable overlap, but not enough evidence for high because git mutation is false in both profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory concurrently, file clobbering can occur.",
+        "IF package installation happens in the same environment, dependency drift can break one agent's run."
+      ],
+      "mitigations": [
+        "Serialize writes to the shared directory.",
+        "Use separate virtual environments.",
+        "Pin dependencies before running either agent.",
+        "Snapshot the workspace before each run.",
+        "requires-engineering: add file locks around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Agent_a is a coding agent that writes files then offers to run code, while agent_b is a content-writing/RAG agent with API endpoints for ask and agentic-ask. If agent_b consumes agent_a's generated code or text as authoritative, errors can propagate into downstream outputs. The profiles suggest the pathway but do not prove direct automation, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a's generated files as source material without verification, mistakes cascade into its outputs.",
+        "IF agent_a's generated code is executed and its results are reused by agent_b, errors can amplify."
+      ],
+      "mitigations": [
+        "Require human review before reuse of generated artifacts.",
+        "Add a verification step before agent_b consumes agent_a outputs.",
+        "Keep generated code and narrative outputs in separate folders.",
+        "Log provenance for reused artifacts.",
+        "requires-engineering: implement automated validation gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Agent_b explicitly handles configuration secrets and runs local development workflows, while agent_a also handles OPENAI_API_KEY and executes generated code with user privileges. The pair therefore concentrates sensitive material in environments with different operational assumptions, creating a compliance and retention mismatch risk. No direct residency breach is documented, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF either agent logs secrets or notebook outputs persist, retention policy violations can occur.",
+        "IF sensitive data is moved between the local development environment and the coding workspace, compliance scope expands."
+      ],
+      "mitigations": [
+        "Mask secrets in logs immediately.",
+        "Purge notebook outputs before sharing artifacts.",
+        "Store secrets in a dedicated secret manager.",
+        "Document retention rules for both environments.",
+        "requires-engineering: align residency and retention controls across both stacks."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:2cdcfdb84c4aac3d192dcefc4ecede217c388e6fa1b6683bdf1821ff803767ba",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
