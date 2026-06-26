@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "rasa"
+  ],
+  "verdict_id": "v_2026-06-26_langgraph__rasa_897a17",
+  "generated_at": "2026-06-26T05:01:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High-risk default data leakage and cascading errors: LangGraph can share state and write broadly, while Rasa ingests external channels and may act on unverified outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LangGraph can write/read application files and shares state via a checkpointer store; Rasa ingests messages from external channels. That creates a plausible bridge where attacker-controlled content can flow into LangGraph outputs and back into Rasa without provenance tracking. The interaction is inferred from profiles, not directly documented, so uncertainty pushes severity up from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph nodes read content from a shared checkpointer or workspace that Rasa can influence",
+        "IF Rasa forwards channel text into LangGraph prompts or tool inputs without sanitization"
+      ],
+      "mitigations": [
+        "Add provenance tags to all cross-agent messages",
+        "Restrict shared state to structured fields only",
+        "Insert a prompt-injection filter before LangGraph ingestion",
+        "Require human review for any instruction-like text from Rasa",
+        "requires-engineering: isolate the agents with separate workspaces and no shared mutable state"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LangGraph has broad filesystem read/write and broad network egress, while Rasa handles text/voice and connects to multiple messaging APIs. If they share a workspace or checkpointer, sensitive graph state can leak into Rasa-visible outputs or external channels. This is a default-pathway risk in shared deployments, though the exact data flow is not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents share the same workspace, database, or checkpointer store",
+        "IF LangGraph state contains secrets, customer text, or other sensitive application data"
+      ],
+      "mitigations": [
+        "Separate storage credentials per agent",
+        "Redact secrets before writing shared state",
+        "Disable unnecessary file sharing between agents",
+        "Audit outbound Rasa channels for sensitive payloads",
+        "requires-engineering: enforce per-agent network and filesystem isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "LangGraph can execute shell, spawn subprocesses, and write the filesystem; Rasa is a chatbot framework with allowlisted egress and multiple channel integrations. Even though Rasa does not advertise local filesystem writes, both can mutate shared application state through the orchestrator or external stores, so contention is plausible. Because locking is not documented, uncertainty escalates to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same application directory or shared backing store",
+        "IF the orchestrator does not provide locking or transactional updates"
+      ],
+      "mitigations": [
+        "Use per-agent working directories",
+        "Serialize writes through a single coordinator",
+        "Add optimistic concurrency checks on shared records",
+        "Avoid shared mutable git or database state",
+        "requires-engineering: add distributed locking around shared resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is explicitly a graph of nodes where each node may itself be an agent, so its outputs can become downstream inputs. Rasa is a customer-support bot that can act on dialogue understanding and external channel messages. If Rasa treats LangGraph output as authoritative, a mistaken or malicious upstream result can cascade into incorrect customer-facing actions; the default integration risk is therefore high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Rasa consumes LangGraph output without verification or confidence thresholds",
+        "IF LangGraph produces facts, classifications, or action recommendations that Rasa renders or executes"
+      ],
+      "mitigations": [
+        "Require schema validation on LangGraph outputs",
+        "Add a verification step before Rasa acts",
+        "Limit LangGraph to advisory-only responses",
+        "Log and review low-confidence handoffs",
+        "requires-engineering: implement end-to-end provenance and approval gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not document a specific residency, certification, or retention mismatch. Rasa touches text and voice channels, while LangGraph handles application-defined graph state and model-provider keys, but no concrete compliance breach is evidenced. The other agent is not cited beyond the pair context because no mismatch is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF a deployment routes regulated data into a channel or store with stricter residency or retention rules than the other agent",
+        "IF operators configure logging to retain customer conversations beyond policy"
+      ],
+      "mitigations": [
+        "Document data-class handling for both agents",
+        "Minimize retention of conversation logs",
+        "Route regulated data only through approved channels",
+        "Review vendor terms for each integration",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:b049675792d1794320926e6cb2bdfc3cfb919a1b13c27f1336a51c518d695224",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
