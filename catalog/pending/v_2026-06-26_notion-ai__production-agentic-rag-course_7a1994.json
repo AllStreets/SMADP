@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "notion-ai",
+    "production-agentic-rag-course"
+  ],
+  "verdict_id": "v_2026-06-26_notion-ai__production-agentic-rag-course_7a1994",
+  "generated_at": "2026-06-26T02:32:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Highest risk is medium prompt-injection and data-leakage via shared workspace plus vendor-hosted Notion AI; no direct evidence of a tighter bridge, so interaction risk stays bounded.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Profile A shares workspace state across instances and ingests workspace pages; Profile B reads/writes local files and exposes stdin/stdout in a local dev environment. That creates a plausible bridge where content from A can be copied into B and treated as instructions. No direct shared channel is documented, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF content from agent_a workspace pages is copied into agent_b prompts or notebooks, injection is possible.",
+        "IF agent_b treats retrieved text as instructions without provenance checks, malicious workspace content can steer actions."
+      ],
+      "mitigations": [
+        "Add a manual provenance check before pasting A outputs into B.",
+        "Prefix all A-derived text in B with a non-executable delimiter.",
+        "Restrict B notebooks to read-only imports from a vetted folder.",
+        "Use a short allowlist of commands/prompts for B when processing A content.",
+        "requires-engineering: add provenance tagging between workspace exports and B inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent A touches workspace pages and team knowledge base content, while agent B handles academic papers, metadata, and configuration secrets in a writable local environment. A shared workspace or copied exports could move sensitive content between them. Because A is vendor-hosted and B is local, the main risk is accidental disclosure through shared files or prompts, not uncontrolled third-party exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF workspace content from agent_a is exported into files that agent_b reads, leakage can occur.",
+        "IF agent_b processes files containing secrets or private papers, those contents may be surfaced in outputs."
+      ],
+      "mitigations": [
+        "Keep A and B on separate workspaces or directories.",
+        "Remove secrets from any files shared with B.",
+        "Review B outputs before sharing them outside the local environment.",
+        "Use redacted sample data for B when testing A-derived content.",
+        "requires-engineering: enforce per-agent storage isolation and secret scanning."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Agent A cannot write the filesystem or modify git, but agent B can write files, execute shell, and spawn subprocesses in a local development environment. If both are pointed at the same workspace, B can overwrite or race with A-derived artifacts even though A itself is constrained. The conflict is asymmetric, but shared workspace state makes overlap plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or notebook outputs, B can clobber A-derived artifacts.",
+        "IF B writes generated files that A later reads, stale or conflicting state can propagate."
+      ],
+      "mitigations": [
+        "Assign separate output directories for A and B.",
+        "Make B write to a scratch folder only.",
+        "Snapshot shared files before running B.",
+        "Avoid concurrent edits to the same notebook or document.",
+        "requires-engineering: add file-locking or workspace partitioning."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A is a RAG-style Q&A system grounded in workspace content, and B is a content-writing agent with stdin/stdout and file access. If B consumes A's summaries as authoritative, errors can cascade into downstream writing or automation. There is no documented verification gate between them, so the safer choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated summaries as source material without independent verification, hallucinations can propagate.",
+        "IF B turns A outputs into reports or scripts, downstream mistakes can be amplified."
+      ],
+      "mitigations": [
+        "Require B to cite original sources, not only A summaries.",
+        "Add a second-pass review for any A-derived claims.",
+        "Mark A outputs as untrusted drafts in B workflows.",
+        "Limit B automation when inputs originate from A.",
+        "requires-engineering: implement source-grounding checks before B acts on A outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "A is a closed-source vendor-hosted workspace AI touching team knowledge base content, while B is an open-source local development course handling papers and secrets. The profiles do not show a specific residency or certification mismatch, but they do show different retention and hosting contexts that could create compliance gaps if the same regulated data is moved between them. The other agent is cited because the risk is pairwise.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.vendor.type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from agent_a is copied into agent_b's local environment, policy obligations may diverge.",
+        "IF the organization requires vendor-only processing for workspace content, B's local handling can violate policy."
+      ],
+      "mitigations": [
+        "Do not move regulated data from A into B.",
+        "Use synthetic or anonymized data in B.",
+        "Check whether the data class is allowed in local development.",
+        "Document retention expectations for any shared artifacts.",
+        "requires-engineering: align residency and retention controls across both tools."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:29ca17a60afbba03ad725738b6cdb0dc6f0ff67694157bd8d97a897c71e71f66",
+    "profile_b_hash": "sha256:2cdcfdb84c4aac3d192dcefc4ecede217c388e6fa1b6683bdf1821ff803767ba",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
