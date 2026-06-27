@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pdf-js",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-27_pdf-js__transformers_070706",
+  "generated_at": "2026-06-27T01:21:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High risk of shared-workspace data leakage and capability conflict; prompt-injection and cascading-error risks are moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "pdf.js ingests PDF files and runs browsers, so attacker-controlled document content can influence what it renders or extracts. transformers can read/write files, spawn subprocesses, and use stdin/stdout, so if its pipeline consumes pdf.js outputs from a shared workspace, malicious content can propagate as instructions. No direct shared-channel evidence is present, so this is inferred and escalated from uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes pdf.js-generated text or extracted content from a shared directory, prompt-like content can steer downstream processing.",
+        "IF the operator copies PDF-derived text into transformers prompts, attacker-controlled instructions in the PDF can be followed."
+      ],
+      "mitigations": [
+        "Separate input and output directories for the two agents.",
+        "Strip or normalize PDF text before passing it to transformers.",
+        "Disable automatic prompting from extracted document text.",
+        "Review any pipeline step that treats document text as instructions.",
+        "requires-engineering: add provenance tags to all pdf.js outputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "pdf.js touches PDF documents and has no network egress, while transformers has broad network egress plus filesystem read/write and API access. If both share a workspace, PDF contents can flow into transformers and then out to external services. The pairwise leakage path is plausible in default document-processing setups, but not directly documented here, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same filesystem tree, PDF contents can be read by transformers.",
+        "IF transformers forwards prompts, logs, or generated artifacts to external APIs, document contents may leave the local environment."
+      ],
+      "mitigations": [
+        "Use separate workspaces for each agent.",
+        "Block transformers network egress for sensitive jobs.",
+        "Redact PDFs before handing them to transformers.",
+        "Turn off API-backed features during shared-document processing.",
+        "requires-engineering: enforce per-agent access controls on the workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "pdf.js supports multiple instances and handles PDF files, while transformers can execute shell commands, install packages, write files, and spawn subprocesses. If both are pointed at the same directory, they can overwrite or race on shared artifacts, and transformers can mutate files that pdf.js later reads. The overlap is directly supported by the profiles, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file races or overwrites can occur.",
+        "IF transformers installs packages or runs shell commands in the shared workspace, it can alter artifacts pdf.js depends on."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Run transformers in a read-only mount when possible.",
+        "Serialize writes with a lock file.",
+        "Snapshot inputs before processing.",
+        "requires-engineering: add workspace-level locking and isolation."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "pdf.js produces document-derived outputs, and transformers can consume stdin/stdout and filesystem content, so A's output can become B's input. Because transformers can also execute shell commands, any mistaken extraction or hallucinated text from pdf.js may be amplified into downstream actions. There is no evidence of verification between them, so the cascade is plausible but not proven dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF transformers uses pdf.js extraction as authoritative input without validation, errors can propagate.",
+        "IF downstream scripts act on transformers output, a bad extraction can trigger incorrect actions."
+      ],
+      "mitigations": [
+        "Insert a human review step before actions.",
+        "Validate extracted text against the source PDF.",
+        "Require schema checks on transformer outputs.",
+        "Log and diff A-to-B handoffs.",
+        "requires-engineering: add confidence gating before any shell action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source document-processing tools, and neither profile shows secrets handling, OAuth scopes, or regulated-data certifications. The main compliance concern is operational: pdf.js handles PDF documents while transformers can transmit data via broad network egress, but no specific residency or PHI mismatch is evidenced. The other agent is cited because the risk depends on their combined handling of the same documents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through transformers' networked features, retention or residency obligations may be implicated.",
+        "IF the operator routes sensitive PDFs into external APIs, compliance controls must be reviewed."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Disable external API calls for sensitive documents.",
+        "Document retention settings for both tools.",
+        "Keep an audit log of document transfers.",
+        "requires-engineering: add policy enforcement for data-class routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:290eb6fb9f5880df649ecc863938641b3764daee0bbed762439f5f7992085aea",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
