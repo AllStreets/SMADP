@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "transformers",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-27_transformers__unstructured_c7e0ef",
+  "generated_at": "2026-06-27T00:20:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and overlapping write/network capabilities create default risks of prompt injection, leakage, and cascading errors between transformers and unstructured.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystems, and both process document-like inputs. That creates a plausible shared-file or copy-paste bridge where one agent\u2019s output can be treated as input by the other. transformers also runs browsers and broad egress, increasing exposure if untrusted content is parsed as instructions; unstructured\u2019s partitioned functions reduce but do not eliminate the pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or exchanged files, prompt injection becomes reachable.",
+        "IF either agent parses document text as instructions, attacker-controlled content can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Separate input/output directories per agent.",
+        "Strip instructions from untrusted documents before handoff.",
+        "Require a human review step before forwarding outputs.",
+        "Disable shared clipboard or shared mount points.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch document/text/image data and both can read filesystems, so a shared workspace can expose sensitive files to either side. transformers has broad network egress, while unstructured has allowlisted egress; if sensitive documents enter the shared path, either agent may transmit them outward through its configured APIs or processing pipeline.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are placed in a shared directory, both agents can access them.",
+        "IF transformers sends processed content to external endpoints, leakage can occur beyond the local workspace."
+      ],
+      "mitigations": [
+        "Use per-agent encrypted workspaces.",
+        "Block network egress for sensitive runs.",
+        "Redact secrets before ingestion.",
+        "Limit shared files to non-sensitive samples.",
+        "requires-engineering: enforce data-loss-prevention on handoff paths."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, read filesystem, subprocess spawning, and package installation, and both support multiple instances. In a shared directory or shared repo, concurrent writes can corrupt files or overwrite each other without locking. transformers\u2019 broader execution surface makes conflicts more likely; unstructured\u2019s container isolation helps only if the pair is not sharing mutable state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or git checkout, write conflicts are reachable.",
+        "IF either agent installs packages during a shared run, environment drift can break the other agent."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes with a lock file.",
+        "Freeze dependencies before parallel runs.",
+        "Run one agent in a disposable container.",
+        "requires-engineering: add orchestrator-level resource locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Both profiles are document-processing agents, so one agent\u2019s extracted text can naturally become the other\u2019s input. If transformers produces summaries or facts and unstructured consumes them without verification, errors can cascade into later outputs. unstructured\u2019s partition functions suggest some internal structure, but there is no documented cross-agent validation step, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF transformers output is forwarded into unstructured without a validation step, errors can propagate.",
+        "IF either agent is used to generate facts for downstream automation, mistaken extraction can cascade."
+      ],
+      "mitigations": [
+        "Insert a verification step between agents.",
+        "Compare outputs against source documents.",
+        "Require citations for extracted claims.",
+        "Use schema validation on handoff payloads.",
+        "requires-engineering: add confidence thresholds before downstream action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source document-processing tools with no declared secrets, OAuth scopes, or special certifications, so there is no direct residency or regulated-data mismatch evidenced here. The main compliance concern is operational: if the operator routes regulated documents through transformers\u2019 broad egress or unstructured\u2019s external docs/privacy endpoints, policy gaps could arise, but that is not documented as default behavior.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through external network paths, compliance review is required.",
+        "IF the deployment adds residency or retention constraints, the pair must be configured to match them."
+      ],
+      "mitigations": [
+        "Keep regulated data offline.",
+        "Review retention settings before ingestion.",
+        "Avoid sending documents to external APIs.",
+        "Document the data flow for audits.",
+        "requires-engineering: add residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:2162a725617a6729a53c554d7e3850994b9c486d3ab649f41b28d36003606671",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
