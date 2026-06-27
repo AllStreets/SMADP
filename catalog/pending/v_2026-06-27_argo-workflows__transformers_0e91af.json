@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-27_argo-workflows__transformers_0e91af",
+  "generated_at": "2026-06-27T21:17:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of data leakage and cascading errors: transformers can read/write broad local files while argo-workflows can move artifacts over APIs, creating unsafe default pairwise pipelines.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A can expose artifacts through REST/gRPC and B can read files and parse text, images, and scripts. That creates a plausible default path where B ingests A-produced content as instructions or data. No shared channel is explicitly documented, so this is inferred from the profiles and uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF A writes attacker-controlled content into a shared artifact path that B later reads",
+        "IF B treats file contents as trusted instructions or prompts"
+      ],
+      "mitigations": [
+        "Add a strict content-type allowlist for files passed from A to B",
+        "Insert a manual review step before B consumes A outputs",
+        "Store A outputs in a quarantine directory with read-only access",
+        "requires-engineering: add provenance tags to every artifact",
+        "requires-engineering: isolate the two agents into separate workspaces"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches artifacts and parameters and has allowlisted network egress; B has broad network egress plus filesystem read/write. If they share a workspace, B can read A outputs and transmit them onward. The profiles do not prove a shared workspace, so I keep this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF A and B share any filesystem or mounted workspace",
+        "IF A outputs contain sensitive artifacts or parameters",
+        "IF B forwards those files or derived text to a remote endpoint"
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories or volumes",
+        "Disable B network egress for runs that touch A outputs",
+        "Redact sensitive parameters before A emits artifacts",
+        "requires-engineering: enforce per-agent access controls on shared storage",
+        "requires-engineering: add DLP scanning before any upload"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A can call APIs and B can execute shell, install packages, spawn subprocesses, and write the filesystem. If they operate on the same mutable workspace, concurrent writes or API-driven side effects can collide and corrupt state. Because the profiles do not show locking or isolation, uncertainty escalates to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or repository",
+        "IF A's API actions and B's shell actions target the same mutable resource",
+        "IF no external lock or transaction guard is present"
+      ],
+      "mitigations": [
+        "Run each agent in a separate workspace",
+        "Serialize access with a simple lock file",
+        "Make B operate read-only when A is active",
+        "requires-engineering: add optimistic concurrency checks",
+        "requires-engineering: route writes through a single orchestrator"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A produces workflow artifacts and B can execute shell and write files, so B may treat A output as authoritative and act on it without verification. That is a classic pipeline cascade: one bad artifact from A can trigger downstream actions by B. The profiles do not document a verification gate, so the safer high severity applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A-generated artifacts or text without validation",
+        "IF B performs file writes or shell actions based on A output",
+        "IF A output contains an error, malicious instruction, or malformed schema"
+      ],
+      "mitigations": [
+        "Add schema validation before B consumes A output",
+        "Require human approval for any B action derived from A",
+        "Log and diff A outputs before execution",
+        "requires-engineering: add checksum-based handoff validation",
+        "requires-engineering: separate generation from execution stages"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and docs-only, with no explicit residency, certification, or retention mismatch in the profiles. I therefore see only a limited compliance gap: B handles richer data classes than A, but the pairwise evidence does not show regulated data or a jurisdiction conflict. One citation per agent is sufficient because the issue is profile-level, not interaction-specific.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is routed through B",
+        "IF the deployment imposes retention or residency rules not met by the host environment"
+      ],
+      "mitigations": [
+        "Classify data before sending it to B",
+        "Avoid regulated data in this pair unless controls are documented",
+        "Review retention settings on the host platform",
+        "requires-engineering: document residency and retention guarantees",
+        "requires-engineering: add policy enforcement for sensitive datasets"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
