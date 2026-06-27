@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "plano"
+  ],
+  "verdict_id": "v_2026-06-27_airflow__plano_4a5585",
+  "generated_at": "2026-06-27T02:28:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.35,
+  "headline": "Highest risk is medium data leakage from shared file/API surfaces; prompt injection and capability conflict are limited by the documented profiles.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Airflow can call APIs and process DAG/task inputs, while Plano exposes a config file and OpenAI-compatible chat endpoint. No shared channel is documented, so direct injection is not proven; however, if Airflow outputs are manually or file-bridged into Plano prompts, prompt content could steer downstream behavior. Uncertainty keeps this above none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Airflow task output is copied into Plano prompts or config without sanitization, injection becomes plausible.",
+        "IF both agents are connected through a shared file or message queue, attacker-controlled text can cross the boundary."
+      ],
+      "mitigations": [
+        "Use a strict handoff template for any copied text.",
+        "Strip instructions from Airflow outputs before reuse.",
+        "Disable ad hoc copy-paste between agents.",
+        "Add a provenance tag to every transferred artifact.",
+        "requires-engineering: enforce content filtering at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow has broad network egress, and Plano sends requests to an OpenAI-compatible chat endpoint while touching logs, traces, and metrics. The profiles do not show a shared workspace or PHI, but a default deployment can still leak operational data if Airflow outputs or Plano telemetry include sensitive content. This is more than low because the egress path is explicit on both sides.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Airflow tasks emit secrets or customer data into logs or API payloads, that data can leave the boundary.",
+        "IF Plano forwards logs, traces, or metrics containing user content to its chat backend, leakage occurs."
+      ],
+      "mitigations": [
+        "Review Airflow task logs for secrets before execution.",
+        "Redact sensitive fields in Plano telemetry.",
+        "Restrict outbound destinations with allowlists.",
+        "Rotate any credentials used in shared workflows.",
+        "requires-engineering: add DLP controls on both egress paths."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Airflow is a data orchestrator with broad network egress, while Plano is an out-of-process AI gateway and does not support multiple instances. The profiles do not show overlapping filesystem write or git/database mutation, so direct write conflict is not established. The main risk is coordination friction if both are pointed at the same mutable resource, which is an unusual setup.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write to the same external resource, race conditions can appear.",
+        "IF an operator runs multiple Plano instances despite the documented single-instance constraint, contention increases."
+      ],
+      "mitigations": [
+        "Assign separate output directories or buckets.",
+        "Serialize writes through one orchestrator.",
+        "Avoid running duplicate Plano instances.",
+        "Document ownership for each mutable resource.",
+        "requires-engineering: add locking around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Airflow can generate task outputs and Plano can route or relay LLM traffic, so an Airflow-produced artifact could become Plano input without verification. The profiles do not prove automatic trust, but the pair creates a plausible default pipeline where one agent\u2019s output is treated as authoritative by the other. That supports medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Plano consumes Airflow-generated text as a prompt or policy input, errors can cascade.",
+        "IF Airflow emits unverified facts that Plano forwards to users or downstream systems, the mistake propagates."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require schema validation on transferred outputs.",
+        "Mark Airflow outputs as untrusted by default.",
+        "Log source provenance on every handoff.",
+        "requires-engineering: add automated verification before Plano acts on Airflow output."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Airflow\u2019s profile shows no touched data classes, while Plano explicitly touches logs, traces, and metrics. No residency or certification mismatch is documented, so a compliance breach is not established. The only concrete issue is that operational telemetry may be handled differently across the pair, which is a documented-gap style low risk rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Plano logs or traces, retention and residency controls must be checked.",
+        "IF Airflow pipelines carry jurisdiction-bound data into Plano telemetry, policy mismatch can occur."
+      ],
+      "mitigations": [
+        "Classify data before sending it to either agent.",
+        "Disable verbose logging for regulated workflows.",
+        "Review retention settings in Plano config.",
+        "Keep jurisdiction-bound data out of shared telemetry.",
+        "requires-engineering: align retention and residency policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
