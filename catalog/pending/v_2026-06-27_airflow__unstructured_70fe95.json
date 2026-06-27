@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-27_airflow__unstructured_70fe95",
+  "generated_at": "2026-06-27T01:44:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "Highest risk is capability conflict: Airflow can write broadly while Unstructured writes files and spawns subprocesses; prompt-injection and leakage are lower but nonzero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Airflow has no browser and no explicit shared channel, but Unstructured reads documents and can write files, so a manual or file-based bridge is plausible. The pair lacks documented provenance controls, so injected content in documents could influence downstream processing, though the pathway is not default or direct.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Airflow ingests document text produced by Unstructured without provenance filtering, prompt-like content can propagate.",
+        "IF operators copy Unstructured outputs into Airflow task definitions or configs, instruction hijacking becomes possible."
+      ],
+      "mitigations": [
+        "Separate input and output directories for the two agents.",
+        "Add a manual review step before Airflow consumes Unstructured outputs.",
+        "Strip instructions from extracted text before downstream use.",
+        "Use file naming conventions that distinguish data from prompts.",
+        "requires-engineering: add provenance tags to all handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow has broad network egress and Unstructured can read files and write files, so a shared workspace can expose documents to outbound transfer. No sensitive data class is declared for Airflow, but Unstructured touches documents/images/text, making leakage plausible in default deployments if both share files or credentials.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace containing sensitive documents, Unstructured can read them and Airflow can move them onward over the network.",
+        "IF Airflow tasks are configured to transmit file contents, document leakage becomes externally visible."
+      ],
+      "mitigations": [
+        "Keep Airflow and Unstructured on separate volumes.",
+        "Restrict Airflow egress to required destinations only.",
+        "Store sensitive documents outside any shared path.",
+        "Review task logs for accidental content capture.",
+        "requires-engineering: enforce per-agent access controls on the workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Airflow is an automation orchestrator with broad network egress, while Unstructured supports multiple instances and has write_filesystem, spawn_subprocesses, and install_packages. If they share a mutable directory or state, concurrent writes and subprocess side effects can corrupt outputs or overwrite artifacts; the profiles do not show locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or partial writes can occur.",
+        "IF Airflow schedules parallel tasks that invoke Unstructured against shared state, race conditions can corrupt artifacts."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Disable parallel writes to shared paths.",
+        "Serialize jobs that touch the same files.",
+        "Check for lock files before writes.",
+        "requires-engineering: add transactional or locked state management."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Airflow commonly orchestrates downstream actions, and Unstructured produces parsed document text that Airflow could treat as authoritative input. Because no verification layer is documented between them, errors or hallucinated structure from Unstructured can cascade into Airflow-managed workflows, though the pair does not itself prove irreversible action-taking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Airflow uses Unstructured output as a source of truth, parsing errors can propagate into later tasks.",
+        "IF downstream Airflow tasks trigger notifications or ETL based on extracted fields, bad extraction can affect multiple work products."
+      ],
+      "mitigations": [
+        "Validate extracted fields against schema before use.",
+        "Add a human review gate for high-impact documents.",
+        "Compare outputs from two parsing runs on sample files.",
+        "Log confidence or extraction quality metrics.",
+        "requires-engineering: add automated reconciliation against source documents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Airflow exposes broad network egress and Unstructured processes documents, but neither profile declares regulated data classes, residency constraints, or certifications. The only concrete compliance concern is a possible policy mismatch if documents contain regulated content; that is not evidenced here, so the risk stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through Unstructured and then routed by Airflow to external services, policy review is required.",
+        "IF the deployment has residency or retention rules not reflected in these profiles, a compliance gap can emerge."
+      ],
+      "mitigations": [
+        "Classify document types before processing.",
+        "Block regulated documents from external egress paths.",
+        "Review retention settings for both systems.",
+        "Document the data flow for auditors.",
+        "requires-engineering: implement residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
