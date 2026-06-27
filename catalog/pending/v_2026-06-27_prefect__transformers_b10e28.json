@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "prefect",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-27_prefect__transformers_b10e28",
+  "generated_at": "2026-06-27T03:24:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High risk of cascading errors and capability conflict: Prefect can orchestrate workflows while Transformers can execute shell, write files, and run browsers, creating unsafe default handoff paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented, so prompt injection is not default. However, Prefect can move workflow metadata and Transformers can read/write files and stdin/stdout, so a manual or file-based bridge could carry attacker-controlled text. The pathway is plausible but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Prefect outputs text into a shared file that Transformers later parses as instructions, injection becomes possible.",
+        "IF an operator copies Prefect-generated content into Transformers prompts, the bridge exists."
+      ],
+      "mitigations": [
+        "Keep agent outputs in separate directories.",
+        "Require explicit human review before feeding Prefect output into Transformers.",
+        "Strip instruction-like text from handoff files.",
+        "Use a fixed schema for inter-agent messages.",
+        "requires-engineering: add provenance tags to all handoff artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Prefect has broad network egress and touches workflow metadata; Transformers can read files and also has broad egress. If they share a workspace, file contents can flow from Prefect-managed artifacts into Transformers and then out over network paths. The pairwise leakage path is plausible in default deployments, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents mount the same workspace, file contents can be exposed across the pair.",
+        "IF Transformers processes files containing sensitive workflow metadata, that data can leave via its network egress."
+      ],
+      "mitigations": [
+        "Use separate workspaces per agent.",
+        "Disable network egress for one side during sensitive runs.",
+        "Store only redacted workflow metadata in shared files.",
+        "Review file handoffs before execution.",
+        "requires-engineering: enforce per-agent sandboxing and egress policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Prefect can orchestrate workflows and Transformers can write files, execute shell, spawn subprocesses, and install packages. If both operate on the same directory or environment, concurrent writes and package changes can corrupt state or overwrite each other's outputs. The overlap is dangerous by default unless isolated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem path, file clobbering can occur.",
+        "IF Prefect schedules concurrent runs against the same mutable workspace, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Serialize runs touching shared resources.",
+        "Lock mutable files before writes.",
+        "Pin package environments per run.",
+        "requires-engineering: add transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Prefect can generate workflow metadata that Transformers may consume, and Transformers can act on files or shell commands without a verification layer. That makes A-to-B handoff a plausible default cascade where an upstream mistake becomes a downstream action or rendered output. The blast radius can extend across multiple work products.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF Transformers treats Prefect output as authoritative input, upstream errors propagate.",
+        "IF Prefect emits malformed metadata that Transformers converts into commands or documents, the cascade occurs."
+      ],
+      "mitigations": [
+        "Insert a validation step between agents.",
+        "Require schema checks on all Prefect outputs.",
+        "Have Transformers cite and verify source fields before acting.",
+        "Log and diff intermediate artifacts.",
+        "requires-engineering: add policy gates before any action-taking step."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch workflow metadata or general text/image/audio/video data, with no PHI, EU PII, or residency mismatch documented. Prefect's broad egress and Transformers' file/network access create some compliance surface, but the rubric's stronger triggers are absent. The other agent is cited because the risk is pairwise data flow, not a single-agent residency issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into shared workflows, retention and residency controls must be checked.",
+        "IF either agent is configured to log sensitive inputs, compliance gaps can emerge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Review logging settings before execution.",
+        "Separate retention policies by workspace.",
+        "Document data flow boundaries.",
+        "requires-engineering: implement residency-aware routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:308ff5bcba34c67a571c898b28eb8232a676bcd976ace74569cfbe109731a429",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
