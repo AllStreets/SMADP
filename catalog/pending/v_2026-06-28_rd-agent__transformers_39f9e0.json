@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "rd-agent",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-28_rd-agent__transformers_39f9e0",
+  "generated_at": "2026-06-28T15:32:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High risk of data leakage and capability conflict: RD-Agent\u2019s broad egress and browser use paired with transformers\u2019 filesystem writes and subprocess execution can expose research data and create unsafe shared-workspace interactions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "RD-Agent can run browsers and has broad network egress, so it may ingest untrusted web content. transformers can read/write files and run subprocesses, so if RD-Agent\u2019s outputs are passed into its pipeline or shared files, prompt-like content could be treated as instructions. The pair lacks documented provenance controls, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF RD-Agent browser output is copied into a shared file that transformers parses as instructions",
+        "IF transformers consumes RD-Agent-generated text without provenance filtering"
+      ],
+      "mitigations": [
+        "Disable automatic handoff of browser-scraped text into transformers prompts",
+        "Add a simple prefix/suffix wrapper marking RD-Agent output as untrusted",
+        "Review shared files before transformers reads them",
+        "Use separate directories for each agent",
+        "requires-engineering: add provenance tags to all inter-agent messages"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "RD-Agent touches financial reports, competition datasets, execution traces, and logs, while transformers can read and write the filesystem and send data to the Hugging Face Hub or serve endpoints. A shared workspace would let sensitive research data flow from RD-Agent into transformers outputs or uploads. No isolation or DLP is documented, so the default pair is risky.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or mounted directory",
+        "IF RD-Agent stores logs or datasets in files transformers can read",
+        "IF transformers uploads or serves content derived from shared files"
+      ],
+      "mitigations": [
+        "Place each agent in a separate directory",
+        "Restrict transformers to a read-only mount of non-sensitive inputs",
+        "Remove secrets and datasets from shared paths before runs",
+        "Disable outbound network for transformers during sensitive jobs",
+        "requires-engineering: add content filtering before any upload"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "RD-Agent supports multiple instances and writes logs, while transformers can execute shells, install packages, spawn subprocesses, read and write the filesystem, and use broad egress. In a shared directory, both agents can mutate files and environment state without locking, creating direct overwrite and race conditions. The overlap is dangerous by default and can corrupt work or state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory",
+        "IF either agent modifies shared model, log, or script files without locks"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Run only one writer at a time",
+        "Make shared inputs read-only",
+        "Snapshot files before each agent run",
+        "requires-engineering: add file locking or transactional writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "RD-Agent produces research outputs and logs that transformers could ingest for downstream processing. Because transformers can execute shell commands and write files, any unverified RD-Agent output may be turned into actions or generated artifacts without a verification step. The pair does not document a guardrail that would block this cascade, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF transformers uses RD-Agent outputs as authoritative input",
+        "IF generated text from RD-Agent is converted into scripts, configs, or commands"
+      ],
+      "mitigations": [
+        "Insert a human review step before execution",
+        "Require schema validation on RD-Agent outputs",
+        "Mark RD-Agent outputs as advisory only",
+        "Disable shell execution for the downstream step",
+        "requires-engineering: add automated verification against source data"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "RD-Agent explicitly touches financial reports and competition datasets and requests API keys, while transformers can read/write files and send data to external services. If regulated or contractual data is placed into the shared workflow, retention and residency obligations may diverge across the pair. The profiles do not document matching compliance controls, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF financial reports or restricted datasets are processed through both agents",
+        "IF shared outputs are retained or uploaded outside the approved jurisdiction"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared pipeline",
+        "Redact secrets before any transfer",
+        "Disable external uploads for compliance-sensitive runs",
+        "Log data-handling decisions for each run",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:223e7cb9a9424512806123cd15755bc2d6f09fe715ddd681760eef38dfbdb11a",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
