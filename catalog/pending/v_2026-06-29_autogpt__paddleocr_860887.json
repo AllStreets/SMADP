@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-06-29_autogpt__paddleocr_860887",
+  "generated_at": "2026-06-29T12:38:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Medium-risk pair: shared filesystem and file-based outputs create prompt-injection, leakage, and cascading-error pathways; no direct evidence of stronger controls.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can execute shell and access the filesystem, while PaddleOCR processes documents/images and exposes APIs. If AutoGPT ingests PaddleOCR outputs from a shared workspace, file content can be treated as instructions. No isolation or provenance controls are documented, so the interaction is plausible in default use and uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT reads PaddleOCR-generated files from a shared directory",
+        "IF PaddleOCR output is copied into AutoGPT prompts without provenance tagging"
+      ],
+      "mitigations": [
+        "Separate workspaces for each agent",
+        "Disable automatic ingestion of OCR outputs into prompts",
+        "Add a provenance header to every transferred file",
+        "Review any file before AutoGPT processes it",
+        "requires-engineering: add content-sanitization and allowlist parsing"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGPT has filesystem access and allowlisted network egress; PaddleOCR handles documents and images. A shared workspace can expose document contents to AutoGPT, which may then transmit context to external services. The profiles do not show explicit data-class restrictions or isolation, so leakage is plausible and not blocked by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF documents or images processed by PaddleOCR are stored where AutoGPT can read them",
+        "IF AutoGPT forwards retrieved file contents through its allowlisted egress"
+      ],
+      "mitigations": [
+        "Use separate storage locations",
+        "Restrict AutoGPT read access to non-sensitive folders",
+        "Redact documents before OCR handoff",
+        "Audit outbound requests for file-content payloads",
+        "requires-engineering: enforce per-agent data-loss-prevention rules"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can write to the filesystem indirectly through their documented I/O surfaces and AutoGPT can spawn subprocesses. If they share a mutable workspace, concurrent edits can collide even though AutoGPT does not support multiple instances. No locking or coordination primitive is documented, so conflict risk exists in default pair deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or artifact set",
+        "IF the orchestrator does not serialize access with locks"
+      ],
+      "mitigations": [
+        "Assign distinct output directories",
+        "Serialize writes with a lock file",
+        "Run only one writer at a time",
+        "Check for file existence before overwrite",
+        "requires-engineering: add transactional workspace coordination"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "PaddleOCR produces extracted text from documents, and AutoGPT can act on files and subprocess outputs. If AutoGPT treats OCR output as authoritative, errors or hallucinations can propagate into downstream actions. No verification step or human review is documented, so the cascade is plausible and not safely mitigated by default.",
+      "citations": [
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT consumes PaddleOCR text without validation",
+        "IF downstream actions are triggered from OCR-derived facts"
+      ],
+      "mitigations": [
+        "Require human review before action",
+        "Cross-check OCR output against source documents",
+        "Flag low-confidence OCR spans",
+        "Keep AutoGPT in read-only analysis mode",
+        "requires-engineering: add verification gates before any side effect"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show no explicit regulated-data handling, residency, or retention commitments. The only concrete compliance concern is that PaddleOCR touches documents/images while AutoGPT can access files and egress to allowlisted network destinations. With no documented residency mismatch or PHI handling, the risk is limited and mostly configuration-dependent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through either agent",
+        "IF the deployment requires residency or retention guarantees not documented here"
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workflow",
+        "Document retention and deletion expectations",
+        "Keep processing in a single jurisdiction",
+        "Review vendor terms before deployment",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
