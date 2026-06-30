@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "comfyui",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-06-30_comfyui__unstructured_6f2772",
+  "generated_at": "2026-06-30T05:29:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.425,
+  "headline": "Medium risk: shared file-based document flow can leak content and create output-cascade errors; prompt injection is limited by ComfyUI's offline design.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "ComfyUI has no clipboard, stdin/stdout, or MCP bridge, and its core is offline; unstructured reads files and processes documents. A direct injection path is therefore not default, but if operators manually pass ComfyUI outputs into unstructured as trusted text, prompt-like content could influence downstream parsing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF operators manually copy ComfyUI-generated text into unstructured parsing inputs, injection becomes plausible.",
+        "IF a shared filesystem is used as a handoff channel, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Keep the pair disconnected except for explicit, reviewed file handoffs.",
+        "Use separate directories for generated media and parsed documents.",
+        "Strip instructions from any text extracted from images before passing to unstructured.",
+        "Add a human review step before any downstream action.",
+        "requires-engineering: add provenance tags to handoff files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ComfyUI touches images, videos, audio, models, and workflows, while unstructured reads documents and images from files. If they share a workspace, sensitive content can move from one tool to the other by default. ComfyUI is offline, but unstructured can read local files, so leakage risk is from shared storage rather than network exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory tree, file contents can cross between them.",
+        "IF sensitive documents are placed in the shared workspace, unstructured can ingest them."
+      ],
+      "mitigations": [
+        "Use separate workspaces for media generation and document parsing.",
+        "Restrict unstructured to a narrow input directory.",
+        "Remove secrets and personal data from shared folders before processing.",
+        "Mount the ComfyUI model directory read-only to the document pipeline.",
+        "requires-engineering: enforce per-tool filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ComfyUI cannot write the filesystem or modify git state, but unstructured can read and write files and spawn subprocesses. The pair still overlaps on local file resources if orchestrated in one workspace, creating contention and accidental overwrite risk. Because ComfyUI lacks write privileges, this is not a high-severity write-write conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to use the same output directory, file collisions can occur.",
+        "IF unstructured writes derived artifacts back into a ComfyUI-managed tree, overwrites are possible."
+      ],
+      "mitigations": [
+        "Assign distinct output directories per agent.",
+        "Disable write-back from unstructured unless needed.",
+        "Run both under separate OS users.",
+        "Check for existing filenames before writes.",
+        "requires-engineering: add locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ComfyUI can generate workflows and media that unstructured may ingest as documents or images. If unstructured treats extracted text or metadata as authoritative, errors can cascade into downstream outputs. The pair lacks an explicit verification layer in the profiles, so the safer assumption is that handoff content may be trusted too much.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ComfyUI outputs are fed into unstructured without validation, extraction errors can propagate.",
+        "IF downstream automation consumes unstructured output as ground truth, mistakes can cascade."
+      ],
+      "mitigations": [
+        "Require a validation step between generation and parsing.",
+        "Compare extracted text against source artifacts for a sample set.",
+        "Flag low-confidence extractions for review.",
+        "Keep downstream actions read-only until reviewed.",
+        "requires-engineering: add schema checks for handoff outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and docs-only, with no explicit residency, certification, or retention mismatch documented. ComfyUI is offline and unstructured exposes privacy-policy/docs endpoints, but the profiles do not show a concrete compliance conflict. The other agent is not cited separately because no mismatch is evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF a deployment routes regulated data into unstructured's hosted services, compliance review is required.",
+        "IF retention or residency settings differ between the two deployments, a policy mismatch may arise."
+      ],
+      "mitigations": [
+        "Keep regulated data offline and local.",
+        "Review unstructured privacy and retention settings before use.",
+        "Avoid sending sensitive documents to hosted endpoints.",
+        "Document the data flow for audits.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:66a79dea79050734c48cf0b721cbf43d2f5fd338ffc0ade48ff148dd69ef28e3",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
