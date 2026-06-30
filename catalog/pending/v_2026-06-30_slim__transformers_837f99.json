@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "slim",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-30_slim__transformers_837f99",
+  "generated_at": "2026-06-30T09:55:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High risk of data leakage and cascading errors: slim can expose sensitive container artifacts while transformers can ingest and act on them without verification.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "slim reads and writes filesystem artifacts and emits stdin/stdout, while transformers can read files and process model inputs. A shared workspace or copied outputs could let attacker-controlled content in slim\u2019s artifacts influence transformers. No direct shared channel is documented, so this is inferred and kept at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF slim outputs attacker-controlled text into a shared file that transformers later reads",
+        "IF the operator copies slim stdout into a transformers prompt or pipeline input"
+      ],
+      "mitigations": [
+        "Separate workspaces for the two agents",
+        "Treat slim outputs as untrusted data",
+        "Add a manual review step before transformers consumes slim artifacts",
+        "Use file allowlists for inputs to transformers",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "slim touches certificate private keys, environment variables, and registry credentials, and has broad network egress. transformers also has broad egress and reads/writes files. If they share a workspace or credentials, sensitive container data can be exposed or uploaded without strong isolation. The pairwise path is plausible from profiles alone, so severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF slim writes certificate files, env vars, or registry credentials into a directory transformers can read",
+        "IF transformers sends shared files or prompts containing slim artifacts to a remote backend"
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories",
+        "Rotate any registry credentials used by slim",
+        "Disable network egress for transformers during shared-file processing",
+        "Review and delete exported artifacts after each run",
+        "requires-engineering: enforce per-agent filesystem isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can read and write the filesystem and spawn subprocesses, and slim also executes shell commands. Without locking or isolated directories, concurrent writes to the same workspace can overwrite artifacts or corrupt outputs. The profiles show overlapping mutable access, so conflict risk is high even though git state is not involved.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory",
+        "IF the operator runs them concurrently without external locking"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Run only one agent at a time on shared artifacts",
+        "Use OS-level file locks",
+        "Make outputs append-only where possible",
+        "requires-engineering: add orchestrator-managed locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "slim produces container and vulnerability artifacts, and transformers can consume files and generate downstream text or pipeline outputs. If transformers treats slim\u2019s output as authoritative, errors can cascade into incorrect reports or actions. There is no documented verification boundary, but no direct action authority is shown, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF transformers consumes slim-generated reports without validation",
+        "IF downstream automation trusts transformers output derived from slim artifacts"
+      ],
+      "mitigations": [
+        "Require human review of slim-derived outputs",
+        "Add schema validation before transformers ingests reports",
+        "Cross-check critical findings against source artifacts",
+        "Log provenance for each transformed file",
+        "requires-engineering: add verification gates in the pipeline"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly handles certificate private keys, registry credentials, environment variables, and vulnerability data, while transformers handles general multimodal content and broad file I/O. If regulated secrets or sensitive infrastructure data flow into transformers, retention and residency controls may diverge. The profiles do not show certifications or residency guarantees, so the safest supported rating is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or vulnerability data from slim are stored in transformers-managed files",
+        "IF the deployment requires retention or residency controls not enforced by both agents"
+      ],
+      "mitigations": [
+        "Classify and segregate sensitive inputs",
+        "Delete temporary files after processing",
+        "Confirm retention settings for both agents",
+        "Avoid placing secrets in transformer inputs",
+        "requires-engineering: document and enforce data-handling policy"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:60d4985eae117b8b5ca24e75a44577239cd849ba476d10078590aa66e82765f8",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
