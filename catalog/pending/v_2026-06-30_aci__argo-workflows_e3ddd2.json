@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aci",
+    "argo-workflows"
+  ],
+  "verdict_id": "v_2026-06-30_aci__argo-workflows_e3ddd2",
+  "generated_at": "2026-06-30T09:44:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High risk of data leakage and cascading errors: aci can egress CRM/email data while argo-workflows can act on unverified outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "aci can use direct function calls or MCP, and argo-workflows consumes REST/GRPC inputs; if aci\u2019s outputs are passed into workflow parameters or files, prompt-like content could steer downstream behavior. No shared channel is documented, so this is inferred rather than proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF aci output is copied into an Argo workflow parameter or artifact without sanitization",
+        "IF a shared MCP or filesystem bridge is introduced between the agents"
+      ],
+      "mitigations": [
+        "Add a strict allowlist for fields passed from aci to argo-workflows",
+        "Strip instructions and markup from aci outputs before workflow ingestion",
+        "Require human review for any workflow step derived from free-text output",
+        "requires-engineering: add provenance tags to all inter-agent payloads"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "aci touches CRM, email, calendar, and support data and has broad network egress; argo-workflows has allowlisted egress and handles artifacts/parameters. If aci forwards sensitive records into workflow inputs, those data can leave the original boundary and be retained in artifacts. The pairwise leakage path is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF aci sends CRM, email, or support data into an Argo artifact or parameter",
+        "IF the allowlist permits the destination used by argo-workflows"
+      ],
+      "mitigations": [
+        "Minimize fields exported from aci to only non-sensitive identifiers",
+        "Disable artifact capture for sensitive workflow steps",
+        "Review Argo egress allowlist before enabling the pair",
+        "Set short retention on workflow artifacts",
+        "requires-engineering: add DLP filtering on inter-agent payloads"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "aci supports multiple instances and broad API access, while argo-workflows orchestrates REST/GRPC-driven jobs. If both are pointed at the same mutable external systems, they can race on shared records or workflow state. No locking or coordination primitive is documented, so conflict risk is real but not proven high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same CRM, calendar, or workflow-backed resource",
+        "IF no external lock or idempotency key is enforced"
+      ],
+      "mitigations": [
+        "Assign one agent as the sole writer for each resource",
+        "Use idempotency keys on all writes",
+        "Serialize overlapping jobs during rollout",
+        "Check for existing records before updates",
+        "requires-engineering: add distributed locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "aci can generate CRM/email/calendar actions and argo-workflows can execute parameterized jobs. If argo treats aci\u2019s output as authoritative, a mistaken or manipulated recommendation can cascade into automated downstream actions. The profiles do not show a verification gate, so the unsafe default is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF argo-workflows consumes aci output as a job parameter or decision input",
+        "IF no validation step checks aci output before execution"
+      ],
+      "mitigations": [
+        "Insert a validation step before any workflow action",
+        "Require schema validation on aci outputs",
+        "Limit argo steps to read-only dry runs initially",
+        "Add human approval for destructive jobs",
+        "requires-engineering: implement confidence thresholds and rollback hooks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "aci handles email, CRM, and support data, which may include regulated personal data, while argo-workflows processes artifacts and parameters with allowlisted egress. The profiles do not document residency, retention, or DPA alignment, so a compliance mismatch is plausible but not specific enough for high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is routed from aci into argo-workflows artifacts",
+        "IF retention or residency requirements differ between the two systems"
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents",
+        "Block regulated fields from workflow artifacts",
+        "Document retention settings for both systems",
+        "Confirm residency and DPA coverage before rollout",
+        "requires-engineering: add compliance policy enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8f2cd1b34c34e228b806e03b3c9ac9eee45f7c46059b1c090611719e2251660f",
+    "profile_b_hash": "sha256:06840430357a016410eec86be493bcc8802f9dc9fe1e5d2b41ecef34fc604407",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
