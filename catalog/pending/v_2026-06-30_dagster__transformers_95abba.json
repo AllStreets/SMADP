@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-06-30_dagster__transformers_95abba",
+  "generated_at": "2026-06-30T01:37:17Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.35,
+  "headline": "High: transformers can write and read shared files while dagster has no filesystem or network actions, so the main risks are leakage and workflow corruption rather than direct injection.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Dagster has no clipboard, filesystem, or MCP surfaces, so it cannot ingest Transformers output by default. Transformers can read/write files and use stdin/stdout, so a manual file bridge could carry malicious instructions, but that requires unusual setup and the blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF an operator manually copies Transformers output into a file Dagster later parses as instructions, injection becomes plausible.",
+        "IF both agents are connected through a shared directory or pipe, content from Transformers can influence Dagster."
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces.",
+        "Disable any file-based prompt ingestion in Dagster.",
+        "Review any copied text before feeding it into Dagster.",
+        "Use a strict schema for any handoff files.",
+        "requires-engineering: add provenance tagging to all inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dagster touches no data classes and has no filesystem read/write, but Transformers can read files and has broad network egress. If both share a workspace, Transformers can ingest local files and transmit their contents to external services, creating a realistic leakage path in default-style deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Dagster and Transformers share a writable workspace containing sensitive files, Transformers can read them.",
+        "IF Transformers is configured to call external APIs while processing shared files, those contents can leave the environment."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Remove sensitive files from any shared workspace.",
+        "Block outbound network for Transformers during shared-file processing.",
+        "Use per-agent service accounts and mounts.",
+        "requires-engineering: add DLP or content filtering before any upload."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Dagster cannot write the filesystem or modify git state, so it cannot conflict on mutable local resources. Transformers can write files and spawn subprocesses, but without a writable counterpart from Dagster the overlap is mostly one-sided and the conflict surface is small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF an external orchestrator gives Dagster write access not shown in its profile, file conflicts could emerge.",
+        "IF both agents are pointed at the same output directory by a wrapper, Transformers may overwrite Dagster-managed artifacts."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Run only one writer per directory.",
+        "Lock shared files before writes.",
+        "Avoid sharing git worktrees.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dagster is a data orchestrator and Transformers can emit model outputs from files or stdin/stdout. If Dagster consumes those outputs as authoritative pipeline inputs, errors can cascade into downstream jobs. The pair lacks built-in verification evidence, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF Dagster uses Transformers output as a pipeline parameter without validation, bad outputs can propagate.",
+        "IF downstream jobs act on those parameters automatically, the error becomes operational."
+      ],
+      "mitigations": [
+        "Validate all handoff fields against a schema.",
+        "Add a human review step for critical outputs.",
+        "Reject outputs missing provenance metadata.",
+        "Log and diff model outputs before execution.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No data residency, certification, or retention mismatch is documented in either profile. Dagster touches no data classes, while Transformers touches multimodal data and can call external APIs, but the profiles do not show a specific regulated-data flow. The other agent is not cited beyond this because no compliance mismatch is evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through Transformers to an external API, compliance review is required.",
+        "IF Dagster is configured to store regulated metadata in shared logs, retention policy review is required."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data to external APIs.",
+        "Minimize logging of shared artifacts.",
+        "Separate retention policies by agent.",
+        "Document data-class handling for each workflow.",
+        "requires-engineering: add residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
