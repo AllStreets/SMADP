@@ -33,11 +33,18 @@ def _seed_queue(repo: Path, items: list[WorkItem]) -> None:
     append_items(queue, items)
 
 
-def _seed_autopilot_config(repo: Path, *, runs_per_day: int, dollars_per_day: float) -> None:
+def _seed_autopilot_config(
+    repo: Path,
+    *,
+    runs_per_day: int,
+    dollars_per_day: float,
+    auto_publish_min: float | None = None,
+) -> None:
     (repo / "config").mkdir(parents=True, exist_ok=True)
-    (repo / "config" / "autopilot.yaml").write_text(
-        f"runs_per_day: {runs_per_day}\ndollars_per_day: {dollars_per_day}\n"
-    )
+    text = f"runs_per_day: {runs_per_day}\ndollars_per_day: {dollars_per_day}\n"
+    if auto_publish_min is not None:
+        text += f"auto_publish:\n  docs_only_min_confidence: {auto_publish_min}\n"
+    (repo / "config" / "autopilot.yaml").write_text(text)
 
 
 def _fake_verdict(slug_a: str, slug_b: str) -> dict:
@@ -99,6 +106,82 @@ def test_tick_drains_and_publishes(tmp_path: Path) -> None:
     # land in catalog/pending/ for operator review (see PolicyPublisher
     # auto_publish config in docs_only_tick.run_docs_only_tick).
     assert list((repo / "catalog" / "pending").glob("*.json"))
+
+
+def _one_pair_queue(repo: Path) -> None:
+    _seed_profiles(repo, ["aider", "cursor"])
+    _seed_queue(
+        repo,
+        [
+            WorkItem(
+                pair=("aider", "cursor"),
+                requested_judge="docs_only",
+                judge_version="v1",
+                priority=0.9,
+                enqueued_at="2026-06-06T00:00:00Z",
+            )
+        ],
+    )
+
+
+def test_tick_auto_publishes_high_confidence(tmp_path: Path, monkeypatch) -> None:
+    """With the lane armed, a verdict at/above threshold is sent through approve()."""
+    repo = tmp_path
+    _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0, auto_publish_min=0.70)
+    _one_pair_queue(repo)
+    verdict = _fake_verdict("aider", "cursor")
+    verdict["confidence"] = 0.72  # >= 0.70 threshold
+    judge = _docs_only_judge_factory([verdict])
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "smadp.autopilot.docs_only_tick.approve",
+        lambda *, key, repo_root: calls.append(key),
+    )
+    summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
+    assert summary.published == 1
+    assert summary.auto_published == 1
+    assert len(calls) == 1  # the strong verdict was routed to the operator-gate bypass
+
+
+def test_tick_gates_low_confidence_when_lane_armed(tmp_path: Path, monkeypatch) -> None:
+    """A verdict below threshold is never sent through approve() — stays in pending/."""
+    repo = tmp_path
+    _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0, auto_publish_min=0.70)
+    _one_pair_queue(repo)
+    verdict = _fake_verdict("aider", "cursor")
+    verdict["confidence"] = 0.50  # below 0.70 threshold
+    judge = _docs_only_judge_factory([verdict])
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "smadp.autopilot.docs_only_tick.approve",
+        lambda *, key, repo_root: calls.append(key),
+    )
+    summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
+    assert summary.published == 1
+    assert summary.auto_published == 0
+    assert calls == []  # gated for human review
+    assert list((repo / "catalog" / "pending").glob("*.json"))
+
+
+def test_tick_lane_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
+    """Without the config block, the lane is off — even a high-confidence verdict gates."""
+    repo = tmp_path
+    _seed_autopilot_config(repo, runs_per_day=10, dollars_per_day=5.0)  # no auto_publish
+    _one_pair_queue(repo)
+    verdict = _fake_verdict("aider", "cursor")
+    verdict["confidence"] = 0.95
+    judge = _docs_only_judge_factory([verdict])
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "smadp.autopilot.docs_only_tick.approve",
+        lambda *, key, repo_root: calls.append(key),
+    )
+    summary = run_docs_only_tick(repo_root=repo, judges={"docs_only": judge}, batch_size=10)
+    assert summary.auto_published == 0
+    assert calls == []
 
 
 def test_tick_respects_budget(tmp_path: Path) -> None:

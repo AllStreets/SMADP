@@ -25,6 +25,11 @@ class AutopilotConfig:
     # S2.3 triage kill switch. When disabled, the pair planner falls back to
     # plain composite-product ordering (no triage re-ranking).
     triage_enabled: bool = True
+    # High-confidence auto-publish lane. docs-only verdicts at/above this
+    # confidence are promoted straight to the public catalog (still signed via the
+    # normal approve path); everything below stays in catalog/pending/ for the
+    # operator gate. 0.0 disables the lane (pure human gate — the prior behaviour).
+    auto_publish_docs_only_min_confidence: float = 0.0
 
 
 def _as_bool(raw_value: object, default: bool) -> bool:
@@ -73,4 +78,7 @@ def load_autopilot_config(path: Path) -> AutopilotConfig:
         ),
         chain_judge_batch_max=int(chain_block.get("judge_batch_max", 10)),
         triage_enabled=_as_bool(triage_block.get("enabled"), True),
+        auto_publish_docs_only_min_confidence=float(
+            (raw.get("auto_publish") or {}).get("docs_only_min_confidence", 0.0)
+        ),
     )

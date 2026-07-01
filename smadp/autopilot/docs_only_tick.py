@@ -23,6 +23,7 @@ from smadp.autopilot.budget import (
     load_budget,
     record_run_actual,
 )
+from smadp.autopilot.approve import ApproveError, approve
 from smadp.autopilot.config import load_autopilot_config
 from smadp.autopilot.judges import Judge
 from smadp.autopilot.pause import is_paused
@@ -37,6 +38,7 @@ class DocsOnlyTickSummary:
     published: int
     failed: int
     reason: str  # "ok" | "paused" | "budget_exhausted" | "no_work"
+    auto_published: int = 0  # of `published`, how many cleared the high-confidence lane
 
 
 def _load_profiles(profiles_dir: Path) -> dict[str, dict[str, Any]]:
@@ -152,6 +154,8 @@ def run_docs_only_tick(
     drained = drain_items(queue_path, limit=effective)
     published = 0
     failed = 0
+    auto_published = 0
+    auto_min = cfg.auto_publish_docs_only_min_confidence
     for work in drained:
         judge = judges.get(work.requested_judge)
         if judge is None:
@@ -173,9 +177,28 @@ def run_docs_only_tick(
             # docs-only enrichments accumulate orphan evidence refs.
             for chunk in getattr(result, "evidence", []) or []:
                 _persist_evidence_chunk(repo_root / "catalog" / "_evidence", chunk)
-            _publish(publisher, str(judge.name), result.verdict)
+            published_path = _publish(publisher, str(judge.name), result.verdict)
             record_run_actual(budget_path, dollars=float(result.cost_usd))
             published += 1
+            # High-confidence auto-publish lane: a strong docs-only verdict is
+            # promoted straight past the operator gate (signed via the normal
+            # approve path) so the public catalog keeps growing unattended. Weaker
+            # verdicts remain in pending/ for human review. Profiles never auto-
+            # promote. Best-effort: a promotion failure leaves it safely in pending.
+            if (
+                auto_min > 0.0
+                and str(judge.name) != "profile_enrich"
+                and float(result.verdict.get("confidence") or 0.0) >= auto_min
+            ):
+                try:
+                    approve(key=published_path.stem, repo_root=repo_root)
+                    auto_published += 1
+                except ApproveError as exc:
+                    log.warning(
+                        "docs_only_tick.auto_publish_failed",
+                        key=published_path.stem,
+                        error=repr(exc),
+                    )
         except Exception as exc:
             failed += 1
             _log_failure(
@@ -187,4 +210,6 @@ def run_docs_only_tick(
             log.warning("docs_only_tick.judge_failed", pair=work.pair, error=repr(exc))
     if published == 0 and failed == 0:
         return DocsOnlyTickSummary(published=0, failed=0, reason="no_work")
-    return DocsOnlyTickSummary(published=published, failed=failed, reason="ok")
+    return DocsOnlyTickSummary(
+        published=published, failed=failed, reason="ok", auto_published=auto_published
+    )
