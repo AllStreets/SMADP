@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "pdf-js"
+  ],
+  "verdict_id": "v_2026-07-01_kestra__pdf-js_56c914",
+  "generated_at": "2026-07-01T02:35:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.47,
+  "headline": "High-risk orchestration-to-PDF workflow can leak data and cascade errors; prompt-injection risk is low because the pair lacks a direct shared channel.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Kestra can read/write files and pass workflow inputs, while pdf.js only processes PDF files in a browser-based worker model. There is no documented direct shared channel or parser bridge between them, so prompt injection is possible mainly through manual file handoff or crafted PDFs, not by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes attacker-controlled text into a PDF that pdf.js later opens as content to be interpreted by a human operator",
+        "IF an operator manually copies pdf.js output back into Kestra workflow definitions without review"
+      ],
+      "mitigations": [
+        "Use separate folders for Kestra inputs and pdf.js test PDFs",
+        "Require human review before copying PDF-derived text into workflows",
+        "Strip active content from PDFs before opening them",
+        "Disable any automation that converts PDF text into executable workflow steps",
+        "requires-engineering: add provenance labels to files passed between the tools"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, and has broad network egress plus file access. pdf.js reads PDF files locally and has no network egress, so the main leakage path is shared files or exported artifacts from Kestra into pdf.js. That exists in default orchestration setups and can expose sensitive document contents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Kestra places sensitive artifacts in a directory that pdf.js can open",
+        "IF PDF contents processed by pdf.js are later written back into Kestra logs or artifacts"
+      ],
+      "mitigations": [
+        "Keep sensitive PDFs out of Kestra-accessible storage",
+        "Mount pdf.js on a read-only, separate workspace",
+        "Redact PDFs before orchestration",
+        "Turn off verbose logging for document-processing steps",
+        "requires-engineering: enforce per-tool data-loss-prevention checks"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents support multiple instances, and Kestra can write the filesystem while pdf.js reads PDF files from disk. Even though pdf.js is mostly read-only, shared workspace use can still create contention over the same files or artifacts, especially when Kestra rewrites inputs while pdf.js is processing them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF Kestra and pdf.js operate on the same directory at the same time",
+        "IF Kestra rewrites a PDF while pdf.js is reading it"
+      ],
+      "mitigations": [
+        "Use separate input and output directories",
+        "Serialize access to shared PDFs",
+        "Write Kestra outputs atomically to temp files first",
+        "Make pdf.js consume immutable copies",
+        "requires-engineering: add file-locking around shared artifacts"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Kestra can generate workflow outputs, logs, and notifications that pdf.js may display or consume as documents, but pdf.js does not independently verify those contents. If operators treat rendered PDF text or extracted text as authoritative, errors from Kestra can cascade into downstream decisions or reports.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-generated text is embedded into PDFs that pdf.js renders without verification",
+        "IF an operator uses pdf.js output as the sole source for a downstream action"
+      ],
+      "mitigations": [
+        "Require source-document cross-checks before acting",
+        "Annotate extracted text with provenance",
+        "Use checksum validation on PDFs before processing",
+        "Limit pdf.js output to preview mode",
+        "requires-engineering: add verification gates between orchestration and document rendering"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra handles logs, database data, cloud storage data, messages, and notifications with broad egress, while pdf.js processes PDF documents locally with no egress. That creates a compliance mismatch risk if regulated data is orchestrated by Kestra and then rendered or stored through pdf.js without aligned retention and residency controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated PDFs are routed through Kestra workflows and retained in shared storage",
+        "IF retention or residency rules differ between Kestra logs/artifacts and pdf.js outputs"
+      ],
+      "mitigations": [
+        "Classify PDFs before orchestration",
+        "Align retention settings across both tools",
+        "Store regulated documents in a dedicated compliant bucket",
+        "Disable unnecessary logging of document contents",
+        "requires-engineering: document residency and retention controls per workflow"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:1e9e0acfec5fb2563830c22f72803a5b63869e22361b17cd8f61df2d27a8ff7d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
