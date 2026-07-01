@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langchain4j",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-07-01_langchain4j__transformers_fbd09c",
+  "generated_at": "2026-07-01T01:01:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of data leakage and cascading errors: transformers can read/write and egress broadly, while langchain4j can ingest and route outputs without isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has no shared channel documented, but B can read/write files, run browsers, and process stdin/stdout, so if A\u2019s outputs are bridged into B via files or pipes, prompt-like content could be treated as instructions. The pairwise pathway is inferred from B\u2019s permissive I/O and A\u2019s LLM orchestration role; uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF A\u2019s outputs are copied into B\u2019s stdin/stdout or files without sanitization, injection is plausible.",
+        "IF B is configured to parse model-generated text as instructions, the risk increases."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and schema validator between A and B.",
+        "Disable automatic execution of text emitted by A.",
+        "Route A\u2019s outputs through a human review step before B consumes them.",
+        "Use separate workspaces for A and B.",
+        "requires-engineering: implement provenance tagging on all A\u2192B content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "B has broad network egress and can read the filesystem, while A is an LLM orchestration layer with no network egress. If they share a workspace, B can exfiltrate files or prompts that A processes, creating a realistic leakage path in default-like setups. The absence of explicit isolation or sandboxing for A pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF A and B share a filesystem or mounted workspace, B can read A-produced artifacts.",
+        "IF sensitive text is placed in files that B can access, B can transmit it over network egress."
+      ],
+      "mitigations": [
+        "Place A and B in separate directories with OS permissions.",
+        "Remove B\u2019s access to any directory containing A prompts or outputs.",
+        "Turn off B network egress for runs handling sensitive data.",
+        "Review B\u2019s file inputs before execution.",
+        "requires-engineering: add per-file allowlists and redaction before B reads content."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "B has unrestricted filesystem write, shell, subprocess, and package-install capabilities; A has no documented write or concurrency controls. If both touch the same directory, B can overwrite or corrupt artifacts that A relies on, and B supports multiple instances, increasing race risk. Because shared locking is not documented, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF A and B operate on the same writable directory, file clobbering is possible.",
+        "IF multiple B instances run concurrently, race conditions on shared artifacts become likely."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Use file locks around shared outputs.",
+        "Run only one B instance per workspace.",
+        "Make shared artifacts read-only for A.",
+        "requires-engineering: add transactional writes or a job queue."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A is a customer-support LLM layer and B is a document-processing agent with browser, shell, and subprocess authority. If B consumes A\u2019s outputs as authoritative, mistakes or hallucinations from A can cascade into downstream actions or generated documents. The pathway is plausible from the profiles alone, and the blast radius can extend beyond a single work product.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF B uses A\u2019s text as a source of truth without verification, errors can propagate.",
+        "IF B turns A\u2019s outputs into files, browser actions, or subprocess commands, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Require B to verify A\u2019s claims against source documents.",
+        "Add a confidence threshold before B acts on A output.",
+        "Log and review A\u2192B handoffs.",
+        "Restrict B to read-only mode for A-derived content.",
+        "requires-engineering: implement citation-backed validation before action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, retention, or subject-rights mismatch is documented for either agent, so a compliance breach is not established. However, B\u2019s broad egress and file access create a generic governance gap if regulated data is introduced. A is not cited separately because the profiles do not show a distinct compliance boundary for it.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through B without a documented DPA or residency control, compliance risk increases.",
+        "IF retention or deletion requirements apply to shared files, B\u2019s filesystem access can complicate compliance."
+      ],
+      "mitigations": [
+        "Confirm data residency before processing regulated data.",
+        "Avoid sending regulated data to B.",
+        "Set short retention on B outputs.",
+        "Document deletion/export handling for shared files.",
+        "requires-engineering: add policy enforcement for regulated datasets."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5",
+      "A.6",
+      "A.8"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1fb1c0cb269a338245110fb6b9fd4bea58988c526a926eb5d3a11cf95c690b6f",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
