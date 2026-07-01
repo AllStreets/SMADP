@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-07-01_ms-swift__transformers_6c6743",
+  "generated_at": "2026-07-01T02:24:43Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.53,
+  "headline": "High-risk shared write-and-network pair: default configs can leak or corrupt work products, while prompt-injection risk is moderate via shared file/STDIN channels.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files and exchange content through stdin/stdout or shared workspaces, so one agent can feed attacker-controlled text into the other. ms-swift also handles multimodal inputs and configuration files; transformers can run browsers and process documents, increasing the chance it will parse untrusted content as instructions. No direct shared channel is documented, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share a filesystem or pipeline input, THEN prompt-like content in files can influence the other agent.",
+        "IF either agent is instructed to treat file contents as trusted instructions, THEN injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate input and output directories per agent.",
+        "Strip or label untrusted text before passing between agents.",
+        "Disable browser-based ingestion for untrusted documents.",
+        "Add a human review step before executing any generated instructions."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ms-swift touches secrets such as hub_token and sdk-token, while transformers has broad network egress and can call the Hugging Face Hub. If they share files or a workspace, sensitive artifacts from agent_a can flow into agent_b and then out over agent_b's network path. The pairwise leak path is plausible in default-style file pipelines, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes logs, configs, or checkpoints containing tokens into a shared directory, THEN agent_b can read them.",
+        "IF agent_b uploads or transmits those files to a hub or API, THEN leakage occurs."
+      ],
+      "mitigations": [
+        "Store secrets outside shared workspaces.",
+        "Redact tokens from logs and configs before handoff.",
+        "Use per-agent directories with restrictive permissions.",
+        "Block outbound network access for files that may contain secrets.",
+        "Rotate any exposed hub or SDK tokens immediately."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and package installation. That overlap creates a direct race on shared mutable state, and transformers also supports multiple instances, so concurrent writes can corrupt files or dependency state. ms-swift does not state locking or multi-instance support, so the safer reading is high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or virtual environment, THEN concurrent writes can clobber files.",
+        "IF either agent installs packages while the other is running, THEN environment drift or corruption can occur."
+      ],
+      "mitigations": [
+        "Assign separate working directories and virtual environments.",
+        "Serialize package installation steps.",
+        "Use file locks around shared mutable resources.",
+        "Snapshot or back up the workspace before concurrent runs.",
+        "Prefer read-only mounts for inputs."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can emit model outputs and evaluation artifacts, and transformers is a pipeline framework that can consume those outputs as inputs. If transformers treats ms-swift output as authoritative without verification, errors can cascade into downstream document processing or serving. The interaction is plausible but not directly documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a's generated text or labels without validation, THEN hallucinations or bad metadata propagate.",
+        "IF agent_b triggers downstream actions from those outputs, THEN the error becomes operational."
+      ],
+      "mitigations": [
+        "Require schema validation on all handoffs.",
+        "Add confidence thresholds before downstream use.",
+        "Keep a human approval step for high-impact outputs.",
+        "Log provenance for each transferred artifact."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch documented. ms-swift handles secrets and broad data classes, while transformers processes documents and multimodal data, but the profiles do not show a concrete compliance conflict. Because the rubric requires documented gaps for low severity, this remains low rather than none due to incomplete policy detail.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF either deployment processes regulated data under a stricter policy than the other, THEN a compliance mismatch may arise.",
+        "IF retention or logging settings differ across the two agents, THEN subject-rights handling can diverge."
+      ],
+      "mitigations": [
+        "Document data-class handling for both agents.",
+        "Align logging and retention settings.",
+        "Avoid regulated data until residency and certification are confirmed.",
+        "Review vendor terms before production use."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
