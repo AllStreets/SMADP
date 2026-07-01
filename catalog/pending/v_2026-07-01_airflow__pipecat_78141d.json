@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airflow",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-07-01_airflow__pipecat_78141d",
+  "generated_at": "2026-07-01T08:24:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.44,
+  "headline": "Medium prompt-injection and cascading-error risk: Airflow can feed Pipecat shared text/state, while Pipecat\u2019s shared bus and outbound model/API calls amplify bad inputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Airflow can move files and API outputs into downstream tasks, and Pipecat consumes text/conversation state over a shared bus. That creates a plausible instruction-injection bridge if Airflow-produced content is treated as trusted input by Pipecat. The pairwise pathway is inferred, not directly documented, so uncertainty pushes severity up from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Airflow task output is forwarded into Pipecat text or conversation state without sanitization",
+        "IF Pipecat parses shared-bus content as instructions rather than data"
+      ],
+      "mitigations": [
+        "Add a strict allowlist schema for Airflow-to-Pipecat messages",
+        "Strip control tokens and prompt-like prefixes before handoff",
+        "Route only structured JSON, not free text",
+        "Log and review first 10 cross-agent messages",
+        "requires-engineering: add provenance tags on every shared-bus payload"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airflow has broad network egress and Pipecat touches text, audio, video, images, and conversation state with allowlisted outbound calls. If they share a workspace or bus, sensitive artifacts can flow from Airflow into Pipecat and then out to third-party services. The profiles do not prove a shared filesystem, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Airflow and Pipecat share a workspace, bus, or mounted volume",
+        "IF Pipecat is configured to send received text/audio to external STT/LLM/TTS providers"
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces",
+        "Disable external providers in Pipecat for sensitive runs",
+        "Pass only redacted fields from Airflow",
+        "Rotate any secrets exposed in shared artifacts",
+        "requires-engineering: enforce per-message data-class labels"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Airflow is a data-engineering orchestrator with broad egress, while Pipecat supports shared-bus concurrency and multiple instances. Their write surfaces are not documented as overlapping on the same mutable resource, so direct conflict is not established. The main risk is coordination friction, not destructive contention.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same external resource without locking",
+        "IF the orchestrator maps both agents onto one mutable queue or file"
+      ],
+      "mitigations": [
+        "Assign separate queues or topics",
+        "Use per-agent output directories",
+        "Add a lock around shared writes",
+        "Monitor for duplicate writes",
+        "requires-engineering: introduce optimistic-concurrency checks"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Airflow can generate and route outputs that Pipecat may treat as conversation state or text, and Pipecat can then call external LLM/STT/TTS services. That makes a bad upstream artifact capable of cascading into downstream actions or user-facing responses. Because the pairwise verification is indirect, uncertainty does not reduce the severity below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat consumes Airflow output without a verification step",
+        "IF Pipecat forwards that output into downstream model calls or user-facing speech"
+      ],
+      "mitigations": [
+        "Insert a human review gate before Pipecat acts on Airflow output",
+        "Require checksum or schema validation on handoff",
+        "Limit Pipecat to read-only summarization for Airflow data",
+        "Add rollback for any downstream side effects",
+        "requires-engineering: implement confidence thresholds before action-taking"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No PHI, residency, or retention obligations are documented in either profile, and both are open/source-available with docs-only evidence. The only compliance concern is generic policy mismatch if Airflow-managed data is later sent by Pipecat to third-party providers. That is plausible but not established, so severity stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed from Airflow into Pipecat",
+        "IF Pipecat is configured to use third-party STT/LLM/TTS services for that data"
+      ],
+      "mitigations": [
+        "Classify data before handoff",
+        "Block regulated fields from Pipecat providers",
+        "Document retention settings for each provider",
+        "Review vendor DPAs before enabling external APIs",
+        "requires-engineering: add residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f420f8a06eddb31dfa39a3caf5dec24f358de79519f55fa1394f80ecdbe45bda",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
