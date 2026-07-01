@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "risingwave",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-07-01_risingwave__transformers_e5c0b6",
+  "generated_at": "2026-07-01T03:25:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High-risk data leakage and cascading-error pathways exist because transformers can read/write files and browse while risingwave has no isolation or egress controls documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A direct prompt-injection bridge is not documented, but transformers can read files, run browsers, and process stdin/stdout while risingwave exposes no isolation or provenance controls. If risingwave outputs are copied into files or prompts, transformers may treat attacker-controlled content as instructions. The interaction is inferred from both profiles, so uncertainty pushes severity up from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF risingwave output is copied into a file or prompt consumed by transformers",
+        "IF transformers parses file or browser content as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Use a manual copy-only bridge with explicit instruction delimiters",
+        "Add a short provenance header to every transferred artifact",
+        "Disable browser-driven ingestion for untrusted content",
+        "Review transformer prompts before execution",
+        "requires-engineering: add content provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "transformers has broad network egress and filesystem access, while risingwave has no documented network egress but may still produce artifacts that transformers can read. A shared workspace is not explicitly documented, so the leakage path is inferred rather than proven; however, if they share files, transformers can upload contents to third parties. That makes the blast radius sensitive-data exposure in default-like use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a filesystem or workspace",
+        "IF transformers is allowed to read files containing sensitive data",
+        "IF transformers sends those files to Hugging Face Hub or another API"
+      ],
+      "mitigations": [
+        "Keep agents on separate workspaces",
+        "Restrict transformers to read-only access on non-sensitive directories",
+        "Block outbound network for transformer runs handling sensitive files",
+        "Manually redact sensitive fields before transfer",
+        "requires-engineering: enforce per-agent filesystem isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "transformers can write the filesystem, spawn subprocesses, and supports multiple instances; risingwave is a data-engineering system with no locking or concurrency controls documented here. If both touch the same directory or mutable artifacts, concurrent writes can corrupt files or overwrite outputs. Because shared-write coordination is not shown, uncertainty favors the higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or model/artifact path",
+        "IF no external lock or orchestrator serializes their writes"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Run only one writer at a time",
+        "Use file locks around shared artifacts",
+        "Snapshot inputs before each run",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "transformers can consume files and emit outputs, so risingwave-generated artifacts may become authoritative inputs downstream. No verification step is documented between them, and transformers can act on parsed content via scripts or browser workflows. The pair therefore has a plausible A-to-B error cascade, though not enough evidence for high because downstream action-taking is not explicit.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF transformers uses risingwave output as an input dataset or prompt",
+        "IF no human or automated verification step checks the output before reuse"
+      ],
+      "mitigations": [
+        "Insert a validation step before reuse",
+        "Require schema checks on risingwave outputs",
+        "Have a human review high-impact outputs",
+        "Log source-to-target lineage for each transfer",
+        "requires-engineering: add automated output verification"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No specific residency, certification, or retention mismatch is documented for either open-source profile, and no sensitive data class is named. The only concrete compliance-relevant difference is transformers' broad network/file handling versus risingwave's lack of egress, which could matter if regulated data is introduced. Because the pairwise compliance issue is not evidenced, this stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through transformers",
+        "IF the deployment requires residency or retention guarantees not enforced by the operator"
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs",
+        "Document retention settings for transformer outputs",
+        "Keep audit logs of data transfers",
+        "Review deployment region before use",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:052fd9671d94df767f385f02fd1fc62e7f2adc0828e85ab6e4e8f44f9e0af119",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
