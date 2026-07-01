@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ecc",
+    "mineru"
+  ],
+  "verdict_id": "v_2026-07-01_ecc__mineru_7d2517",
+  "generated_at": "2026-07-01T03:31:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.29,
+  "headline": "Highest risk is prompt-injection and cascading-error via shared MCP/filesystem surfaces; data leakage and compliance risks are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC can read/write the filesystem, use MCP, and stores session/skill/config files; MinerU also uses MCP and processes local documents. That creates a plausible content-to-instructions bridge if MinerU outputs are fed into ECC or shared files. The pairwise pathway is inferred from documented surfaces, not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF MinerU outputs are copied into ECC-managed files or MCP messages without provenance filtering, injection is possible.",
+        "IF both agents share a workspace or message queue, attacker-controlled document text can reach ECC as instructions."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of MinerU outputs into ECC prompts.",
+        "Separate the agents onto distinct workspaces or roots.",
+        "Add a provenance tag to all MinerU-derived text before ECC reads it.",
+        "Review MCP routes and remove any shared server paths.",
+        "requires-engineering: enforce content-sanitization on document text before prompt assembly."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "ECC touches session summaries, skills, hooks, git history, and files under ~/.claude or ~/.cursor/ecc, while MinerU is documented as private/offline and only reads local document inputs. The pair can leak data if they share a workspace, but MinerU lacks write access and no direct outbound exfiltration path is documented for the pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are placed in a shared directory that ECC also reads, ECC may expose them in its session artifacts.",
+        "IF MinerU outputs are stored in ECC-visible files, those contents can be retained in ECC session state."
+      ],
+      "mitigations": [
+        "Keep MinerU inputs in a separate directory from ECC state.",
+        "Turn off or shorten ECC session retention for sensitive runs.",
+        "Avoid placing secrets in files that ECC scans.",
+        "Review ECC hooks for any logging of document contents.",
+        "requires-engineering: add per-directory access controls between the two tools."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "ECC can write the filesystem and modify git state; MinerU cannot write files or modify git state. Because only one agent has mutable repository privileges, direct write-write conflict is limited. The remaining risk is coordination failure if ECC writes outputs into paths MinerU reads, but that is narrower than the rubric's medium/high overlap cases.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF ECC and MinerU are pointed at the same git checkout, ECC can race with other writers even though MinerU itself cannot write.",
+        "IF ECC writes intermediate files into a directory MinerU also consumes, stale or partial artifacts can be processed."
+      ],
+      "mitigations": [
+        "Run ECC and MinerU in separate directories.",
+        "Avoid letting ECC write into MinerU input paths.",
+        "Use a git lock or single-writer policy for repositories.",
+        "Check for partial files before MinerU consumes outputs.",
+        "requires-engineering: add orchestrator-level locking for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ECC produces session summaries, learned skills, and security findings, and MinerU extracts structured text from documents. If MinerU output is treated as authoritative by ECC, errors can cascade into downstream summaries or actions. The pairwise interaction is inferred from documented output/input surfaces rather than directly evidenced, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ECC consumes MinerU-extracted text without verification, extraction errors can be amplified into summaries or findings.",
+        "IF MinerU output is used as source material for ECC-generated actions, a single parsing error can propagate downstream."
+      ],
+      "mitigations": [
+        "Require human review of MinerU output before ECC uses it.",
+        "Compare extracted fields against the source document for critical records.",
+        "Mark MinerU output as untrusted in ECC prompts.",
+        "Limit ECC to summarization, not action-taking, on MinerU results.",
+        "requires-engineering: add validation rules for extracted fields before downstream use."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "ECC explicitly handles session summaries, hooks, git history, and security findings, while MinerU processes PDFs, DOCX, PPTX, XLSX, and OCR text in a private/offline mode. No residency or certification mismatch is documented, so only a modest compliance risk exists if regulated documents are routed through ECC's retained state. MinerU is not cited for a mismatch because none is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed and ECC retains session artifacts, retention obligations may be affected.",
+        "IF ECC hooks log document-derived content, subject-rights or retention controls may be harder to satisfy."
+      ],
+      "mitigations": [
+        "Avoid routing regulated documents through ECC state.",
+        "Shorten ECC retention for sensitive projects.",
+        "Disable logging hooks on regulated runs.",
+        "Keep MinerU processing offline and isolated.",
+        "requires-engineering: document and enforce retention/deletion policy boundaries."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0297dec71eb04aade46409d7c9ca933d5292409253842beae6fcdbd121454931",
+    "profile_b_hash": "sha256:cd49ea0a247dc3089757cd83e2cf358aa2a43d1bab55355c097839f0dd11ccbb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
