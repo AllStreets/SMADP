@@ -18,12 +18,12 @@ from typing import Any
 
 import structlog
 
+from smadp.autopilot.approve import ApproveError, approve
 from smadp.autopilot.budget import (
     can_enqueue,
     load_budget,
     record_run_actual,
 )
-from smadp.autopilot.approve import ApproveError, approve
 from smadp.autopilot.config import load_autopilot_config
 from smadp.autopilot.judges import Judge
 from smadp.autopilot.pause import is_paused
