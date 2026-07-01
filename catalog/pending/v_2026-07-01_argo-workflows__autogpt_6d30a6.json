@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "autogpt"
+  ],
+  "verdict_id": "v_2026-07-01_argo-workflows__autogpt_6d30a6",
+  "generated_at": "2026-07-01T02:13:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.425,
+  "headline": "AutoGPT can write the filesystem while Argo Workflows orchestrates API-driven jobs, creating medium-risk leakage and conflict paths; no direct prompt-injection bridge is evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Argo Workflows exposes REST/gRPC and AutoGPT can use filesystem and agent-protocol I/O, but no shared channel or direct parsing bridge is documented. The only plausible injection path is an unusual manual or file-based handoff, so the blast radius is limited and uncertainty stays low rather than none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies Argo output into AutoGPT prompts or files, prompt injection becomes possible.",
+        "IF a shared filesystem or message queue is added between the agents, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces.",
+        "Avoid copying raw workflow logs into AutoGPT prompts.",
+        "Strip instructions from any files passed between agents.",
+        "Use a provenance tag on handoff files.",
+        "requires-engineering: add content-sanitizing middleware for inter-agent handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Argo Workflows touches artifacts and parameters, while AutoGPT has filesystem access and allowlisted egress. A shared workspace or file handoff could move sensitive artifacts from A into B, and B may then transmit them through its inference or tool context. This is plausible in default deployments, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or mounted volume, artifacts can flow from Argo to AutoGPT.",
+        "IF AutoGPT reads those files into its context, sensitive parameters may be exposed to its backend or tools."
+      ],
+      "mitigations": [
+        "Use separate directories or volumes.",
+        "Restrict AutoGPT to non-sensitive inputs.",
+        "Redact artifacts before handoff.",
+        "Disable unnecessary file ingestion paths.",
+        "requires-engineering: enforce per-file access controls and audit logs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can mutate workflow state via APIs, and AutoGPT can write the filesystem and spawn subprocesses. Even without explicit shared locks, overlapping writes to shared files or job state can race and corrupt outputs. The profiles do not prove a shared mutable target, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or config files, write conflicts can occur.",
+        "IF AutoGPT shells out against files Argo is generating, race conditions can corrupt artifacts."
+      ],
+      "mitigations": [
+        "Assign disjoint output paths.",
+        "Serialize writes with a lock file.",
+        "Make one agent read-only on shared resources.",
+        "Check for stale file timestamps before overwrite.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Argo produces workflow artifacts and AutoGPT can consume files and act autonomously, so A's outputs could become B's inputs without a verification step. That creates a plausible chain where an upstream mistake is amplified downstream. No evidence shows B critically validates A, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT treats Argo-generated artifacts as authoritative, errors can cascade.",
+        "IF AutoGPT triggers subprocesses from those artifacts, downstream actions may amplify a bad upstream result."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require schema validation on Argo outputs.",
+        "Mark generated files as untrusted by default.",
+        "Limit AutoGPT to read-only analysis of A's outputs.",
+        "requires-engineering: add explicit verification gates before action-taking."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only and do not declare regulated data handling, residency, or retention differences. Argo touches artifacts and parameters, while AutoGPT lists no data classes touched, so a compliance mismatch is not evidenced. The other agent is cited because the only relevant compliance surface is A's data handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Argo artifacts and then handed to AutoGPT, compliance review is required.",
+        "IF either deployment adds residency or retention constraints not shown here, the mismatch may increase."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared artifacts.",
+        "Document retention for workflow outputs.",
+        "Review deployment residency settings.",
+        "Add a data-class label to handoff files.",
+        "requires-engineering: implement policy-based routing for regulated data."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:3e2c4e54b64bdefdbedd19855f9b9f71fede7211adadaab62650b9adf6f29b35",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
