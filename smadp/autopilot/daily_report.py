@@ -42,7 +42,15 @@ def gather_catalog_stats(repo_root: Path) -> CatalogStats:
 
     profiles_by_tier: Counter[str] = Counter()
     if profiles_dir.exists():
-        for p in profiles_dir.glob("*.json"):
+        # Count top-level profiles AND the _unverified/ subtree, matching
+        # `smadp lint` and scripts/update-stats.py (the source the README badges
+        # use). Globbing only *.json here previously under-counted the report by
+        # ~60 (the _unverified profiles), so report totals disagreed with the site.
+        profile_files = list(profiles_dir.glob("*.json"))
+        unverified_dir = profiles_dir / "_unverified"
+        if unverified_dir.exists():
+            profile_files += list(unverified_dir.glob("*.json"))
+        for p in profile_files:
             try:
                 d = json.loads(p.read_text("utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -228,6 +236,26 @@ def render_report(
     if stats.rejected:
         lines.append(f"- Rejected (preserved): **{stats.rejected}**")
     lines.append("")
+
+    # PUBLISH HEALTH — loudly surface a frozen public catalog. The autopilot
+    # produces into pending/ freely; if nobody runs `smadp pending approve`, the
+    # PUBLIC catalog silently freezes while the queue balloons (exactly what
+    # happened 2026-06-21 -> 06-30: 0 published for 10 days, queue 355 -> 1,691).
+    # This banner makes that state impossible to miss.
+    _approve_cmd = "smadp pending approve --tier docs-only --min-confidence 0.65 --all --yes"
+    if new_verdicts_today == 0 and stats.pending >= 100:
+        lines.append(
+            f"> **PUBLISH STALLED** — 0 verdicts published today while **{stats.pending}** "
+            f"sit in the operator queue. The public catalog is frozen. Drain it with:  \n"
+            f"> `{_approve_cmd}`"
+        )
+        lines.append("")
+    elif stats.pending >= 300:
+        lines.append(
+            f"> **Operator queue is deep** ({stats.pending} awaiting review). "
+            f"Approve a batch with `{_approve_cmd}`."
+        )
+        lines.append("")
 
     # Per-tier breakdown
     lines.append("## Tier breakdown")
