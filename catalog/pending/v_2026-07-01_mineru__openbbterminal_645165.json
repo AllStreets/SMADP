@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mineru",
+    "openbbterminal"
+  ],
+  "verdict_id": "v_2026-07-01_mineru__openbbterminal_645165",
+  "generated_at": "2026-07-01T01:29:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.425,
+  "headline": "Highest risk is medium: shared MCP surfaces create plausible prompt-injection, leakage, and workflow-conflict paths, but both agents are otherwise offline/allowlisted and no direct pairwise evidence is provided.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents expose MCP servers, so a shared or bridged MCP channel is plausible even though no direct pairwise integration is documented. MinerU ingests document content and OpenBBTerminal can consume external inputs via MCP/REST; if MinerU output is passed into OpenBBTerminal as trusted instructions, prompt injection becomes realistic. Uncertainty about the exact bridge escalates this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF the orchestrator routes MinerU output into OpenBBTerminal MCP calls without provenance tagging, injection is possible.",
+        "IF either agent treats extracted document text as instructions, attacker-controlled content can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Add provenance labels to all MinerU outputs before they reach OpenBBTerminal.",
+        "Require a human review step for any instruction-like text extracted from documents.",
+        "Disable MCP bridging between the two agents unless explicitly needed.",
+        "Use allowlists for fields that OpenBBTerminal may consume from MinerU.",
+        "requires-engineering: add content-sanitization and schema validation at the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "MinerU touches PDFs, DOCX, PPTX, XLSX, OCR text, and other document data, while OpenBBTerminal touches financial and licensed data and exposes MCP/REST surfaces. A shared workspace or MCP handoff could leak sensitive document contents into OpenBBTerminal outputs or logs. The profiles do not prove a shared filesystem, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are connected through a shared MCP server or workspace, document contents can flow from MinerU into OpenBBTerminal.",
+        "IF OpenBBTerminal logs or forwards MCP inputs, extracted sensitive text may be retained or exposed."
+      ],
+      "mitigations": [
+        "Separate workspaces for document ingestion and financial analysis.",
+        "Turn off verbose logging on the OpenBBTerminal side.",
+        "Redact sensitive fields before passing MinerU output onward.",
+        "Restrict MCP tools to non-sensitive summaries only.",
+        "requires-engineering: enforce per-field data-loss-prevention at the integration boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Neither agent can write the filesystem, modify git state, or spawn subprocesses, so direct destructive write conflicts are blocked. The main overlap is concurrent MCP/API use, which can still cause coordination issues if both are pointed at the same mutable upstream service. Because the shared mutable target is not documented, the blast radius is limited and this stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to mutate the same external MCP-backed resource, race conditions can occur.",
+        "IF an orchestrator shares one mutable API token across both agents, conflicting updates become possible."
+      ],
+      "mitigations": [
+        "Assign separate credentials to each agent.",
+        "Serialize writes to any shared external resource.",
+        "Keep both agents read-only unless mutation is required.",
+        "Use per-request locking in the orchestrator.",
+        "requires-engineering: add optimistic-concurrency checks for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "MinerU produces extracted facts from documents, and OpenBBTerminal can consume MCP/REST inputs and act as a financial analysis layer. If OpenBBTerminal treats MinerU output as authoritative without verification, extraction errors can cascade into incorrect analyses or downstream actions. The profiles show a plausible handoff but not a documented one, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF MinerU output is fed directly into OpenBBTerminal workflows, extraction mistakes can propagate.",
+        "IF OpenBBTerminal uses MinerU output without cross-checking against source documents, errors can cascade."
+      ],
+      "mitigations": [
+        "Require source-document cross-checks before acting on extracted values.",
+        "Show confidence scores alongside MinerU extractions.",
+        "Limit OpenBBTerminal to advisory outputs for MinerU-fed data.",
+        "Add a human approval step for any action based on extracted facts.",
+        "requires-engineering: implement verification against original documents before downstream use."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "MinerU is document-processing with OCR and mixed document classes, while OpenBBTerminal handles financial and licensed data and advertises a connect-once-consume-everywhere pattern. If regulated documents or EU PII are routed into OpenBBTerminal, retention and residency obligations may diverge. The profiles do not specify certifications or residency, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal or financial data is processed by both agents, retention policy mismatches can arise.",
+        "IF EU PII or PHI is routed through OpenBBTerminal, residency or certification gaps may matter."
+      ],
+      "mitigations": [
+        "Classify data before sending it to either agent.",
+        "Keep regulated documents out of OpenBBTerminal unless policy is confirmed.",
+        "Set explicit retention limits on logs and caches.",
+        "Document which jurisdictions each agent may process.",
+        "requires-engineering: add policy enforcement for residency and retention at the router."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d46444da1c6ab192bf5d8c6721200103334cbfae893d1a7ddfe56c465d237e43",
+    "profile_b_hash": "sha256:9f7cc7deecb12f606091b0786e8815ccee614e75375ad9120d8af42154e2d4d5",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
