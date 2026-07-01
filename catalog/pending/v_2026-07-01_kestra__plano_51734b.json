@@ -1,0 +1,162 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "plano"
+  ],
+  "verdict_id": "v_2026-07-01_kestra__plano_51734b",
+  "generated_at": "2026-07-01T00:56:07Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "Highest risk is capability conflict: Kestra can write the filesystem and run shells while Plano is a broad-egress OpenAI-compatible gateway, creating default-path data and action hazards; prompt-injection and leakage are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can emit workflow outputs via stdin/stdout and files, and Plano consumes chat-completion traffic through an OpenAI-compatible endpoint. That creates a plausible instruction-smuggling path if Kestra-generated content is fed into Plano without sanitization. No direct shared channel is documented, so this is inferred and not higher.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra output is copied into Plano prompts or messages without provenance filtering, injection is possible.",
+        "IF an orchestrator bridges Kestra stdout/files into Plano chat input, attacker-controlled content can steer Plano."
+      ],
+      "mitigations": [
+        "Add a strict delimiter and schema validator between Kestra outputs and Plano inputs.",
+        "Strip executable-looking text from Kestra-generated artifacts before forwarding.",
+        "Require human review for any Kestra text that becomes a Plano prompt.",
+        "Log and diff all cross-agent prompt transfers for provenance.",
+        "requires-engineering: implement content-signing or provenance tags across the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches workflow definitions, logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, while Plano handles agentic signals, traces, metrics, and logs. If they share a workspace or pipeline, sensitive operational data can flow from Kestra into Plano\u2019s inference or logging path. The profiles do not show a shared filesystem, so the risk is inferred rather than proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Kestra artifacts or logs are forwarded into Plano prompts, traces, or metrics, sensitive data can leak.",
+        "IF both agents are pointed at the same workspace or config files, cross-exposure becomes possible."
+      ],
+      "mitigations": [
+        "Redact secrets and identifiers from Kestra logs before any handoff.",
+        "Disable verbose tracing in Plano for production traffic.",
+        "Keep Kestra artifacts and Plano telemetry in separate storage buckets.",
+        "Review any shared workspace mounts before deployment.",
+        "requires-engineering: add field-level DLP on the Kestra-to-Plano handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Kestra has write_filesystem, execute_shell, spawn_subprocesses, and broad network egress; Plano also has broad network egress and an OpenAI-compatible API surface. Kestra can mutate shared files or trigger external actions while Plano can concurrently route requests, so overlapping mutable resources can race or overwrite each other. Because Kestra supports multiple instances and Plano does not, uncertainty about orchestration locking pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or config file, last-writer-wins conflicts can occur.",
+        "IF Kestra workflows trigger Plano configuration updates without locks, concurrent mutation is possible."
+      ],
+      "mitigations": [
+        "Separate writable directories for each agent.",
+        "Use file locks or transactional updates around shared config.",
+        "Run Plano read-only with respect to Kestra-managed paths.",
+        "Serialize any workflow that mutates shared resources.",
+        "requires-engineering: add an orchestrator-level mutex for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Kestra produces workflow outputs, logs, and notifications that Plano could ingest as agentic signals or traces. If Plano treats those outputs as authoritative, an upstream mistake can cascade into downstream routing or responses. The profiles do not prove direct automation from Kestra into Plano, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra outputs are used as prompts or routing signals for Plano without verification, errors can propagate.",
+        "IF Plano forwards Kestra-derived content to external chat completions, downstream mistakes can amplify."
+      ],
+      "mitigations": [
+        "Insert a verification step before Plano consumes Kestra outputs.",
+        "Require structured schemas for any Kestra-to-Plano handoff.",
+        "Flag low-confidence Kestra outputs for human review.",
+        "Keep Plano from auto-executing actions based solely on Kestra text.",
+        "requires-engineering: add confidence scoring and rejection thresholds."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Kestra touches database data, cloud storage data, messages, and notifications, while Plano\u2019s documented data classes are agentic signals, traces, metrics, and logs. The profiles do not show a residency or certification mismatch, but they do show different data-handling scopes that could create retention or logging gaps if combined. The other agent is cited because the mismatch is pairwise, not single-agent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed from Kestra into Plano logs or traces, retention policy mismatch becomes relevant.",
+        "IF one agent retains data longer than the other, deletion/export workflows may diverge."
+      ],
+      "mitigations": [
+        "Map data classes to retention rules before integration.",
+        "Avoid sending regulated fields into Plano telemetry.",
+        "Document deletion/export handling for both systems.",
+        "Review log retention settings on both sides.",
+        "requires-engineering: align retention and subject-rights workflows end-to-end."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
