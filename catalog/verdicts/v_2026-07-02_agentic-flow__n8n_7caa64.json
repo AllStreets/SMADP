@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__n8n_7caa64",
+  "generated_at": "2026-07-02T04:39:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt injection, data leakage, and workflow conflicts when agentic-flow is paired with n8n\u2019s server-side automation and shared state.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a ingests MCP/stdin-stdout and can dispatch background tasks; agent_b orchestrates workflow nodes and can process files from its server filesystem. That creates a plausible content-to-instruction bridge if n8n passes agent_a outputs into AI Agent nodes or file-backed steps. No direct shared channel is documented, so I avoid high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflow nodes feed agent_a output into an AI Agent node or prompt template",
+        "IF file contents from agent_b.server filesystem are treated as instructions by agent_a"
+      ],
+      "mitigations": [
+        "Add an explicit instruction/data delimiter in workflow prompts",
+        "Require human review before any AI Agent node consumes agent_a output",
+        "Store untrusted content in a separate file path and pass only summaries",
+        "Disable MCP routes that accept arbitrary text as commands",
+        "requires-engineering: add provenance tags between workflow nodes and agent outputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches task prompts, code, and repository metadata; agent_b can read and write the server filesystem and uses broad network egress. If n8n workflows move those artifacts through integrations or credentials, sensitive context can leave the pair. The shared-workspace path is plausible but not proven, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows store agent_a prompts or repository metadata on the shared server filesystem",
+        "IF any integration node transmits those files or prompts to an external service"
+      ],
+      "mitigations": [
+        "Restrict workflow inputs to redacted excerpts",
+        "Move secrets to credential stores only",
+        "Turn off any node that uploads file contents externally",
+        "Audit filesystem paths used by workflows",
+        "requires-engineering: isolate agent workspaces per execution"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can modify git state and run shell commands; agent_b can execute shell, write the filesystem, and supports shared state via n8n datastore plus connected systems. Concurrent runs can race on the same repo or files, and the blast radius includes irreversible git history or corrupted workflow state. Defaults appear dangerous because both are writable and multi-instance capable.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory",
+        "IF n8n runs multiple executions against the same shared datastore or checkout"
+      ],
+      "mitigations": [
+        "Use separate working directories per agent",
+        "Serialize writes with a lock file or queue",
+        "Disable git-mutating steps in one agent",
+        "Snapshot the workspace before each run",
+        "requires-engineering: add transactional coordination around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a can emit task prompts and analysis artifacts, while agent_b is an orchestrator that can route outputs into downstream nodes and actions. If n8n treats agent_a output as authoritative, errors can cascade into automated workflow actions without verification. The pairwise pathway is documented by their tool-use models, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF n8n AI Agent nodes consume agent_a outputs without a validation step",
+        "IF downstream workflow nodes send emails, write records, or trigger external actions based on those outputs"
+      ],
+      "mitigations": [
+        "Insert a validation node before any action node",
+        "Require schema checks on agent_a outputs",
+        "Limit downstream actions to dry-run mode first",
+        "Log and review first-run outputs manually",
+        "requires-engineering: add confidence thresholds before execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a handles task prompts and repository metadata, while agent_b processes whatever the workflow touches and stores credentials on the n8n server. If workflows carry regulated data, n8n\u2019s server-side processing and broad integrations can create retention or residency mismatches. The profiles do not show a specific regulated class, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF workflows process regulated data such as PHI, EU PII, or secrets",
+        "IF n8n retention or hosting region differs from the source system\u2019s policy"
+      ],
+      "mitigations": [
+        "Classify data before routing it into workflows",
+        "Keep regulated data out of general-purpose workflows",
+        "Review n8n retention settings and backups",
+        "Pin hosting region to the required jurisdiction",
+        "requires-engineering: implement policy-based routing by data class"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
