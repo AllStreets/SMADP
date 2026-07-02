@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__semantic-kernel_d07641",
+  "generated_at": "2026-07-02T01:08:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High data-leakage and capability-conflict risk: Firecrawl\u2019s broad egress and API-key handling can expose Semantic Kernel\u2019s application context and shared-state workflows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible/API surfaces, while Semantic Kernel can use MCP servers and function-calling plugins. That creates a plausible path for attacker-controlled content from Firecrawl to be treated as instructions by Semantic Kernel. The shared bridge is documented, but direct prompt-parser behavior is not, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel consumes Firecrawl output as tool instructions or prompts without sanitization, injection is possible.",
+        "IF a shared MCP server or file bridge passes raw scraped content into agent prompts, the pathway is active."
+      ],
+      "mitigations": [
+        "Strip instructions from scraped text before passing it to Semantic Kernel.",
+        "Add a provenance tag and reject untrusted content in tool-call prompts.",
+        "Use a fixed schema for Firecrawl outputs and validate fields before orchestration.",
+        "Disable automatic prompt chaining from scrape results to agent messages.",
+        "requires-engineering: add content-security filters at the MCP boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Firecrawl touches web content, structured data, screenshots, and API keys, and has broad network egress. Semantic Kernel reads filesystem data, uses application context, and can call external model providers and MCP servers. If they share a workspace or context store, sensitive material can flow from Firecrawl into Semantic Kernel outputs or from Semantic Kernel into third-party APIs, creating a realistic exfiltration path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or memory store, sensitive files or scraped data can cross between them.",
+        "IF Semantic Kernel forwards application context to a model provider while holding Firecrawl-derived secrets or screenshots, leakage occurs."
+      ],
+      "mitigations": [
+        "Separate workspaces and credentials for each agent.",
+        "Remove API keys and screenshots from any shared context before orchestration.",
+        "Turn off automatic file ingestion in Semantic Kernel for shared directories.",
+        "Use least-privilege service accounts for both agents.",
+        "requires-engineering: add DLP/redaction at the handoff boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Firecrawl supports multiple instances and broad network egress; Semantic Kernel supports multiple instances, write_filesystem, read_filesystem, and shared state via memory stores. Their overlapping mutable surfaces can conflict on shared files or shared memory even though Semantic Kernel cannot modify git state and Firecrawl\u2019s filesystem write capability is not explicit. Uncertainty prevents low severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or memory store, last-writer-wins conflicts can occur.",
+        "IF Firecrawl outputs are persisted and Semantic Kernel mutates the same artifacts, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent.",
+        "Serialize writes through a single orchestrator lock.",
+        "Use immutable artifact names with version suffixes.",
+        "Avoid shared mutable memory stores for concurrent runs.",
+        "requires-engineering: add optimistic concurrency checks on shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Firecrawl is a crawler/extractor that can produce web-derived facts, and Semantic Kernel is an orchestration library that can route those outputs into plugins or model calls. If Semantic Kernel treats Firecrawl output as authoritative, errors or hallucinated extractions can cascade into downstream actions. Because the pair\u2019s verification is docs-only, uncertainty does not reduce the risk below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tags"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Semantic Kernel uses Firecrawl output without a verification step, incorrect facts can propagate.",
+        "IF downstream plugins act on Firecrawl-derived claims, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Require a verification step before any downstream action.",
+        "Compare Firecrawl output against a second source for critical facts.",
+        "Mark scraped content as untrusted in the orchestration layer.",
+        "Disable auto-execution of plugin actions from extracted text.",
+        "requires-engineering: add confidence thresholds and human approval gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl explicitly handles API keys and web content, while Semantic Kernel handles application context and plugin credentials and can send data to external model providers. The pair therefore creates a compliance mismatch risk around retention, logging, and residency if sensitive web data or credentials are routed through Microsoft-hosted or third-party services. The profiles do not prove a specific residency breach, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Firecrawl and then forwarded through Semantic Kernel to external model providers, compliance obligations may be violated.",
+        "IF retention policies differ between the two agents\u2019 logs or memory stores, deletion/export requests can fail end-to-end."
+      ],
+      "mitigations": [
+        "Classify data before sending it to either agent.",
+        "Block PHI/PII/API keys from shared prompts and logs.",
+        "Set short retention on both agents\u2019 logs and memory stores.",
+        "Document the data flow and residency for each provider.",
+        "requires-engineering: implement policy-based routing for regulated data."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

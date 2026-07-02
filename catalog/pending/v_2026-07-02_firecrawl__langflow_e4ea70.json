@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "langflow"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__langflow_e4ea70",
+  "generated_at": "2026-07-02T01:07:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High risk of prompt injection, data leakage, and cascading errors when Firecrawl feeds Langflow flows with broad egress and unsandboxed server-side code.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes scrape/crawl outputs, while Langflow can chain multiple agents and treat flow inputs as node data. With no provenance tracking or isolation documented, web content from agent_a can be interpreted as instructions by agent_b. The pairwise pathway is plausible in default deployments, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_a scrape/crawl output is passed into a Langflow prompt or agent node without sanitization, injection is possible.",
+        "IF agent_b flow nodes treat uploaded or fetched content as instructions, attacker-controlled web text can steer execution."
+      ],
+      "mitigations": [
+        "Add a fixed system prompt that forbids following instructions from scraped content.",
+        "Insert a content-sanitization step before Langflow prompt nodes.",
+        "Disable automatic chaining from Firecrawl outputs into agent nodes.",
+        "Review one representative flow for prompt delimiters and instruction/data separation.",
+        "requires-engineering: add provenance tags and instruction filtering between the agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Agent_a handles API keys and broad network egress; agent_b reads and writes filesystem, stores per-flow credentials, and sends data to model providers or arbitrary HTTP services. If Firecrawl outputs or Langflow inputs include secrets or sensitive web content, the pair can exfiltrate them through agent_b's default networked flows. The blast radius includes secrets and intermediate outputs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl outputs contain API keys or other secrets and are routed into Langflow flows, leakage can occur.",
+        "IF Langflow components forward file contents or intermediate outputs to external model providers or HTTP services, sensitive data can leave the environment."
+      ],
+      "mitigations": [
+        "Remove secrets from any Firecrawl output before handoff.",
+        "Store Langflow credentials in a separate vault and rotate exposed keys.",
+        "Restrict Langflow flows to approved endpoints only.",
+        "Audit one flow for file-upload and credential-handling paths.",
+        "requires-engineering: isolate the two agents into separate network and secret domains."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Firecrawl supports multiple instances and broad egress, while Langflow supports multiple instances, server-side filesystem access, and unsandboxed Python code by default. Both can mutate shared external resources through APIs and files, so concurrent runs can overwrite or race on the same workspace or downstream services. The profiles do not show locking or coordination primitives, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or uploaded-file store, file clobbering or corruption can occur.",
+        "IF both agents call the same mutable API without external locking, race conditions can corrupt shared state."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Disable concurrent writes to shared outputs.",
+        "Add a simple lock file around shared resources.",
+        "Check one deployment for overlapping API targets.",
+        "requires-engineering: introduce transactional or advisory locking for shared mutable stores."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Firecrawl produces extracted web content and Langflow can chain multiple agents and execute server-side Python, so A's output can become B's authoritative input and trigger downstream actions without verification. Because Langflow can wire tools into flows, a bad extraction can cascade into repeated incorrect calls or commits to external services. This is a default-pathway risk, not a niche configuration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Langflow uses Firecrawl output as a prompt, tool argument, or routing signal without validation, errors can cascade.",
+        "IF a downstream Langflow node takes action based on extracted facts, incorrect web data can trigger harmful operations."
+      ],
+      "mitigations": [
+        "Add a verification step before any action-taking node.",
+        "Require human approval for high-impact flow branches.",
+        "Compare Firecrawl outputs against a second source for critical facts.",
+        "Log and review one end-to-end run for unchecked assumptions.",
+        "requires-engineering: implement schema validation and confidence gating between nodes."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl touches web content, structured data, screenshots, and API keys, while Langflow stores per-flow credentials and processes flow inputs/intermediate outputs. If regulated or personal data is routed from Firecrawl into Langflow, retention and residency obligations can diverge because Langflow's deployment-specific isolation and storage are not fixed. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data or secrets are passed from Firecrawl into Langflow stores, retention and access controls must align.",
+        "IF Langflow is deployed in a different jurisdiction or retention regime than Firecrawl's source data, compliance gaps can arise."
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents.",
+        "Disable storage of sensitive payloads in Langflow where possible.",
+        "Set explicit retention limits for flow inputs and logs.",
+        "Review one deployment's residency and DPA settings.",
+        "requires-engineering: separate regulated-data flows from general web-scraping flows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:25de8a2cd05ef125dfa7e3c10a42a79f3d3e010d245b5ecb3734ddee2d42ac93",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
