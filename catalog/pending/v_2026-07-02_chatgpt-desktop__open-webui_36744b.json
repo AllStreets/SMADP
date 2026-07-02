@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "chatgpt-desktop",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_chatgpt-desktop__open-webui_36744b",
+  "generated_at": "2026-07-02T03:35:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High: shared-file and tool-enabled pair creates prompt-injection, leakage, and cascading-error risks; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A reads files, clipboard, screenshots, and supported app content; agent B can ingest local files, mounted volumes, MCP, and OpenAPI tool outputs. That creates a plausible content-bridging path where B can pass attacker-controlled text to A or vice versa. No direct shared channel is documented, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b forwards file or tool output into agent_a prompts without sanitization, injection becomes actionable.",
+        "IF both agents are pointed at the same document set or clipboard bridge, malicious instructions can traverse the pair."
+      ],
+      "mitigations": [
+        "Disable automatic prompt ingestion from files and tool outputs.",
+        "Add a strict allowlist for fields B may forward to A.",
+        "Require human review before A acts on B-generated text.",
+        "Separate workspaces so A and B do not share documents.",
+        "requires-engineering: add provenance tags on all cross-agent content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches uploaded files, screenshots, voice, and connected-IDE code, while B touches documents, notes, files, and API keys and can call broad external services. If they share a workspace or the same data is routed through both, sensitive material can flow from A into B's broader egress surface. The pairwise leakage path is plausible from profiles alone, but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same sensitive file is accessible to both agents, B can transmit it to external services.",
+        "IF A captures screenshots or voice containing secrets and B receives those artifacts, leakage expands beyond the original context."
+      ],
+      "mitigations": [
+        "Keep A and B on separate folders or volumes.",
+        "Remove secrets from shared documents before either agent runs.",
+        "Disable B connectors that upload file contents.",
+        "Use a redaction step before passing artifacts between agents.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "A cannot write files or modify git state, but B can spawn subprocesses, browse, and use persistent shared sessions with mounted volumes. If both are given the same mutable resource through B's broader tool stack, they can still race on shared artifacts or overwrite each other's outputs. The conflict is not high because A lacks write authority, but overlap on shared files remains real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF B writes to a mounted volume that A reads from, stale or conflicting artifacts can occur.",
+        "IF an orchestrator maps both agents to the same mutable directory, B can clobber A's outputs."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Turn off B writes to shared volumes during A runs.",
+        "Serialize access to any shared artifact.",
+        "Use file locks for mutable resources.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A can produce file- and app-derived content that B may treat as input, and B has enough tool authority to act on that content through browsers, subprocesses, and external APIs. Without an explicit verification step, A's output can cascade into B's downstream actions, creating irreversible mistakes or unsafe automation. This is a default-risk pathway because B is built for tool use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.screen_capture"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A-generated summaries or extracted facts without verification, errors propagate downstream.",
+        "IF B is configured to execute browser or subprocess actions from A's output, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Require B to cite source artifacts before acting.",
+        "Insert a human approval gate for any action derived from A.",
+        "Compare A's output against original files before execution.",
+        "Limit B to read-only mode for A-derived tasks.",
+        "requires-engineering: add schema validation for A-to-B handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A is a closed-source vendor desktop app touching uploaded files, screenshots, voice, and connected IDE code, while B is an open-source web app that handles documents, notes, files, and API keys with broad external connectors. If regulated data is routed through both, retention and residency obligations can diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed by both agents, their retention and logging policies must both satisfy the applicable regime.",
+        "IF A's vendor-managed storage and B's self-hosted logs retain the same record class differently, compliance gaps emerge."
+      ],
+      "mitigations": [
+        "Classify data before sending it to either agent.",
+        "Disable retention of regulated artifacts where possible.",
+        "Keep regulated workloads on one agent only.",
+        "Review vendor and self-hosted logging settings.",
+        "requires-engineering: document residency and retention controls per data class."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:8efe28bc4203a67545c8347009ca21dafe1f9db140a59d0f4bf03f0c95d0160a",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
