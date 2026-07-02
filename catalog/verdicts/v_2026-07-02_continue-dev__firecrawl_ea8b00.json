@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "firecrawl"
+  ],
+  "verdict_id": "v_2026-07-02_continue-dev__firecrawl_ea8b00",
+  "generated_at": "2026-07-02T00:26:21Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.5,
+  "headline": "High: shared filesystem and broad egress create prompt-injection, leakage, and cascading-action risks; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue can read/write workspace files and uses MCP; firecrawl is an MCP-compatible API client that handles web content and structured data. That creates a plausible bridge where firecrawl output lands in files Continue may ingest as trusted content. No direct shared channel is documented beyond filesystem/MCP, so uncertainty stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF firecrawl output is written into a workspace file that Continue reads automatically",
+        "IF Continue is configured to treat file contents as instructions or tool context"
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of scraped files into Continue",
+        "Keep firecrawl outputs in a separate directory from active editor buffers",
+        "Add a manual review step before any MCP-fed content is passed to Continue",
+        "Use provenance tags or filenames that mark firecrawl output as untrusted",
+        "requires-engineering: enforce content provenance between the two agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Continue touches source code, open editor buffers, and model-provider API keys, while firecrawl touches web content, structured data, screenshots, and API keys. Both have broad network egress and can share files via the host filesystem, so sensitive workspace data could flow into firecrawl requests or outputs. The pairwise leakage path is plausible in default developer workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Continue writes sensitive buffers to files that firecrawl reads or uploads",
+        "IF firecrawl is pointed at directories containing secrets or API keys"
+      ],
+      "mitigations": [
+        "Exclude secrets and key files from any firecrawl crawl scope",
+        "Store firecrawl artifacts outside the IDE workspace",
+        "Rotate any exposed API keys immediately after a test run",
+        "Review Continue buffer contents before invoking firecrawl on shared paths",
+        "requires-engineering: add workspace-level secret redaction before transfer"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Continue can write the filesystem and spawn subprocesses; firecrawl is an API client/CLI with MCP-compatible support and broad egress. Even though Continue does not modify git state, both can mutate shared files in the same workspace without documented locking, so concurrent writes or stale overwrites are plausible. The conflict is not guaranteed, but the shared filesystem makes it real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same workspace path concurrently",
+        "IF firecrawl CLI/API output is saved into files that Continue also edits"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Serialize writes with a simple manual lock file",
+        "Avoid concurrent runs on the same repository checkout",
+        "Check file diffs before accepting either agent's changes",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Continue can generate code or instructions from workspace context, and firecrawl produces scraped web content and structured data. If firecrawl output is fed into Continue without verification, Continue may propagate or act on incorrect scraped facts. Neither profile shows strong built-in verification or downstream action controls, so the cascade is plausible but not yet high severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF firecrawl output is used as authoritative input to Continue",
+        "IF Continue-generated code or instructions are executed without human review"
+      ],
+      "mitigations": [
+        "Require human review of scraped facts before reuse",
+        "Keep firecrawl outputs as citations, not source-of-truth data",
+        "Ask Continue to cross-check key claims against a second source",
+        "Do not auto-run code generated from scraped content",
+        "requires-engineering: add verification gates between scrape and act steps"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Continue handles source code, open editor buffers, and model-provider API keys; firecrawl handles web content, structured data, screenshots, and API keys. The profiles do not specify residency or certifications, so a concrete mismatch cannot be proven. However, the pair can move sensitive developer data into a third-party scraping/API workflow, making compliance gaps plausible and worth treating as medium under uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present in Continue buffers or workspace files",
+        "IF firecrawl processes that regulated data through its API"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces",
+        "Confirm vendor DPAs and residency settings before use",
+        "Separate API keys by environment and purpose",
+        "Log which data classes are sent to firecrawl",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:fc9513ef7d2a028dd458d671909977e57386a2bd54861c9bb0b4cb411ee2b08a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
