@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__open-webui_1d30ad",
+  "generated_at": "2026-07-02T03:53:00Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt/data leakage and capability conflict: open-webui\u2019s persistent shared sessions plus Firecrawl\u2019s broad egress and API-key handling create a dangerous default pair.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "open-webui ingests prompts, chat messages, documents, and files, and supports MCP/tools; firecrawl emits web content via scrape/crawl/search APIs and MCP-compatible client support. That creates a plausible default path where Firecrawl output is fed into open-webui as trusted content. No direct shared channel is documented, so I choose medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is pasted, imported, or tool-fed into open-webui without provenance checks, prompt injection is possible.",
+        "IF open-webui treats scraped web content as instructions, attacker-controlled content can steer tool use."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of scraped pages into chat context.",
+        "Add a provenance banner or delimiter around Firecrawl outputs.",
+        "Require a human review step before executing tool instructions from web content.",
+        "Restrict MCP/tool access to a allowlisted subset of actions.",
+        "requires-engineering: add content-sanitization and instruction-stripping before passing Firecrawl output onward."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "firecrawl handles API keys and broad web egress, while open-webui stores prompts, documents, files, persistent memory, and usage analytics and can access local/mounted files. In a default shared-workspace deployment, sensitive data from open-webui can flow into Firecrawl requests or logs, and Firecrawl can exfiltrate fetched content over the network. The blast radius includes secrets and documents, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF open-webui and Firecrawl share a workspace, mounted volume, or API-key store, sensitive files can be exposed across the pair.",
+        "IF Firecrawl is used on pages containing secrets or API keys, those contents can leave the local boundary via network egress."
+      ],
+      "mitigations": [
+        "Separate API keys and secrets into distinct vaults per agent.",
+        "Run each agent in a different container or namespace with no shared volume.",
+        "Turn off or minimize logging for requests containing documents or keys.",
+        "Use a redaction proxy before any Firecrawl fetch or scrape.",
+        "requires-engineering: enforce per-agent data-loss-prevention rules on all tool inputs and outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents support multiple instances and broad network egress; open-webui also has persistent shared sessions and Redis-backed shared state, while firecrawl exposes API/CLI/MCP surfaces. That overlap creates write contention on shared resources and session state if they are deployed against the same backend or workspace. The profiles do not prove a shared mutable target, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same mounted directory, Redis namespace, or API-key store, state conflicts can occur.",
+        "IF open-webui sessions and Firecrawl jobs share a mutable backend without locks, concurrent updates can overwrite each other."
+      ],
+      "mitigations": [
+        "Assign separate storage paths and Redis namespaces.",
+        "Disable concurrent writes to shared artifacts.",
+        "Use per-agent service accounts with disjoint scopes.",
+        "Serialize jobs that touch the same files or records.",
+        "requires-engineering: add locking or optimistic concurrency control around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "open-webui can route tool calls and persist memory, while firecrawl produces scraped content and structured data. If Firecrawl output is treated as authoritative by open-webui, downstream prompts or actions can propagate errors or malicious content without verification. The pair does not show autonomous external actions by default, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF open-webui forwards Firecrawl results into later tool calls without validation, incorrect facts can cascade.",
+        "IF a user relies on Firecrawl-derived content inside open-webui for decisions, downstream outputs may amplify errors."
+      ],
+      "mitigations": [
+        "Insert a verification step before any action based on scraped content.",
+        "Mark Firecrawl-derived text as untrusted in the UI.",
+        "Require citations or source URLs for any factual claim passed onward.",
+        "Limit open-webui tools to read-only mode for Firecrawl-fed sessions.",
+        "requires-engineering: add automated fact-checking or schema validation between the agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "open-webui explicitly touches documents, notes, calendar events, files, and persistent memory, while firecrawl touches web content and API keys and has broad network egress. If regulated data such as EU PII or secrets enters open-webui and is then scraped, stored, or transmitted by firecrawl, retention and residency obligations can diverge. The profiles do not specify a concrete jurisdiction, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is stored in open-webui and then sent through Firecrawl, retention and transfer controls may be violated.",
+        "IF the deployment requires data residency guarantees, Firecrawl network egress can move data outside the intended boundary."
+      ],
+      "mitigations": [
+        "Classify data before sending it to Firecrawl.",
+        "Block regulated fields from being scraped or exported.",
+        "Set shorter retention on open-webui memory for sensitive sessions.",
+        "Document the data flow and jurisdiction for both agents.",
+        "requires-engineering: implement residency-aware routing and retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
