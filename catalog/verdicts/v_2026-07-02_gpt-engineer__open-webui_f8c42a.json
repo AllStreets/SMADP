@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gpt-engineer",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_gpt-engineer__open-webui_f8c42a",
+  "generated_at": "2026-07-02T03:07:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High: shared project files and broad network/tooling create prompt-injection, leakage, and cascading-error risks; open-webui\u2019s persistent multi-session design amplifies the pair.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "gpt-engineer writes files in a user project directory and can execute shell commands, while open-webui can ingest files, MCP/tools, and web content into persistent sessions. That creates a direct path for attacker-controlled project artifacts or retrieved content to be treated as instructions by the other agent. The shared project-directory state makes the interaction concrete.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF gpt-engineer writes attacker-controlled text into the shared project directory and open-webui reads it as context, injection is possible.",
+        "IF open-webui routes retrieved web or tool output into prompts without provenance filtering, the pair becomes instruction-hijackable."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of project files into prompts.",
+        "Require provenance labels on all retrieved content before prompting.",
+        "Use separate directories per agent for the same task.",
+        "Turn off MCP/tool connectors for untrusted content.",
+        "requires-engineering: add content-sanitization and instruction/data separation guards."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "gpt-engineer reads and writes the project directory and handles OPENAI_API_KEY, while open-webui can access local files, mounted volumes, and many external APIs. If both touch the same workspace, generated code, notes, or secrets can flow from one agent into the other\u2019s context and then out to third-party services. The blast radius is sensitive data, but not inherently all data classes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same project directory or mounted volume, file contents can leak across them.",
+        "IF open-webui sends shared files to external model or search APIs, local secrets may leave the environment."
+      ],
+      "mitigations": [
+        "Separate workspaces and mounted volumes per agent.",
+        "Remove secrets from shared directories before either agent runs.",
+        "Disable external API connectors for sensitive projects.",
+        "Use least-privilege API keys with per-agent scoping.",
+        "requires-engineering: enforce data-loss-prevention filters on file ingestion."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad network egress and subprocess execution, and gpt-engineer can write the filesystem while open-webui can operate on local files and mounted volumes in persistent shared sessions. In a shared project or volume, concurrent writes and tool actions can race, overwrite artifacts, or corrupt state. Because the profiles show no locking or coordination primitive, uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or mounted volume concurrently, write conflicts can occur.",
+        "IF either agent mutates shared artifacts without external locking, state corruption is possible."
+      ],
+      "mitigations": [
+        "Assign disjoint directories to each agent.",
+        "Serialize write access with a simple operator-managed lock file.",
+        "Run one agent at a time for shared artifacts.",
+        "Snapshot the workspace before each run.",
+        "requires-engineering: add transactional coordination for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "gpt-engineer produces code and writes files, and open-webui can consume files, tools, and persistent memory in a multi-session app. If open-webui treats gpt-engineer\u2019s generated artifacts as authoritative, errors can cascade into further prompts, tool calls, or user-facing outputs without verification. The pair therefore supports an unverified-output-to-action chain in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF open-webui uses gpt-engineer output as trusted context, downstream mistakes can propagate.",
+        "IF open-webui exposes generated code or summaries to users without verification, falsehoods can be amplified."
+      ],
+      "mitigations": [
+        "Insert a human review step before reuse of generated artifacts.",
+        "Require tests or lint checks before accepting code outputs.",
+        "Mark all agent-generated content as untrusted by default.",
+        "Limit open-webui actions to read-only review for shared outputs.",
+        "requires-engineering: add verification gates before tool execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "gpt-engineer handles project files and OPENAI_API_KEY, while open-webui touches prompts, chat messages, documents, files, and usage analytics and can send them to multiple external services. That creates a plausible retention and residency mismatch for the same data class, especially if sensitive project material is routed through open-webui\u2019s connectors. The profiles do not document a shared compliance regime, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF sensitive project files are routed through open-webui connectors, retention and residency obligations may diverge.",
+        "IF the operator stores regulated data in the shared workspace, the pair may violate local handling policy."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Disable analytics and external connectors for regulated projects.",
+        "Use region-appropriate deployments for both agents.",
+        "Review retention settings before each run.",
+        "requires-engineering: align logging and deletion policies across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1f0da99bd2ceffa419a4512681f9600338d52b4bfcc163d7fdd550b30117fbd2",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
