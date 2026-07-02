@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__paddleocr_40c0e4",
+  "generated_at": "2026-07-02T04:22:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High: Firecrawl\u2019s broad egress plus PaddleOCR\u2019s browser/document processing creates default data-leak and cascading-error risk; prompt-injection and capability-conflict are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible/API surfaces, while PaddleOCR processes documents/images and can run browsers. If Firecrawl output is fed into PaddleOCR workflows, attacker-controlled page text or OCR inputs can be treated as instructions. No shared channel is documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is copied into PaddleOCR prompts or browser automation inputs without sanitization, injection is plausible.",
+        "IF both agents are connected through a shared workspace or message queue, the attack surface increases."
+      ],
+      "mitigations": [
+        "Strip instructions from scraped text before passing it onward.",
+        "Use a fixed schema for Firecrawl outputs and reject free-form directives.",
+        "Disable browser automation on untrusted pages.",
+        "Add a human review step for any content that will be re-prompted.",
+        "requires-engineering: isolate the agents behind separate queues with provenance tags."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Firecrawl handles API keys and has broad network egress; PaddleOCR processes documents and images and can run browsers. If sensitive documents or screenshots flow from Firecrawl into PaddleOCR, either agent may expose them through outbound requests or browser fetches. The pairwise path is not directly documented, so this is inferred but still dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl is used on pages containing API keys or other secrets and the extracted content is sent to PaddleOCR, leakage risk exists.",
+        "IF PaddleOCR browser mode fetches remote assets from Firecrawl-derived content, sensitive data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Redact secrets before any cross-agent handoff.",
+        "Run PaddleOCR only on local files, not remote URLs.",
+        "Block outbound network for OCR jobs.",
+        "Separate credentials from content-processing workflows.",
+        "requires-engineering: enforce per-agent egress allowlists and content classification."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Firecrawl supports multiple instances and broad API/network activity; PaddleOCR can run browsers and has allowlisted egress. Their write surfaces are not explicit, so a direct same-directory write conflict is unproven. Still, overlapping networked processing on shared mutable resources can collide if orchestrated together, so medium is the safer choice under uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same workspace or artifact store, race conditions become possible.",
+        "IF the orchestrator reuses one OAuth principal or shared mutable cache, conflicts can surface."
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent.",
+        "Serialize writes through one coordinator.",
+        "Use file locks for shared artifacts.",
+        "Avoid shared OAuth tokens across the pair.",
+        "requires-engineering: add optimistic-concurrency checks on shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Firecrawl produces scraped web content and structured data; PaddleOCR turns documents/images into downstream text. If PaddleOCR treats Firecrawl output as authoritative, any scraping error or injected content can cascade into incorrect OCR-derived outputs or actions. Because no verification step is documented, the safer severity is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR consumes Firecrawl output without validation, upstream errors propagate downstream.",
+        "IF downstream systems act on OCR text as ground truth, the blast radius expands."
+      ],
+      "mitigations": [
+        "Require source-url provenance on every handoff.",
+        "Compare OCR output against the original artifact before acting.",
+        "Add confidence thresholds and reject low-confidence parses.",
+        "Insert a human approval step for high-impact outputs.",
+        "requires-engineering: implement end-to-end provenance and verification."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl touches API keys and web content, while PaddleOCR processes documents and images. The profiles do not show a residency or certification mismatch, so compliance risk is not high. However, if regulated documents or secrets are routed from Firecrawl into PaddleOCR, retention and logging policies could diverge, creating a medium compliance gap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or secrets are processed by both agents under different retention policies, compliance mismatch exists.",
+        "IF EU personal data is routed through a non-EU deployment of either agent, residency concerns arise."
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents.",
+        "Keep regulated data out of browser-enabled workflows.",
+        "Document retention and deletion behavior for both tools.",
+        "Log only metadata, not content, for sensitive jobs.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
