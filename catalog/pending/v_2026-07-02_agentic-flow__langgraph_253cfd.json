@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "langgraph"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__langgraph_253cfd",
+  "generated_at": "2026-07-02T05:24:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and write-capable orchestration create prompt-injection, leakage, and cascading-error risks; compliance gaps are possible but not directly evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP and stdin/stdout, while agent_b can read/write files and run browsers in a graph with shared state. That creates a plausible default path where content from agent_a is consumed by agent_b as instructions or data. The pair lacks documented provenance controls, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs untrusted text into files or MCP messages that agent_b later parses as instructions, injection is possible.",
+        "IF agent_b nodes ingest agent_a outputs without provenance checks, prompt hijacking can propagate across the graph."
+      ],
+      "mitigations": [
+        "Add a strict instruction/data delimiter in shared artifacts.",
+        "Require provenance tags on all agent_a outputs before agent_b consumes them.",
+        "Disable automatic parsing of agent_a text as tool directives.",
+        "Review one shared workflow for instruction-like strings in under 5 minutes.",
+        "requires-engineering: add provenance-aware message schemas."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches repository metadata, task prompts, and code, and agent_b has filesystem read/write plus broad egress. If they share a workspace or checkpointer, sensitive material from agent_a can flow into agent_b and then out through model-provider or tool calls. The profiles do not show isolation, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes prompts, code, or metadata into a shared workspace, agent_b can read them.",
+        "IF agent_b forwards its context to model providers or tools, shared data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Move shared state to a redacted workspace.",
+        "Remove secrets from files before agent_b reads them.",
+        "Limit agent_b tool calls on workflows that include agent_a outputs.",
+        "Check one checkpointer namespace for sensitive fields.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can execute shell, modify git state, and install packages; agent_b can execute shell and write files, with shared state across instances. In a shared repo or workspace, both can mutate the same resources without any locking shown. That matches the high-risk overlap pattern for concurrent write conflicts and irreversible repo corruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory, concurrent writes can race.",
+        "IF agent_b persists state while agent_a rewrites git metadata, history corruption or lost updates can occur."
+      ],
+      "mitigations": [
+        "Run the agents in separate working directories.",
+        "Serialize git-mutating steps with a lock file.",
+        "Disable agent_a git writes during agent_b runs.",
+        "Inspect one shared branch for concurrent commits.",
+        "requires-engineering: add transactional coordination around shared writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a is a low-level agentic-flow system that can emit outputs through MCP and background workers, while agent_b is a graph orchestrator whose nodes may themselves be agents. If agent_b treats agent_a outputs as authoritative, errors can cascade through multiple nodes and persisted state. The interaction is plausible but not directly documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF agent_b routes agent_a output into downstream nodes without verification, mistakes can amplify.",
+        "IF agent_a emits incorrect facts into a persisted graph state, later nodes may reuse them."
+      ],
+      "mitigations": [
+        "Insert a verification step between the agents.",
+        "Require citations or source links before agent_b acts on agent_a output.",
+        "Limit agent_a output to drafts only.",
+        "Audit one downstream node for blind trust in upstream text.",
+        "requires-engineering: add confidence gating and rollback for graph state."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles task prompts, repository metadata, and Ed25519 signatures; agent_b handles graph state and model-provider API keys. No explicit residency, certification, or retention mismatch is documented, so only a limited compliance concern is visible. Because the profiles do not show a concrete regulated-data flow, this stays low rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared graph state, retention and residency controls must be checked.",
+        "IF either agent logs secrets or prompts beyond the intended boundary, policy mismatch can arise."
+      ],
+      "mitigations": [
+        "Confirm what data classes enter the graph state.",
+        "Disable logging for secrets-bearing runs.",
+        "Review retention settings for one shared workflow.",
+        "Separate regulated and unregulated jobs.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.6.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:d906570513481949e7c2f3f6759c3c27a8b08dc7d458ad996f69f302219d2a10",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
