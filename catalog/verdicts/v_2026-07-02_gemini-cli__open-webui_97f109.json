@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "gemini-cli",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_gemini-cli__open-webui_97f109",
+  "generated_at": "2026-07-02T02:55:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.755,
+  "headline": "High: shared filesystem/MCP and broad egress make prompt injection, leakage, and action-cascade risks material in default pairings.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Gemini CLI ingests files, stdin/stdout, and user-configured MCP servers; open-webui supports MCP, plugins, and tool/function calling. Because Gemini shares state via filesystem/git and open-webui can surface documents and prompts, attacker-controlled content can cross the boundary and be treated as instructions in default pairings.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Gemini CLI reads content from a shared repo or mounted directory that open-webui can write to, injection is possible.",
+        "IF open-webui forwards retrieved documents or tool outputs into prompts without provenance tagging, Gemini can be steered by attacker-controlled text."
+      ],
+      "mitigations": [
+        "Disable shared filesystem handoff between the two agents.",
+        "Require provenance labels on all tool and document outputs before reuse.",
+        "Restrict open-webui MCP/plugins to allowlisted servers only.",
+        "Run Gemini CLI in an isolated workspace or container.",
+        "requires-engineering: add content-sanitization and instruction/data separation at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Gemini CLI can read local files and shell environment and has broad network egress; open-webui stores prompts, documents, notes, files, and API keys and can call many external APIs. In a shared workspace, sensitive files or secrets can flow from Gemini into open-webui or onward to third parties, creating default leakage risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory or mounted volume, file contents can be exposed across the pair.",
+        "IF open-webui sends retrieved files or chat context to external APIs, data read by Gemini can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces and mounted volumes per agent.",
+        "Remove secrets from shared directories before running either agent.",
+        "Disable external API connectors in open-webui for sensitive projects.",
+        "Use least-privilege API keys with per-agent scoping.",
+        "requires-engineering: enforce DLP/redaction before any outbound tool call."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Gemini CLI can write the filesystem and modify git state; open-webui can access local files and mounted volumes and supports persistent shared sessions. If both operate on the same repo or volume, concurrent writes and git mutations can overwrite each other or corrupt state, and neither profile shows locking by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git checkout, conflicting writes or commits can occur.",
+        "IF open-webui persists artifacts into a mounted volume that Gemini also edits, last-writer-wins corruption is possible."
+      ],
+      "mitigations": [
+        "Assign separate repos or branches per agent.",
+        "Avoid concurrent edits to the same files.",
+        "Pause one agent while the other performs git operations.",
+        "Use file-level locks for shared artifacts.",
+        "requires-engineering: add orchestrator-managed locking for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Gemini CLI can generate code, shell actions, and MCP tool calls; open-webui supports plugins, tools, MCP, and function calling. If open-webui treats Gemini output as authoritative, errors or hallucinations can cascade into downstream actions or rendered content without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF open-webui feeds Gemini-generated text directly into tools or workflows, unverified mistakes can propagate.",
+        "IF Gemini produces code or commands that open-webui displays or executes, the pair can amplify a single error into multiple actions."
+      ],
+      "mitigations": [
+        "Require human review before any tool execution based on Gemini output.",
+        "Add a verification step in open-webui for all agent-generated facts.",
+        "Disable auto-execution of code or commands from either agent.",
+        "Log and diff all generated actions before applying them.",
+        "requires-engineering: implement structured output validation and provenance checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Gemini CLI handles source code, files in cwd, and shell environment, while open-webui stores prompts, documents, notes, files, persistent memory, and API keys. Their retention and residency characteristics are not aligned in the profiles, so the pair can create compliance mismatches on the same data class even though no specific jurisdictional violation is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into both agents, differing retention or logging behavior can create a policy mismatch.",
+        "IF open-webui persists chat or memory longer than the source repo lifecycle, deletion/export obligations may diverge."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents.",
+        "Align retention settings before use.",
+        "Disable persistent memory for sensitive projects.",
+        "Review logging and export settings in open-webui.",
+        "requires-engineering: document and enforce a shared data-handling policy."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:370fb655ed97fd079d928e80121e8c81e4a8bd2537fcecee542258e27517fcb6",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
