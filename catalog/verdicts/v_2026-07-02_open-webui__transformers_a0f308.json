@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "open-webui",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-07-02_open-webui__transformers_a0f308",
+  "generated_at": "2026-07-02T07:24:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.755,
+  "headline": "High-risk shared-file and browser/tooling interaction: open-webui can ingest external content and transformers can read/write local files, creating prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "open-webui can ingest web content via browsers, MCP, OpenAPI tools, and file inputs, while transformers can read local files and process example scripts/model files. If open-webui forwards untrusted content into transformers workflows, instruction-like payloads can hijack downstream processing. The pair lacks documented provenance controls, so uncertainty pushes severity up.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF open-webui passes fetched web or file content into transformers prompts or scripts without sanitization, injection is plausible.",
+        "IF a shared workspace or copied artifact is treated as trusted instructions, attacker-controlled text can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of untrusted web pages into model prompts.",
+        "Add a strict content-delimiting wrapper before passing text between agents.",
+        "Review and strip instruction-like tokens from retrieved documents.",
+        "Use a separate staging directory for artifacts from open-webui.",
+        "requires-engineering: add provenance tags and allowlist-based parsing."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "open-webui touches prompts, chat messages, documents, persistent memory, files, and API keys, and can access Google Drive/OneDrive/SharePoint plus local mounted volumes. transformers can read filesystem content and write files, so the pair can move sensitive data from open-webui into local artifacts or model inputs. The shared-file pathway is enough for leakage even without a documented direct bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF open-webui exports chats, documents, or API keys into files readable by transformers, sensitive data can leak.",
+        "IF transformers writes outputs into a shared directory that open-webui later indexes, private context can be re-exposed."
+      ],
+      "mitigations": [
+        "Restrict both agents to separate directories.",
+        "Remove API keys and secrets from any shared export path.",
+        "Turn off automatic indexing of newly written files.",
+        "Manually inspect shared artifacts before reuse.",
+        "requires-engineering: enforce per-agent ACLs on the workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "open-webui can spawn subprocesses and use mounted data volumes, while transformers can execute shell commands, install packages, read/write the filesystem, and spawn subprocesses. Both therefore have overlapping write and execution authority over local resources, and no locking or coordination primitive is documented. Concurrent modification of the same files or environment can corrupt state or overwrite work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or model cache, file clobbering is possible.",
+        "IF either agent modifies shared package or model state without locks, race conditions can corrupt outputs."
+      ],
+      "mitigations": [
+        "Assign distinct working directories.",
+        "Pause one agent while the other writes shared state.",
+        "Avoid shared model-cache paths.",
+        "Check for concurrent writes before launching jobs.",
+        "requires-engineering: add file locks or transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "open-webui can act as a front-end that produces prompts, retrieved documents, and artifacts, while transformers can consume those outputs through its pipeline-style model framework. If transformers treats open-webui output as authoritative, errors or hallucinations can cascade into downstream generated text or scripts. The interaction is plausible by default because both are designed for content processing.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF transformers consumes open-webui output without verification, upstream mistakes propagate downstream.",
+        "IF open-webui forwards model-generated claims into later tasks, those claims can be amplified."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require source citations before downstream use.",
+        "Compare outputs against original documents before acting.",
+        "Limit transformers to summarization, not action generation.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "open-webui explicitly handles usage analytics, persistent memory, API keys, and cloud-connected services, while transformers is a general local library with filesystem and shell access. If regulated data such as EU PII or secrets enters open-webui and is then processed by transformers on a different residency boundary, retention and residency obligations can diverge. The profiles do not document matching compliance controls, so the mismatch is material but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is routed through open-webui and stored in persistent memory or analytics, residency/retention obligations may be triggered.",
+        "IF transformers processes the same data on infrastructure with different retention rules, compliance mismatch occurs."
+      ],
+      "mitigations": [
+        "Classify data before routing it to either agent.",
+        "Disable analytics for regulated datasets.",
+        "Keep regulated workloads on one residency boundary.",
+        "Delete transient artifacts after each run.",
+        "requires-engineering: document DPA, retention, and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:974aaa95834416e0cd1a8af3cff95445adc000d1a6f68294a1528216a945f4ae",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
