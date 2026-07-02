@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-07-02_lightagent__plandex_cd8a5c",
+  "generated_at": "2026-07-02T07:01:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and write-conflict pathways plausible; no direct sandboxed interaction evidence is provided.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent ingests tool results, MCP/stdin-stdout, and can run browsers; Plandex reads/writes a project directory and uses review-then-apply. A shared filesystem or copied outputs could let LightAgent-supplied content influence Plandex, but no direct bridge is documented, so this is an inferred default-pathway risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent outputs are copied into Plandex prompts or files without sanitization, injection is possible.",
+        "IF both agents share a writable workspace, attacker-controlled content can traverse from A to B."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of A outputs into B prompts.",
+        "Use separate directories for each agent.",
+        "Strip instructions from copied text before handoff.",
+        "Review any file imported from LightAgent before Plandex reads it."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and provenance metadata, while Plandex reads the project directory and writes to a plan-local sandbox. If they share a workspace, sensitive A-side data can be exposed to B and then sent to model providers or cloud services via broad egress, but the exact sharing mechanism is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory, A-side memory or tool results can be read by B.",
+        "IF B forwards file contents to its model provider, shared sensitive data can leave the local environment."
+      ],
+      "mitigations": [
+        "Keep A and B on separate workspaces.",
+        "Do not place secrets in shared project files.",
+        "Turn off any auto-upload or sync features.",
+        "Redact memory/tool-result exports before handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "LightAgent can spawn subprocesses and use MCP, while Plandex can execute shell commands, modify git state, read/write the filesystem, and supports multiple instances with shared backend state. Overlapping write and git capabilities on the same repo create a realistic conflict and corruption pathway in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository, concurrent writes can race.",
+        "IF Plandex instances share backend state while LightAgent mutates files, git state can diverge or be corrupted."
+      ],
+      "mitigations": [
+        "Assign each agent a separate repo clone.",
+        "Serialize write operations with a human gate.",
+        "Disable auto-apply while both are active.",
+        "Commit or stash before switching agents.",
+        "Use branch-per-agent workflows."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LightAgent can produce tool results and workflow state that Plandex may consume during planning or apply steps. Plandex's review-then-apply helps, but if A's outputs are treated as authoritative without verification, errors can cascade into code changes or shell actions; the interaction is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Plandex imports LightAgent-generated facts without checking sources, wrong assumptions can propagate.",
+        "IF auto-apply is enabled, a mistaken plan can become an executed change."
+      ],
+      "mitigations": [
+        "Require source links for any A-generated claim.",
+        "Manually verify A outputs before apply.",
+        "Keep auto-apply disabled.",
+        "Use a second reviewer for destructive changes."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "LightAgent handles user conversations and long-term memory, while Plandex handles source code and model-provider API keys. The profiles do not show a residency or certification mismatch, so only a limited compliance gap is visible: mixed data classes may be logged or retained differently if the same project is reused.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into both tools, retention policies must be aligned.",
+        "IF either tool logs prompts or files longer than the other, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workflows.",
+        "Check each tool's retention settings.",
+        "Separate secrets from source-code workspaces.",
+        "Document which agent stores which data class."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

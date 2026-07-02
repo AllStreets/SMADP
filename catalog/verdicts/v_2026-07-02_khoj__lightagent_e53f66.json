@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "khoj",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-02_khoj__lightagent_e53f66",
+  "generated_at": "2026-07-02T07:01:34Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.485,
+  "headline": "High: LightAgent\u2019s MCP/stdin tool surface can ingest Khoj-retrieved content and broad egress creates prompt-injection and leakage risk; capability overlap also enables conflicting writes to shared remote resources.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Khoj reads indexed personal notes/files and can use optional web search; LightAgent exposes MCP over stdio/SSE and runtime hooks that can observe or replace lifecycle payloads. That creates a plausible bridge where attacker-controlled content from Khoj can reach LightAgent\u2019s tool parser or hooks as instructions. The interaction is documented by profiles, though not reproduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Khoj indexes attacker-controlled notes or web content that LightAgent later consumes via MCP/stdin/SSE, injection is plausible.",
+        "IF LightAgent runtime hooks or tool parsers treat payload text as instructions, the bridge becomes exploitable."
+      ],
+      "mitigations": [
+        "Disable automatic forwarding of Khoj outputs into LightAgent tool inputs.",
+        "Add a strict provenance tag and reject untrusted text as instructions.",
+        "Require human review before any LightAgent action derived from Khoj content.",
+        "Use a content sanitizer that strips tool directives from retrieved notes.",
+        "requires-engineering: isolate the agents with separate queues and no shared instruction channel."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Khoj touches personal notes and indexed documents, while LightAgent handles conversations, long-term memory, trace data, tool results, and provenance metadata. Both have broad network egress, so if Khoj content is passed into LightAgent, sensitive notes can flow into LightAgent logs or outbound API calls. The shared workspace is not explicit, so this is a default-pathway inference rather than a proven leak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Khoj outputs personal notes into LightAgent prompts or memory, those notes can be retained in LightAgent trace data.",
+        "IF LightAgent forwards prompt/context to external APIs, any imported Khoj content may leave the local boundary."
+      ],
+      "mitigations": [
+        "Avoid sending Khoj note text into LightAgent unless redacted.",
+        "Turn off or minimize LightAgent trace/log retention.",
+        "Use separate API keys and accounts for each agent.",
+        "Review outbound destinations for both agents before enabling sync.",
+        "requires-engineering: add field-level redaction before any cross-agent handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Khoj can read filesystem content and has broad network egress; LightAgent can run browsers, spawn subprocesses, use MCP, and also has broad egress. Even without explicit filesystem write in Khoj, both can mutate shared remote state through APIs, MCP, or browser actions, so overlapping authority can conflict in default multi-instance use. Uncertainty about exact shared resources pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same external account, API, or MCP-backed resource, concurrent updates can race.",
+        "IF LightAgent browser or subprocess actions modify state based on Khoj-derived inputs, conflicting writes become possible."
+      ],
+      "mitigations": [
+        "Assign separate accounts or workspaces to each agent.",
+        "Disable concurrent runs against the same resource.",
+        "Add a manual lock step before any write-capable action.",
+        "Prefer read-only mode for one agent during shared tasks.",
+        "requires-engineering: implement optimistic concurrency or resource locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Khoj produces retrieved notes and chat outputs that LightAgent can ingest through MCP/stdin and then act on with browser or subprocess tools. Because LightAgent has tool-calling and runtime hooks, it may treat Khoj output as authoritative unless an explicit verification step exists. The pair therefore supports a default cascade from retrieval to action, but not enough evidence for high-impact automation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF Khoj output is used as direct input to LightAgent planning, LightAgent may propagate errors without verification.",
+        "IF LightAgent is configured to execute browser or subprocess actions from retrieved text, mistaken facts can become actions."
+      ],
+      "mitigations": [
+        "Insert a verification step between Khoj output and LightAgent action selection.",
+        "Require citations or source links for any factual claim passed across agents.",
+        "Limit LightAgent to drafting only, not execution, for cross-agent workflows.",
+        "Review a sample of handoffs for hallucinated or stale facts.",
+        "requires-engineering: add schema validation for all inter-agent messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, but Khoj explicitly handles personal notes/indexed documents and LightAgent handles conversations, memory, traces, and tool results. No residency or certification mismatch is documented, so a compliance breach is not established. The main concern is policy mismatch in retention/logging if the pair is used on regulated data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Khoj and then mirrored into LightAgent logs or memory, retention policy mismatch may occur.",
+        "IF either deployment stores data in a jurisdiction or retention regime not approved for the data class, compliance risk increases."
+      ],
+      "mitigations": [
+        "Confirm both deployments\u2019 retention settings before use.",
+        "Avoid regulated data until residency and logging policies are documented.",
+        "Disable long-term memory for regulated workflows.",
+        "Keep a written data-flow map for cross-agent handoffs.",
+        "requires-engineering: add policy-based routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:64d2280775afb24cd0b1815b8d8af5210b05a84c37292661beba382714998a35",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
