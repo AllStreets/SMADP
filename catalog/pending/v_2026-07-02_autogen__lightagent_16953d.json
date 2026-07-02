@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-02_autogen__lightagent_16953d",
+  "generated_at": "2026-07-02T07:18:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High risk of data leakage and capability conflict: AutoGen\u2019s writable shell/filesystem plus LightAgent\u2019s MCP/browser/tooling create shared-state and exfiltration pathways by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can read/write configured working directories and uses tool calls/code execution; LightAgent exposes MCP over stdio/SSE and runtime hooks that can observe or replace lifecycle payloads. That creates a plausible content-to-instruction bridge if outputs are passed through shared files or MCP, though no direct shared channel is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF AutoGen writes attacker-controlled content into a shared workspace that LightAgent later parses as instructions, injection is possible.",
+        "IF LightAgent forwards MCP payloads or lifecycle data into AutoGen without provenance checks, prompt injection risk increases."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Add provenance tags to all inter-agent messages.",
+        "Strip instructions from file contents before passing between agents.",
+        "Disable automatic parsing of agent-generated files as prompts.",
+        "requires-engineering: enforce schema validation on all shared-channel payloads."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "AutoGen explicitly handles model provider API keys and can read/write files in configured working directories; LightAgent touches conversations, memory, traces, tool results, and secrets, and can call OpenAI-compatible APIs plus MCP. If they share a workspace or credentials, sensitive data can flow from one agent into the other and then out to third-party services.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or secret store, one agent can read the other's artifacts.",
+        "IF LightAgent sends shared context to external model APIs, data exposed by AutoGen can leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate credentials for each agent.",
+        "Mount distinct working directories.",
+        "Remove secrets from shared files before handoff.",
+        "Turn off unnecessary logging/trace export.",
+        "requires-engineering: add redaction at the inter-agent boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "AutoGen has broad shell, subprocess, network, install, and filesystem write capabilities; LightAgent has broad network egress, browser, subprocess, and MCP access. If both are given the same mutable resources, they can race on files, APIs, or MCP-backed state. The profiles do not show locking or coordination, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or corruption can occur.",
+        "IF both agents mutate the same external API or MCP resource without locks, state conflicts are likely."
+      ],
+      "mitigations": [
+        "Assign disjoint resource scopes.",
+        "Serialize writes through one orchestrator.",
+        "Disable write access for one agent during shared tasks.",
+        "Use per-agent temp directories.",
+        "requires-engineering: implement optimistic concurrency or locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen is a multi-agent orchestration framework that can emit tool-driven outputs, while LightAgent has tool-calling and runtime hooks that can observe or replace lifecycle payloads. That makes it plausible for LightAgent to treat AutoGen output as authoritative unless an explicit verification step is added, but the profiles do not prove downstream action authority.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF AutoGen output is forwarded into LightAgent without verification, errors can cascade.",
+        "IF LightAgent uses AutoGen-generated facts to drive tool calls, mistaken outputs can propagate."
+      ],
+      "mitigations": [
+        "Require human review before actions.",
+        "Add a verification step between agents.",
+        "Pass only structured, typed outputs.",
+        "Log source provenance for each claim.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "AutoGen touches application data and model-provider API keys, while LightAgent touches conversations, memory, traces, tool results, and workflow state. The profiles do not specify residency or retention controls, so a mismatch is plausible if the pair is used on regulated data; uncertainty escalates above low because the data classes are broader than simple logs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through both agents, retention and logging policies must match.",
+        "IF either agent stores traces longer than the other, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Align retention settings before deployment.",
+        "Disable verbose tracing where possible.",
+        "Document data-flow boundaries.",
+        "requires-engineering: add policy enforcement for residency and deletion."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
