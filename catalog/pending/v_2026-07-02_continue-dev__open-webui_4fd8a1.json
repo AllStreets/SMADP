@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "continue-dev",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_continue-dev__open-webui_4fd8a1",
+  "generated_at": "2026-07-02T02:49:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.665,
+  "headline": "High: shared filesystem and broad tool/network access create prompt-injection, leakage, and write-conflict risks; compliance risk is moderate due to shared files and external APIs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Continue reads workspace files and editor buffers, and open-webui can ingest files, documents, and MCP/tool outputs. Their shared filesystem bridge makes instruction-like content in one agent\u2019s outputs plausibly reachable by the other in default use. No direct provenance or isolation is documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or mounted volume, content written by one can be read by the other.",
+        "IF open-webui ingests a file or document produced by Continue, prompt-like text can be treated as instructions."
+      ],
+      "mitigations": [
+        "Use separate workspaces for the two agents.",
+        "Disable file ingestion for untrusted outputs in open-webui.",
+        "Require manual review before copying agent-generated text into the other agent.",
+        "Restrict MCP/tool servers to trusted, read-only sources.",
+        "requires-engineering: add provenance tagging between filesystem handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Continue touches source code, open editor buffers, and workspace files, while open-webui handles documents, notes, files, persistent memory, and API keys, with broad network egress and external API integrations. A shared filesystem plus outbound model/API calls creates a realistic path for sensitive code or secrets to leave the local boundary without strong default isolation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same repository or mounted data volume, sensitive files can be exposed to both.",
+        "IF open-webui is configured with external model or search APIs, copied content may leave the host boundary."
+      ],
+      "mitigations": [
+        "Separate sensitive and non-sensitive workspaces.",
+        "Disable external API providers for open-webui on sensitive projects.",
+        "Review and redact secrets before passing files between agents.",
+        "Run both agents with least-privilege network controls.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Continue can write the filesystem and spawn subprocesses, and open-webui can also access local files, mounted volumes, subprocesses, and elevated Docker/network settings. Because both can mutate shared state through the filesystem and neither profile shows locking or coordination, concurrent edits can overwrite each other or corrupt shared artifacts in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or mounted volume, file races can occur.",
+        "IF open-webui runs with Docker network/host privileges while Continue writes generated artifacts, shared-state corruption or unintended overwrites become plausible."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Disable concurrent writes to shared folders.",
+        "Use a lock file or single-writer workflow.",
+        "Run one agent read-only when the other is editing.",
+        "requires-engineering: add transactional coordination for shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Continue can generate code or file edits that open-webui may ingest through files, documents, or MCP/tooling, and open-webui can then present or act on that content. The pair lacks a documented verification step, so mistaken code, prompts, or citations can propagate, but the profiles do not show fully autonomous downstream actions by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF open-webui treats Continue-generated text as authoritative, errors can cascade into later outputs.",
+        "IF either agent forwards generated code or facts into another tool without review, the mistake propagates."
+      ],
+      "mitigations": [
+        "Add a human review step before reuse of outputs.",
+        "Mark agent-generated content as untrusted by default.",
+        "Require citations or diffs for code suggestions.",
+        "Disable auto-execution of tool outputs.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Both agents can process files and external API-backed content, but only open-webui explicitly handles persistent memory, analytics, and multiple external services. The main compliance concern is policy mismatch on retention and residency for shared files or prompts; the profiles do not show a direct residency violation, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into open-webui\u2019s persistent memory or analytics, retention obligations may be violated.",
+        "IF shared files contain jurisdiction-bound data and are sent to external APIs, residency or DPA requirements may be triggered."
+      ],
+      "mitigations": [
+        "Keep regulated data out of open-webui memory and analytics.",
+        "Use local-only models for sensitive workflows.",
+        "Review retention settings before loading shared files.",
+        "Separate jurisdiction-bound projects into distinct instances.",
+        "requires-engineering: add policy-based routing for regulated data."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e12b92d62640a4355c6277dca80dbe0d1fd0fb3f971667c31e4f7ebf00857c92",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

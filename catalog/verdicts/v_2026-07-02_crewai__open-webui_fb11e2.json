@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "crewai",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_crewai__open-webui_fb11e2",
+  "generated_at": "2026-07-02T02:49:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High: shared filesystem and broad network/tooling create default risks of prompt injection, data leakage, and cascading errors between CrewAI and Open WebUI.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "CrewAI can read/write the host working directory and uses stdin/stdout plus developer-configured tools; Open WebUI can access local/mounted files and MCP/OpenAPI tools. That creates a plausible content bridge where one agent\u2019s outputs can be ingested by the other as instructions. No direct provenance or isolation is documented, so uncertainty stays above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF CrewAI writes attacker-controlled text into the shared working directory and Open WebUI reads it as prompt context, injection is possible.",
+        "IF Open WebUI exposes MCP or tool outputs back into CrewAI without provenance tags, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories and mount points.",
+        "Disable automatic ingestion of file contents as prompts in Open WebUI.",
+        "Require provenance labels on any cross-agent text handoff.",
+        "Use a read-only bridge file for handoffs.",
+        "requires-engineering: add content filtering/sanitization between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "CrewAI touches developer-passed crew data and API keys, and Open WebUI touches prompts, documents, files, persistent memory, and API keys. Both have broad network egress and file access, so sensitive data can flow from one agent\u2019s workspace into the other\u2019s outputs or upstream APIs by default unless explicitly isolated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or mounted volume, files and secrets can be read by both.",
+        "IF Open WebUI forwards retrieved documents or memory into external model APIs, CrewAI-originated sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Use separate OS users for each agent.",
+        "Mount only the minimum required directories read-only.",
+        "Remove secrets from shared files and environment variables.",
+        "Disable external model/API egress for sensitive runs.",
+        "requires-engineering: enforce per-agent data-loss-prevention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "CrewAI can write the host filesystem and spawn subprocesses; Open WebUI can access local files, mounted volumes, and run subprocesses. Their write surfaces overlap on shared storage, but neither profile shows unrestricted shared git/database/OAuth writes, so this is a real conflict without the highest blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, they can overwrite each other\u2019s artifacts.",
+        "IF an orchestrator lacks locking on shared files, concurrent writes can corrupt outputs."
+      ],
+      "mitigations": [
+        "Give each agent its own working directory.",
+        "Turn shared outputs into append-only files.",
+        "Serialize writes with a lock file.",
+        "Avoid shared git state unless locking is added.",
+        "requires-engineering: add transactional coordination for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "CrewAI is a multi-agent orchestration framework that can emit tool-driven outputs, while Open WebUI is a web UI that can route prompts, documents, and tool results into downstream model calls. If Open WebUI treats CrewAI output as authoritative, errors can cascade into user-visible actions or further tool use without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Open WebUI consumes CrewAI-generated text as a prompt or artifact without validation, hallucinations can propagate.",
+        "IF Open WebUI triggers tools based on CrewAI output, incorrect actions can be amplified downstream."
+      ],
+      "mitigations": [
+        "Insert a human review step before tool execution.",
+        "Require schema validation on CrewAI outputs.",
+        "Mark CrewAI outputs as untrusted in Open WebUI.",
+        "Disable auto-actioning from imported artifacts.",
+        "requires-engineering: add verification gates between generation and execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "CrewAI explicitly handles developer-passed crew data and API keys, while Open WebUI stores prompts, documents, notes, persistent memory, analytics, and files. The profiles do not specify residency or retention guarantees, but the shared handling of sensitive data classes creates a plausible retention/compliance mismatch if the pair is used on regulated content.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is entered into Open WebUI and retained in persistent memory or analytics, retention obligations may be violated.",
+        "IF CrewAI passes secrets or customer data into Open WebUI-backed storage, deletion/export workflows may diverge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared sessions.",
+        "Purge chat history and persistent memory after use.",
+        "Document retention settings for both agents.",
+        "Restrict analytics collection on sensitive runs.",
+        "requires-engineering: align residency and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5e24a8d94b08e810940189beb34b6c6e6569bdaa5c0c313eb660a84c5cc66a96",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
