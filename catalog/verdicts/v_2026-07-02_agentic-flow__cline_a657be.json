@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "cline"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__cline_a657be",
+  "generated_at": "2026-07-02T04:45:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and MCP-enabled tool use create prompt-injection, leakage, and write-conflict risks; Cline\u2019s defaults are especially exposed.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP and stdin/stdout, while agent_b has filesystem access, browser capture, and MCP. That creates a plausible bridge where content from one agent can be fed into the other as instructions. The pair lacks provenance controls in the profiles, so prompt injection is feasible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.screen_capture"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs instructions into an MCP channel or stdout that agent_b ingests as trusted text, injection is possible.",
+        "IF agent_b reads workspace files produced by agent_a without provenance checks, attacker-controlled content can steer tool use."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of agent_a outputs into agent_b prompts.",
+        "Add a provenance tag to all inter-agent files and reject untagged content.",
+        "Use separate workspaces for each agent.",
+        "Review any MCP server prompts before enabling shared use.",
+        "requires-engineering: add content-sanitization and instruction/data separation at the handoff boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches task prompts, repository metadata, and code, and agent_b reads and writes workspace files with broad network egress. Because both can use MCP and agent_b shares state via filesystem, sensitive material from agent_a can flow into agent_b outputs or external requests. The profiles do not show isolation by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes prompts or metadata into the shared workspace, agent_b can read them.",
+        "IF agent_b forwards workspace contents to its model provider or browser targets, data can leave the local environment."
+      ],
+      "mitigations": [
+        "Keep sensitive files out of the shared workspace.",
+        "Use separate OS users or containers for each agent.",
+        "Restrict agent_b network egress to approved domains only.",
+        "Rotate or redact secrets before either agent touches the workspace.",
+        "requires-engineering: enforce per-agent access controls on the filesystem and MCP endpoints."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, install packages, modify git state, spawn subprocesses, and use MCP. agent_b explicitly shares state with other instances via filesystem, while agent_a supports multiple instances and background workers. Concurrent writes to the same repo or workspace can corrupt git state or overwrite files without locking.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository directory, concurrent git or file writes can conflict.",
+        "IF either agent runs package installs while the other edits the workspace, state drift or corruption can occur."
+      ],
+      "mitigations": [
+        "Run each agent in a separate clone or workspace.",
+        "Serialize git-mutating actions with a lock file.",
+        "Disable one agent\u2019s write access during the other\u2019s run.",
+        "Use branch-per-agent workflows.",
+        "requires-engineering: add orchestrator-level locking for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can produce analysis and route/build-agent outputs, and agent_b is a coding agent that can act on workspace content and browser results. If agent_b treats agent_a\u2019s output as authoritative, mistakes can cascade into incorrect code changes or browser actions. The profiles show no built-in verification handoff between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a\u2019s generated text is copied into agent_b\u2019s task context without review, errors can propagate.",
+        "IF agent_b uses agent_a outputs as facts for code or browser actions, downstream mistakes can be executed."
+      ],
+      "mitigations": [
+        "Require a human review step between agents.",
+        "Mark agent_a outputs as untrusted drafts.",
+        "Have agent_b verify claims against source files before acting.",
+        "Limit agent_b to read-only mode until validation passes.",
+        "requires-engineering: implement structured handoff with validation checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the evidence does not show a residency or certification mismatch. The main compliance concern is that agent_a handles task prompts and repository metadata while agent_b handles workspace files and model-provider API keys, so retention or logging policies could diverge if the pair is used on regulated data. No direct breach is evidenced here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace, differing logging or retention settings could create a policy mismatch.",
+        "IF either agent is configured to retain prompts or files longer than the other, deletion/export obligations may diverge."
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workspace.",
+        "Align retention settings before use.",
+        "Document which agent stores prompts and files.",
+        "Purge local logs after each session.",
+        "requires-engineering: add policy enforcement for retention and deletion across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:d7e27bdfed625f19323fe066fe0675ede57ff30809ca39280012ddd406d66a01",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
