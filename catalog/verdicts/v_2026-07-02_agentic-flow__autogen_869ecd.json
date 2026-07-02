@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "autogen"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__autogen_869ecd",
+  "generated_at": "2026-07-02T05:47:26Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and code-exec defaults make prompt injection, leakage, and cascading errors plausible; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP, stdin/stdout, and background tasks; agent_b reads/writes configured working directories and exchanges tool calls via group chat. If they share files or pass outputs through the workspace, either side can smuggle instructions into the other. This is not proven by direct pair evidence, so uncertainty keeps it at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes attacker-controlled text into a shared workspace file that agent_b later parses as instructions",
+        "IF agent_b ingests agent_a output from stdin/stdout or files without provenance checks"
+      ],
+      "mitigations": [
+        "Separate work directories per agent",
+        "Add a strict output schema for inter-agent messages",
+        "Strip or escape instruction-like text before handoff",
+        "Disable MCP/file handoff for untrusted content",
+        "requires-engineering: add provenance tags and parser hardening"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches task prompts, repository metadata, and secrets (Ed25519 signatures), while agent_b reads and writes configured working directories and sends data to model providers configured by the user. A shared workspace or same principal could expose agent_a data through agent_b's broader egress path. The pairwise leak path is plausible in default-style setups, but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured on the same working directory",
+        "IF agent_b forwards file contents from that directory to a remote model provider"
+      ],
+      "mitigations": [
+        "Use separate directories and credentials",
+        "Keep secrets out of shared files",
+        "Turn off file ingestion for sensitive runs",
+        "Review outbound prompts before execution",
+        "requires-engineering: enforce data-loss prevention on agent handoff"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can execute shell commands, install packages, modify git state, and use MCP; agent_b can execute shell commands, install packages, write files, and spawn subprocesses. Both support multiple instances, so concurrent writes to the same repo or workspace can race and corrupt state. Because git mutation and unrestricted file writes overlap, the conflict is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b operate in the same repository or directory",
+        "IF both instances run concurrently without external locking"
+      ],
+      "mitigations": [
+        "Assign disjoint worktrees",
+        "Serialize git and file mutations",
+        "Use per-agent locks around shared resources",
+        "Run one agent read-only during the other's writes",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a is a task-oriented agent that emits analysis through MCP/stdin-stdout, and agent_b is a multi-agent orchestrator whose tool-use pattern routes agent outputs into downstream actions. If agent_b treats agent_a's output as authoritative, mistakes or hallucinated facts can cascade into code execution or other actions. The interaction is inferred from docs, so I keep high rather than critical.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a output as input to a code-executing role without verification",
+        "IF agent_a produces unverified facts that agent_b converts into actions"
+      ],
+      "mitigations": [
+        "Require human review before actions",
+        "Add a verification step between agents",
+        "Constrain agent_a to structured outputs only",
+        "Log and diff all downstream actions",
+        "requires-engineering: implement citation and fact-check gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a handles repository metadata and task prompts, while agent_b handles application data and can send it to configured model providers. The profiles do not state residency or certifications, so a compliance mismatch is possible but not proven. Because uncertainty must escalate, medium is appropriate for a plausible retention/residency gap rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into agent_b's working directory",
+        "IF the configured model provider or storage region lacks the required residency or retention controls"
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair",
+        "Pin providers to approved regions",
+        "Review retention settings before runs",
+        "Document data-class handling per agent",
+        "requires-engineering: add policy enforcement for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-3.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:9e3f34db92422dd7062d95fc575990aad5198b2f19dfe7e001d56d9038e588ac",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
