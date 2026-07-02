@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "pdf-js"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__pdf-js_ff606e",
+  "generated_at": "2026-07-02T04:28:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Medium prompt-injection and data-leakage risk: Firecrawl\u2019s broad network/API surface can feed untrusted web content into pdf.js document processing, while shared file-based handoff can expose API keys and PDFs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes scrape/interact APIs, so it can produce attacker-controlled text. pdf.js processes PDF files and runs browser-based tests, making it plausible that Firecrawl output is handed into document processing without a trust boundary. The pair lacks documented provenance controls, so injection is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is copied into pdf.js inputs without sanitization, prompt injection is possible.",
+        "IF pdf.js is used to render or inspect attacker-authored PDFs sourced from Firecrawl, malicious instructions can be embedded."
+      ],
+      "mitigations": [
+        "Add a provenance banner to all Firecrawl-derived text before passing it onward.",
+        "Strip instructions and HTML/JS-like markup from scraped content before PDF processing.",
+        "Use a manual review step before any Firecrawl output reaches pdf.js.",
+        "requires-engineering: enforce content-type and source allowlists between the two agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Firecrawl explicitly handles API keys and broad web content, while pdf.js touches PDF documents. If they share a workspace or file handoff, sensitive scraped material or keys can be exposed through PDFs or logs. The profiles do not show isolation or secret-scoping between them, so leakage is plausible in common deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents read and write the same directory, scraped content can leak into pdf.js-visible files.",
+        "IF Firecrawl stores API keys or session material in files consumed by pdf.js, secrets may be exposed."
+      ],
+      "mitigations": [
+        "Move Firecrawl secrets to environment variables not written to disk.",
+        "Use separate working directories for each agent.",
+        "Delete intermediate files after each run.",
+        "Restrict pdf.js to a read-only input folder.",
+        "requires-engineering: add per-agent filesystem sandboxing."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Firecrawl has broad network egress and API/CLI surfaces, while pdf.js has no network egress and only PDF-file I/O. Their write surfaces do not obviously overlap, so direct resource contention is limited. Uncertainty remains because both support multiple instances and the orchestrator locking model is undocumented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable directory, file contention can occur.",
+        "IF an external orchestrator lacks locking, concurrent runs may race on shared inputs or outputs."
+      ],
+      "mitigations": [
+        "Assign distinct output directories per agent.",
+        "Run only one writer per shared path.",
+        "Add a simple lock file around shared artifacts.",
+        "requires-engineering: introduce orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Firecrawl can generate scraped facts and structured data, and pdf.js can render or process PDFs that may be treated as downstream artifacts. If pdf.js consumes Firecrawl output without verification, errors or hallucinations can cascade into incorrect documents or actions. The pair lacks a documented validation step, so the default risk is more than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF pdf.js treats Firecrawl-produced text as authoritative, incorrect facts can propagate.",
+        "IF Firecrawl extracts malformed content that pdf.js renders without validation, downstream outputs may be wrong."
+      ],
+      "mitigations": [
+        "Require a human check before pdf.js consumes Firecrawl output.",
+        "Compare extracted facts against the source document.",
+        "Mark Firecrawl output as untrusted metadata.",
+        "Use checksum or source-link fields in handoffs.",
+        "requires-engineering: add automated validation between extraction and rendering."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Firecrawl touches API keys and web content, while pdf.js handles PDF documents. The profiles do not show a residency, retention, or regulated-data mismatch such as PHI or EU-only PII, so compliance risk is limited to generic handling gaps. Because the pairwise compliance pathway is undocumented, uncertainty stays low rather than none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.repo_url"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into Firecrawl outputs and then stored in pdf.js artifacts, retention policy mismatch may occur.",
+        "IF either deployment has stricter logging than the other, the combined workflow may violate internal policy."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared artifacts.",
+        "Review retention settings for both tools.",
+        "Separate logs from content storage.",
+        "Document which agent is allowed to process which data class.",
+        "requires-engineering: add policy enforcement for regulated data flows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:1e9e0acfec5fb2563830c22f72803a5b63869e22361b17cd8f61df2d27a8ff7d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
