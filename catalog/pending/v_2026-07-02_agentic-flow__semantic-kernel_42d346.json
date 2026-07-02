@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "semantic-kernel"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__semantic-kernel_42d346",
+  "generated_at": "2026-07-02T05:41:28Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High risk of prompt injection and data leakage: agentic-flow can use MCP/shell/git while Semantic Kernel reads/writes files and calls MCP-backed tools.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP, stdin/stdout, and background workers, so it may ingest untrusted content; agent_b reads and writes application-defined files and calls MCP servers/OpenAPI tools. A shared file or MCP bridge could let attacker-controlled content from agent_a influence agent_b, but the profiles do not prove a default shared channel, so medium is the higher safe choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs content that agent_b parses as instructions or tool arguments, injection becomes plausible.",
+        "IF both agents are connected through a shared MCP server or shared files, the attack path is enabled."
+      ],
+      "mitigations": [
+        "Disable automatic parsing of agent_a output by agent_b.",
+        "Route agent_a and agent_b through separate MCP servers.",
+        "Add provenance tags to all inter-agent messages.",
+        "Require human approval before agent_b executes tool calls from agent_a output.",
+        "requires-engineering: enforce content sanitization at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches code, repository metadata, task prompts, and Ed25519 signatures while having shell/git/network capabilities; agent_b reads and writes files and sends context to broad external model providers and MCP/OpenAPI tools. If they share a workspace or memory store, sensitive material from agent_a can flow into agent_b and then out to third parties. The profiles show a plausible default path, but not a proven shared workspace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b share a filesystem, repository, or memory store, leakage risk increases.",
+        "IF agent_b forwards file contents or context to Azure OpenAI/OpenAI/Hugging Face, sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces for the two agents.",
+        "Remove secrets from any shared directory before running agent_b.",
+        "Restrict agent_b tool access to non-sensitive files only.",
+        "Turn off automatic file ingestion into prompts.",
+        "requires-engineering: add DLP/redaction before external API calls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can execute shell commands, install packages, modify git state, and spawn subprocesses; agent_b can write files and use MCP, with multi-instance shared state via memory store. If both operate on the same repo or workspace, concurrent writes and git mutations can collide and corrupt state. Because the profiles already expose overlapping mutable surfaces, the conflict is credible in default use and potentially destructive.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same repository or directory, write conflicts are enabled.",
+        "IF agent_a modifies git state while agent_b writes files concurrently, corruption or lost updates can occur."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize git-affecting operations.",
+        "Use file locks around shared outputs.",
+        "Disable concurrent runs on the same repo.",
+        "requires-engineering: add optimistic concurrency checks for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can produce outputs from shell/MCP-driven workflows, and agent_b is a kernel-plus-plugins orchestrator that can act on tool outputs. If agent_b treats agent_a output as authoritative, mistakes can cascade into downstream actions or generated artifacts. The profiles do not prove automatic trust by default, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a output without verification, errors can propagate.",
+        "IF agent_a's generated facts are used as tool arguments by agent_b, downstream mistakes become actionable."
+      ],
+      "mitigations": [
+        "Insert a verification step before agent_b acts on agent_a output.",
+        "Require citations or source links for factual claims.",
+        "Limit agent_b to read-only review mode for agent_a outputs.",
+        "Log and diff all agent-to-agent handoffs.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a touches repository metadata, task prompts, and signatures; agent_b handles application context and plugin credentials, with broad external model-provider egress. The profiles suggest a compliance mismatch risk if regulated or sensitive data is routed through agent_b, but they do not specify a concrete residency or certification conflict. Uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into agent_b prompts or files, external processing obligations apply.",
+        "IF the deployment requires residency or retention guarantees not provided by the external model providers, compliance risk materializes."
+      ],
+      "mitigations": [
+        "Keep regulated data out of agent_b inputs.",
+        "Document data-flow boundaries for both agents.",
+        "Use tenant-approved model endpoints only.",
+        "Set retention limits on logs and prompts.",
+        "requires-engineering: add residency-aware routing and policy enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:fd3b86a0372eb353085d80eed5761c49d54a0155d61159d4da135fc93310eab7",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
