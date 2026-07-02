@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "mineru"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__mineru_f98ba5",
+  "generated_at": "2026-07-02T04:33:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.38,
+  "headline": "Medium prompt-injection and data-leakage risks arise from Firecrawl\u2019s broad network egress feeding MinerU\u2019s MCP/document pipeline; capability conflicts are limited by MinerU\u2019s read-only profile.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible outputs; MinerU accepts document-like inputs via MCP and parses Markdown/JSON/OCR text. That creates a plausible default path where attacker-controlled web content from agent_a is treated as instructions by agent_b. No shared filesystem is documented, so this is not high, but the interaction is credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is forwarded into agent_b without content sanitization or provenance tags, prompt injection is possible.",
+        "IF agent_b treats Markdown/JSON/OCR text from agent_a as instructions rather than data, malicious directives can propagate."
+      ],
+      "mitigations": [
+        "Add a strict content firewall that strips instructions from agent_a outputs before agent_b ingests them.",
+        "Require provenance labels on all agent_a outputs and reject unlabeled text.",
+        "Run a one-document test with a known injection string to verify agent_b ignores it.",
+        "Disable MCP handoff between the pair unless a parser whitelist is in place.",
+        "requires-engineering: add structured schemas for agent_a outputs and validate them before agent_b consumption."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent_a handles API keys and broad web content, while agent_b can process local files and uses MCP. Even without a shared filesystem, forwarding agent_a context into agent_b can leak secrets or sensitive page content into downstream processing. The profiles do not show direct exfiltration controls, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a context includes API keys or sensitive scraped content and is passed to agent_b, leakage can occur.",
+        "IF agent_b is configured to ingest shared artifacts or transcripts, sensitive data may be reprocessed outside the original boundary."
+      ],
+      "mitigations": [
+        "Redact secrets from agent_a outputs before any transfer.",
+        "Use a separate workspace for each agent and avoid shared transcripts.",
+        "Limit agent_b inputs to minimal excerpts needed for the task.",
+        "Turn off logging of raw prompts and file contents for the pair.",
+        "requires-engineering: implement field-level secret scanning on agent_a outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Agent_a has broad network egress and supports multiple instances; agent_b cannot write files, modify git, or spawn subprocesses, and its network is allowlisted. Overlap exists mainly in concurrent inference and network use, but the lack of shared write surfaces makes destructive contention unlikely. Uncertainty is limited, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable external API quota or rate-limited endpoint, contention can occur.",
+        "IF agent_b is given a writable shared resource outside its documented capabilities, conflicts may increase."
+      ],
+      "mitigations": [
+        "Assign separate API keys or quotas to each agent.",
+        "Stagger high-volume network jobs by a few minutes.",
+        "Keep agent_b on read-only inputs only.",
+        "Monitor for 429/rate-limit errors during parallel runs.",
+        "requires-engineering: add a coordinator that serializes shared external writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Firecrawl produces scraped web content and structured data that MinerU can parse into Markdown, JSON, tables, and OCR text. If agent_b treats agent_a\u2019s extracted content as authoritative, errors or hallucinated facts can cascade into downstream outputs. The pair lacks an explicit verification layer in the profiles, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a outputs without independent verification, incorrect facts can propagate.",
+        "IF agent_a scrapes a changing webpage and agent_b renders it as final text, stale or wrong content can cascade."
+      ],
+      "mitigations": [
+        "Require a verification step before agent_b publishes any agent_a-derived fact.",
+        "Compare a sample of outputs against the source page or document.",
+        "Mark agent_a outputs as untrusted in the prompt to agent_b.",
+        "Limit agent_b to formatting, not factual synthesis, for agent_a-derived content.",
+        "requires-engineering: add citation-preserving provenance tracking end to end."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Agent_a touches API keys and web content with broad egress, while agent_b is documented as private, fully offline, and has no secrets requested. The main compliance issue is a potential residency or retention mismatch if sensitive web data from agent_a is routed into agent_b logs or outputs, but the profiles do not show a direct regulated-data mismatch, so low is sufficient.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from agent_a is routed into agent_b logs or exports, retention/residency obligations may be affected.",
+        "IF the deployment requires strict offline handling and agent_a continues broad egress, compliance controls may be inconsistent."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data through agent_a before MinerU processing.",
+        "Disable or minimize retention of agent_b logs for sensitive jobs.",
+        "Document which data classes may cross from agent_a to agent_b.",
+        "Keep agent_b offline for regulated workloads.",
+        "requires-engineering: add policy checks that block regulated data from crossing the pair."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:cd49ea0a247dc3089757cd83e2cf358aa2a43d1bab55355c097839f0dd11ccbb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
