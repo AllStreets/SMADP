@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogen",
+    "firecrawl"
+  ],
+  "verdict_id": "v_2026-07-02_autogen__firecrawl_676bca",
+  "generated_at": "2026-07-02T01:19:30Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High risk of prompt-injection and data leakage from AutoGen\u2019s code-executing orchestration into Firecrawl\u2019s web/API scraping outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGen can ingest files and stdin/stdout and run role-played agents with code execution; Firecrawl produces web content, markdown, and screenshots that can be fed into AutoGen. That creates a plausible instruction-hijack path even without a documented shared channel. Firecrawl\u2019s broad web content surface and AutoGen\u2019s permissive tool-use pattern make the interaction credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is passed into AutoGen prompts or files without sanitization, injection is possible.",
+        "IF AutoGen treats scraped markdown or HTML as instructions, attacker-controlled content can steer tool use."
+      ],
+      "mitigations": [
+        "Strip instructions from scraped content before passing to AutoGen.",
+        "Wrap Firecrawl output in a fixed schema and reject free-form directives.",
+        "Add a human review step for any web-derived prompt content.",
+        "Use allowlisted prompt templates for AutoGen tool calls.",
+        "requires-engineering: add provenance tagging from Firecrawl into AutoGen inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGen explicitly handles model provider API keys and can read/write the filesystem; Firecrawl handles API keys and web content. If they share a workspace or pass files between them, sensitive application data or secrets can flow from one agent into the other\u2019s outputs. The profiles do not prove a shared workspace by default, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to use the same working directory, file leakage becomes plausible.",
+        "IF Firecrawl outputs are stored in files that AutoGen reads, sensitive content can be re-exposed in downstream prompts or logs."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Store secrets outside any shared workspace.",
+        "Redact API keys before file handoff.",
+        "Disable automatic inclusion of file contents in prompts.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGen has broad filesystem and subprocess capabilities, while Firecrawl is an API/CLI client with broad network egress and MCP-compatible support. Their mutable surfaces overlap through files, API keys, and external requests, so concurrent use can conflict if they touch the same workspace or shared credentials. The profiles do not show locking, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering can occur.",
+        "IF both agents reuse the same API key material, credential races or accidental revocation become possible."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Use separate API keys per agent.",
+        "Serialize writes to shared resources.",
+        "Avoid concurrent mutation of git or config files.",
+        "requires-engineering: add locking around shared mutable state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGen\u2019s role-played agents and code execution can generate outputs that Firecrawl may consume as inputs for scraping, crawling, or interaction. If Firecrawl treats those outputs as authoritative, errors can cascade into repeated bad fetches or malformed downstream data. The profiles suggest a plausible pipeline but do not document verification safeguards, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl consumes AutoGen-produced URLs, selectors, or instructions without validation, errors propagate.",
+        "IF AutoGen-generated facts are used to drive Firecrawl crawl targets, bad inputs can amplify downstream mistakes."
+      ],
+      "mitigations": [
+        "Validate AutoGen outputs before passing them onward.",
+        "Require schema checks on URLs and selectors.",
+        "Add a retry budget and anomaly alerts.",
+        "Keep a human approval step for high-impact actions.",
+        "requires-engineering: implement provenance and verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only document generic API-key handling, so there is no direct evidence of a residency or certification mismatch. However, AutoGen touches application data and Firecrawl touches web content, screenshots, and API keys; if regulated data is routed through Firecrawl\u2019s external APIs, compliance gaps could arise. The other agent is cited because the risk is pairwise data flow, not a single-agent issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is sent through Firecrawl\u2019s external APIs, residency or retention obligations may be implicated.",
+        "IF AutoGen passes sensitive application data into Firecrawl, logging/retention mismatches can matter."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared prompts.",
+        "Review retention settings for both services.",
+        "Use synthetic data for testing.",
+        "Document data-flow boundaries.",
+        "requires-engineering: add compliance policy enforcement to the orchestrator."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d546e1c67d88618d787d66b0ea12b27281a570e0917ce501cc7c2de7c6308df2",
+    "profile_b_hash": "sha256:fc9513ef7d2a028dd458d671909977e57386a2bd54861c9bb0b4cb411ee2b08a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
