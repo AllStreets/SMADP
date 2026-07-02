@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "windsurf"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__windsurf_c8de81",
+  "generated_at": "2026-07-02T00:37:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.695,
+  "headline": "High: shared filesystem, clipboard, and MCP paths make prompt injection, leakage, and write conflicts plausible by default; compliance risk is also elevated by broad egress and secret handling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Firecrawl can expose web content and MCP-compatible outputs, while Windsurf ingests clipboard/files and uses MCP servers. That creates a direct path for attacker-controlled content from A to be parsed by B as instructions. Because B\u2019s default editor/agent loop is tool-using and A can fetch raw web content, the interaction is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is copied into Windsurf via clipboard or workspace files, prompt injection is possible.",
+        "IF Windsurf consumes Firecrawl MCP output without provenance filtering, instructions in fetched content can steer tool use."
+      ],
+      "mitigations": [
+        "Disable clipboard-based transfer between the agents.",
+        "Route Firecrawl output through a sanitizer that strips instructions before B reads it.",
+        "Require provenance tags on all Firecrawl-derived content before Windsurf tool use.",
+        "Use a separate workspace directory for Firecrawl outputs.",
+        "requires-engineering: add content-type and provenance enforcement in the MCP bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Firecrawl touches web content, structured data, screenshots, and API keys, and has broad network egress. Windsurf reads workspace files and shares state via the local filesystem, so sensitive artifacts from A can flow into B and then out over B\u2019s networked model/tool channels. The pair therefore creates a realistic exfiltration path in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl processes API keys or other secrets and writes them to shared files, Windsurf can read them.",
+        "IF Windsurf sends workspace contents to its model proxy or MCP servers, data from A can leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep Firecrawl secrets in a separate non-shared directory.",
+        "Mount a read-only handoff folder from A to B.",
+        "Redact API keys before any file handoff.",
+        "Disable automatic upload of workspace files in Windsurf for the shared project.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Firecrawl has broad network egress and can run multiple instances; Windsurf can execute shell, write files, modify git state, and also has broad egress. Both agents can mutate the same local workspace or repository, and Windsurf explicitly shares state via the local filesystem. Without locking, concurrent writes and git changes can corrupt state or overwrite each other.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same checkout or workspace directory, write conflicts can occur.",
+        "IF Windsurf auto-executes commands while Firecrawl is still writing outputs, git or file corruption is plausible."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Pause one agent before the other writes to the repo.",
+        "Disable auto-execute in Windsurf for shared projects.",
+        "Use git branches per agent.",
+        "requires-engineering: add file locks or an orchestrator lockstep scheduler."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Firecrawl produces scraped content and structured data that Windsurf can ingest through files, clipboard, or MCP. Windsurf\u2019s agent loop can then act on that input with shell and git authority. The pathway exists in default configurations, but Windsurf can still approve commands per step, so the blast radius is meaningful yet not fully automatic.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF Windsurf treats Firecrawl output as authoritative without verification, downstream actions may be wrong.",
+        "IF Firecrawl emits malformed or stale data and Windsurf commits it, errors cascade into code or docs."
+      ],
+      "mitigations": [
+        "Require a human review step before Windsurf acts on Firecrawl output.",
+        "Add schema validation for Firecrawl-derived files.",
+        "Mark Firecrawl outputs as untrusted in filenames or metadata.",
+        "Limit Windsurf to read-only mode until outputs are checked.",
+        "requires-engineering: implement verification gates before shell/git actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl is an e-commerce crawler with broad egress and secret handling, while Windsurf is a closed-source coding IDE that may send workspace content to a model proxy or MCP servers. The pair can move sensitive web data, source code, and API keys across different retention and processing regimes, creating a plausible compliance mismatch even though no specific residency or certification gap is documented here.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as API keys or customer records are processed by Firecrawl and then opened in Windsurf, policy review is required.",
+        "IF Windsurf\u2019s model proxy retains workspace content longer than Firecrawl\u2019s handling policy, retention mismatch occurs."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Review both vendors\u2019 retention policies before use.",
+        "Separate projects by data classification.",
+        "Disable syncing of sensitive files into Windsurf.",
+        "requires-engineering: obtain and document a DPA or equivalent compliance mapping."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:4df280288ebe9ef2a1cb794190596079c168a85097d55ec49bb45ea43c07e0bc",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
