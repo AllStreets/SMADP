@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "github-copilot"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__github-copilot_8e196d",
+  "generated_at": "2026-07-02T00:14:50Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of data leakage and capability conflict: Firecrawl\u2019s broad egress plus Copilot\u2019s repo/editor access can expose sensitive web/API-key content into vendor-hosted coding context.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible/API outputs, while GitHub Copilot reads repo context and open editor buffers. If Firecrawl output is copied into Copilot Workspace or chat, attacker-controlled page text can be treated as instructions. No direct shared channel is documented, so this is inferred and uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is pasted or synced into Copilot chat/Workspace buffers, prompt injection becomes reachable.",
+        "IF Copilot is asked to act on untrusted scraped text without provenance checks, malicious instructions can be followed."
+      ],
+      "mitigations": [
+        "Paste only extracted fields, not raw pages.",
+        "Add a provenance banner to all Firecrawl outputs before handoff.",
+        "Require human review of any instructions found in scraped content.",
+        "Use a fixed schema for handoff between tools.",
+        "requires-engineering: add content provenance filtering in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Firecrawl touches web content, screenshots, structured data, and API keys and has broad network egress; Copilot reads repo context and open buffers and sends context to api.githubcopilot.com. If sensitive Firecrawl outputs are placed in editor buffers, Copilot can transmit them to a third party. That default path is dangerous and can leak secrets or proprietary data.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl processes pages containing secrets or API keys and those results are opened in Copilot buffers, leakage is reachable.",
+        "IF Copilot Chat/Workspace is used on files containing Firecrawl outputs, those contents can be sent to GitHub-hosted services."
+      ],
+      "mitigations": [
+        "Keep Firecrawl outputs out of Copilot-visible files.",
+        "Redact secrets before opening results in the editor.",
+        "Use separate workspaces for scraping and coding.",
+        "Disable Copilot on files that may contain scraped sensitive data.",
+        "requires-engineering: enforce DLP/redaction before editor sync."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Firecrawl can make broad network requests and supports multiple instances; Copilot can write files and modify git state with per-editor shared state only. The pair can contend over the same repo or workspace if Firecrawl-generated artifacts are written into the project and Copilot edits them concurrently. No locking is documented, so overlapping writes are plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl writes generated artifacts into the same repository Copilot is editing, concurrent modification conflicts can occur.",
+        "IF multiple instances of either agent operate on one workspace without locks, git or file-state races are reachable."
+      ],
+      "mitigations": [
+        "Use separate output directories per agent.",
+        "Pause Copilot while Firecrawl writes artifacts.",
+        "Commit or stash before switching agents.",
+        "Review diffs before accepting Workspace edits.",
+        "requires-engineering: add file-locking or transactional handoff."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Firecrawl produces scraped content and structured data; Copilot\u2019s Workspace/chat can turn that context into edits. If Copilot treats Firecrawl output as authoritative, a bad scrape or hallucinated extraction can cascade into incorrect code or repo changes. The pair lacks a documented verification barrier, so the interaction exists in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is used as direct input to Copilot Workspace, unverified facts can propagate into edits.",
+        "IF Copilot is asked to implement changes from scraped instructions without cross-checking, cascading errors can occur."
+      ],
+      "mitigations": [
+        "Verify scraped facts against the source page.",
+        "Require a second source before code changes.",
+        "Use Copilot only for drafting, not auto-application.",
+        "Annotate uncertain fields in Firecrawl output.",
+        "requires-engineering: add validation gates between scrape and edit steps."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl handles web content and API keys, while Copilot processes repo context and open buffers through GitHub-hosted services. If regulated or sensitive data from Firecrawl enters Copilot-visible files, retention and residency obligations may diverge. The profiles do not document matching compliance controls, so the safest reading is a medium mismatch risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl outputs contain regulated data and are opened in Copilot, compliance obligations may be violated.",
+        "IF the organization requires local-only handling for secrets, Copilot\u2019s vendor-hosted context processing becomes noncompliant."
+      ],
+      "mitigations": [
+        "Exclude regulated data from Copilot-visible files.",
+        "Classify Firecrawl outputs before storage.",
+        "Use a separate compliant environment for sensitive scraping.",
+        "Review vendor terms for retention and residency.",
+        "requires-engineering: implement policy-based routing for sensitive data."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:ed694f0fd15b098cd18e7bc4e802e96682f41ee8cb7ce9dd8f50d4bb505261df",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__n8n_9f273d",
+  "generated_at": "2026-07-02T00:14:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High risk of data leakage and cascading errors: firecrawl\u2019s broad egress and API-key handling can feed n8n workflows that write files and execute commands.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "firecrawl ingests web content and exposes MCP-compatible/API outputs, while n8n can route those outputs into workflow nodes and files. That creates a plausible instruction-in-content bridge even without a documented direct parser exploit. The interaction is inferred from both profiles, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF n8n workflows pass firecrawl-scraped HTML/markdown into an AI Agent or Code node without sanitization, prompt injection becomes reachable.",
+        "IF firecrawl output is copied into n8n file-backed steps or message fields, attacker-controlled instructions can traverse the pair."
+      ],
+      "mitigations": [
+        "Add a sanitization step that strips scripts, prompts, and hidden text before n8n consumes firecrawl output.",
+        "Route firecrawl output through a human review step for any workflow that triggers actions.",
+        "Use allowlisted fields only, not raw page text, in downstream prompts.",
+        "requires-engineering: add provenance tags so n8n nodes can distinguish scraped content from operator instructions."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "firecrawl touches API keys, web content, screenshots, and structured data, and has broad network egress. n8n reads and writes the server filesystem and processes whatever the workflow handles. In default workflow automation, sensitive firecrawl outputs can be persisted or forwarded externally, creating a realistic exfiltration path with irreversible blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF a workflow stores firecrawl responses on the n8n server filesystem, those contents can persist beyond the original task.",
+        "IF n8n sends workflow data to an integration node after ingesting firecrawl output, sensitive fields can leave the pair."
+      ],
+      "mitigations": [
+        "Restrict n8n workflows to redacted firecrawl fields only.",
+        "Disable file persistence for workflows handling API keys or screenshots.",
+        "Use separate credentials and least-privilege integration nodes.",
+        "Review outbound integrations for any step that forwards raw scraped content.",
+        "requires-engineering: isolate sensitive workflows onto a separate n8n instance or tenant."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "firecrawl can make broad network requests and n8n can execute shell commands, spawn subprocesses, and write the filesystem. Even though n8n does not modify git state, the overlapping write-and-egress surface is enough for destructive or unauthorized side effects if firecrawl-fed workflows trigger command execution. The pair\u2019s default automation posture makes this dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF an n8n workflow uses firecrawl output to parameterize Execute Command or file-writing nodes, conflicting writes can occur.",
+        "IF multiple n8n instances share the same datastore or connected systems, concurrent firecrawl-driven jobs can race on shared state."
+      ],
+      "mitigations": [
+        "Avoid Execute Command for workflows that consume firecrawl output.",
+        "Serialize jobs that touch the same files or datastore records.",
+        "Use per-workflow directories with unique names.",
+        "Add a lock or queue around shared mutable resources.",
+        "requires-engineering: move destructive actions behind a dedicated approval workflow."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "n8n is explicitly an orchestrator, so it can treat upstream outputs as workflow inputs and then act on them. firecrawl produces scraped content and structured data that may be treated as facts. Without a verification gate, the pair can turn extraction errors into downstream actions such as emails, file writes, or API calls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses firecrawl output as authoritative input to an AI Agent or automation branch, errors can cascade into actions.",
+        "IF downstream nodes send emails, update records, or write files based on unverified firecrawl data, the blast radius expands."
+      ],
+      "mitigations": [
+        "Insert a validation node between firecrawl and any action-taking step.",
+        "Require schema checks on extracted fields before use.",
+        "Add a human approval step for high-impact branches.",
+        "Log source URLs alongside extracted values for auditability.",
+        "requires-engineering: implement confidence thresholds that block low-quality extractions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "firecrawl handles API keys and web content, while n8n processes whatever the workflow handles and stores credentials on its server. The profiles do not prove a residency or certification mismatch, but they do show a retention/handling mismatch risk if regulated data flows from firecrawl into n8n\u2019s server-side workflow storage and logs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through n8n workflows that persist execution data or files, retention obligations may be violated.",
+        "IF firecrawl outputs contain personal or secret data and n8n logs them, subject-rights or minimization requirements can fail."
+      ],
+      "mitigations": [
+        "Disable verbose execution logging for sensitive workflows.",
+        "Purge workflow history on a short schedule.",
+        "Separate regulated-data workflows from general automation.",
+        "Mask secrets before passing data into n8n nodes.",
+        "requires-engineering: document residency and retention controls for both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
