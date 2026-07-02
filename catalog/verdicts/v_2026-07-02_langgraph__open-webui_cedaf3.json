@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langgraph",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_langgraph__open-webui_cedaf3",
+  "generated_at": "2026-07-02T03:01:24Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.755,
+  "headline": "High-risk shared-state and tool-chain interaction: open-webui can ingest and act on LangGraph outputs, creating prompt-injection, leakage, and cascading-error exposure by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "LangGraph can expose application-defined files, stdin/stdout, browsers, and developer-defined tools, while open-webui supports MCP, OpenAPI tools, plugins, and browser-backed workflows. That creates a plausible default bridge where attacker-controlled content from one side can be reinterpreted as instructions by the other. The interaction is documented by profiles, though not sandboxed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph nodes write untrusted content into files or stdout that open-webui later ingests",
+        "IF open-webui is configured with MCP/OpenAPI tools that parse model-visible content as instructions"
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of LangGraph outputs into open-webui prompts",
+        "Add provenance tags to all inter-agent messages",
+        "Restrict open-webui tool execution to allowlisted commands",
+        "Use a separate workspace directory per agent",
+        "requires-engineering: add content-sanitization and instruction/data separation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "LangGraph handles model provider API keys and application graph state, and open-webui touches prompts, documents, files, persistent memory, and API keys. Because both have broad network egress and file access, sensitive data can flow from LangGraph-managed state into open-webui storage or outbound calls. The pairwise leakage path is credible from the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LangGraph graph state contains secrets or sensitive documents",
+        "IF open-webui persists imported files, chat history, or memory from LangGraph outputs"
+      ],
+      "mitigations": [
+        "Keep secrets out of LangGraph graph state",
+        "Disable open-webui persistence for imported artifacts",
+        "Separate API keys per agent and per environment",
+        "Restrict outbound connectors in open-webui",
+        "requires-engineering: implement field-level redaction before handoff"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can write or mutate shared resources: LangGraph can write application-defined files and spawn subprocesses, while open-webui can access local files, mounted volumes, and broad networked tool servers. With shared state and no locking guarantees across the pair, concurrent writes or tool actions can collide and corrupt artifacts or sessions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, mounted volume, or session-backed resource",
+        "IF either agent performs writes without external locking"
+      ],
+      "mitigations": [
+        "Assign disjoint directories and volumes",
+        "Serialize writes through one coordinator",
+        "Disable concurrent edits to shared artifacts",
+        "Use file locks or transactional updates",
+        "requires-engineering: add optimistic concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LangGraph is an orchestration layer whose outputs can become downstream inputs, and open-webui is a UI/tooling layer that can act on those outputs via plugins, MCP, or OpenAPI tools. If open-webui treats LangGraph-produced text as authoritative, errors or hallucinations can cascade into user-visible actions or tool calls without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF open-webui forwards LangGraph output into tool calls or user-facing actions without verification",
+        "IF LangGraph emits unverified facts that open-webui renders as authoritative"
+      ],
+      "mitigations": [
+        "Insert a human review step before actions",
+        "Require citations for any forwarded claims",
+        "Mark LangGraph output as untrusted in open-webui",
+        "Disable auto-execution of tool suggestions",
+        "requires-engineering: add verification gates between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LangGraph is open-source library infrastructure with application-defined state, while open-webui stores prompts, documents, notes, calendar events, files, and analytics and can connect to third-party APIs. The profiles show a likely retention/residency mismatch risk for the same data classes, but no direct jurisdictional conflict is documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in open-webui persistence while LangGraph application state retains the same records",
+        "IF the deployment relies on different retention or export policies across the two systems"
+      ],
+      "mitigations": [
+        "Classify data before sharing between agents",
+        "Disable analytics for regulated workloads",
+        "Align retention settings across both systems",
+        "Document deletion/export handling for shared records",
+        "requires-engineering: add residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d753275ff53a4181613f9df62282c287eeb220d4c89a187c7e51d6e23735d7cd",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
