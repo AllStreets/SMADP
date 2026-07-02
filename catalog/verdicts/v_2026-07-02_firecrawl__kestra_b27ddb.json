@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-07-02_firecrawl__kestra_b27ddb",
+  "generated_at": "2026-07-02T06:04:18Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High-risk shared-write and automation pair: Firecrawl can feed Kestra workflows, creating prompt-injection, leakage, and cascading-action exposure by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible/API outputs, while Kestra can consume stdin/stdout, files, and HTTP-triggered workflow inputs. That creates a plausible content-to-instructions bridge if Firecrawl output is passed into Kestra without sanitization. The pair lacks direct provenance controls in the profiles, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is copied into Kestra workflow definitions or task parameters without filtering, injection is possible.",
+        "IF Kestra treats scraped HTML/markdown as executable instructions, prompt injection can propagate."
+      ],
+      "mitigations": [
+        "Add a strict allowlist parser for Firecrawl outputs before Kestra ingestion.",
+        "Insert a manual review step for any scraped content used as workflow input.",
+        "Strip scripts, markdown links, and instruction-like text before passing data onward.",
+        "Use separate service accounts and isolated queues for the two agents.",
+        "requires-engineering: add provenance tags and reject untrusted content at Kestra task boundaries."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Firecrawl touches API keys and web content, and Kestra reads/writes files, logs, artifacts, database data, and cloud storage data while also having broad network egress. If they share a workspace or pass secrets through files or logs, sensitive data can move from Firecrawl into Kestra and then out through notifications or external services. The blast radius includes secrets and multiple work products.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl secrets or scraped content are written into a shared file or artifact, Kestra can read them.",
+        "IF Kestra forwards those inputs to Slack, email, cloud storage, or external APIs, leakage occurs."
+      ],
+      "mitigations": [
+        "Store Firecrawl secrets in a dedicated secret manager, not in shared files.",
+        "Disable logging of raw inputs and artifacts in Kestra for this pipeline.",
+        "Use per-run isolated directories for any exchanged files.",
+        "Restrict Kestra outbound destinations for this workflow.",
+        "requires-engineering: enforce data-loss-prevention checks on workflow inputs and outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Firecrawl supports multiple instances and broad network egress, while Kestra can execute shell, spawn subprocesses, write the filesystem, and access /app/storage and /tmp. If both operate on the same directory or shared state, concurrent writes and workflow mutations can race or corrupt artifacts. The profiles show no locking or coordination primitive, so the conflict risk is substantial.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or artifact path, file corruption or overwrite can occur.",
+        "IF Kestra shells out while Firecrawl updates shared outputs concurrently, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign separate working directories to each agent.",
+        "Serialize writes with a lock file or queue.",
+        "Make shared artifacts read-only after Firecrawl produces them.",
+        "Run one agent at a time for any shared path.",
+        "requires-engineering: add transactional storage or optimistic concurrency checks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Firecrawl produces scraped web content and structured data, and Kestra can turn inputs into automated actions such as email, Slack, cloud, or database operations. If Kestra treats Firecrawl output as authoritative, a bad scrape or injected page can cascade into downstream actions without verification. That is a default-dangerous automation chain with potentially irreversible effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses Firecrawl output as a trigger or task parameter without validation, cascading errors can propagate.",
+        "IF downstream tasks send notifications, modify cloud resources, or write databases, the blast radius becomes irreversible."
+      ],
+      "mitigations": [
+        "Require schema validation before Kestra consumes Firecrawl output.",
+        "Add a human approval gate for any action-producing workflow.",
+        "Compare scraped facts against a second source before execution.",
+        "Log and quarantine malformed or low-confidence outputs.",
+        "requires-engineering: implement confidence thresholds and rollback for automated actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Firecrawl handles web content and API keys, while Kestra processes logs, artifacts, database data, cloud storage data, and notifications. The profiles do not specify residency or retention controls, so a shared pipeline can create retention and logging mismatches even without a named regulatory regime. Uncertainty prevents a lower rating because the data classes are broad and operationally sensitive.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data enters Firecrawl and is then logged or retained by Kestra, compliance mismatch occurs.",
+        "IF Kestra sends those data to third-party notifications or cloud services, residency or retention obligations may be violated."
+      ],
+      "mitigations": [
+        "Classify the data before routing it through either agent.",
+        "Disable or redact logs for regulated fields in Kestra.",
+        "Keep regulated workloads off Firecrawl unless policy allows scraping.",
+        "Review retention settings for artifacts and notifications.",
+        "requires-engineering: document residency, retention, and deletion handling for the pipeline."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2",
+      "GOVERN-1.6"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cursor",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-02_cursor__lightagent_1d4be9",
+  "generated_at": "2026-07-02T06:04:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: shared filesystem and broad egress create prompt-injection, leakage, and conflict risks; LightAgent\u2019s unverified hooks amplify Cursor\u2019s default write access.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Cursor reads workspace files, open buffers, and clipboard contents, and LightAgent can use MCP plus runtime hooks that can observe/replace lifecycle payloads. That creates a plausible content-to-instruction bridge if either agent consumes the other\u2019s outputs from shared files or MCP. The interaction is documented only indirectly, so uncertainty stays medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Cursor and LightAgent share a workspace file or clipboard bridge, injected text can reach the other agent.",
+        "IF LightAgent runtime hooks rewrite payloads before Cursor consumes them, instruction hijack becomes possible."
+      ],
+      "mitigations": [
+        "Disable shared clipboard between the two agents.",
+        "Separate workspaces or repos for each agent.",
+        "Turn off MCP endpoints that pass raw agent output between them.",
+        "Add a manual review step before one agent consumes the other\u2019s file output.",
+        "requires-engineering: add provenance tagging to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Cursor touches source code, open files, and clipboard contents, while LightAgent handles conversations, memory, trace data, tool results, and workflow state. Both have broad network egress and MCP access, so sensitive material in a shared workspace could flow out through either agent\u2019s API calls. The pairwise leakage path is plausible in default use, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace files, either can expose the other\u2019s sensitive inputs.",
+        "IF LightAgent forwards trace data or tool results to its API backend, data from Cursor\u2019s workspace can leave the local environment."
+      ],
+      "mitigations": [
+        "Use separate directories for each agent.",
+        "Remove secrets from shared files before either agent runs.",
+        "Disable clipboard sharing during agent sessions.",
+        "Restrict network egress for one agent during sensitive tasks.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Cursor can write the filesystem, modify git state, and run shell commands; LightAgent can spawn subprocesses and use MCP, with runtime hooks that can alter lifecycle payloads. If both target the same repo or mutable resource, concurrent writes and git mutations can race and corrupt state. The profiles show overlapping write authority without locking, which matches the high-risk indicator.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or git branch, conflicting edits can overwrite each other.",
+        "IF either agent runs without external locking, concurrent tool calls can race on shared mutable state."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Pause one agent while the other writes.",
+        "Use file locks for shared artifacts.",
+        "Review git diffs before merge.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Cursor\u2019s agent loop can produce code or file changes, and LightAgent\u2019s tool-calling workflow can consume outputs and act on them. If LightAgent treats Cursor\u2019s output as authoritative without verification, errors can cascade into downstream actions or persisted workflow state. The profiles suggest the pathway, but not a fully automated destructive chain, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent uses Cursor-generated text as a tool input without validation, mistakes propagate.",
+        "IF Cursor emits incorrect code or instructions that LightAgent stores in workflow state, the error can persist across steps."
+      ],
+      "mitigations": [
+        "Require human review before LightAgent acts on Cursor output.",
+        "Add schema validation to inter-agent messages.",
+        "Compare outputs against source files before execution.",
+        "Log provenance for every handoff.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Cursor handles model-provider API keys and open files, while LightAgent handles conversations, memory, trace data, and tool results. If regulated or sensitive data is placed into the shared workflow, the pair can create retention and residency mismatches across two different vendors and logging regimes. No single residency violation is proven, but the mismatch risk is credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.repo_url"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is entered into both agents, their separate logging/retention policies may diverge.",
+        "IF Cursor workspace files contain secrets and LightAgent stores traces, deletion/export obligations may be harder to satisfy."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared sessions.",
+        "Review both vendors\u2019 retention settings.",
+        "Delete traces after each task.",
+        "Keep secrets out of open files.",
+        "requires-engineering: align retention and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ef82728fdd804d3eaa868b6b29294cef2ed6f35e7f4dc84d2f25cad0ebac272a",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

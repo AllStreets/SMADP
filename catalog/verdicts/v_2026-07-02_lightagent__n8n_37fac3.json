@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "n8n"
+  ],
+  "verdict_id": "v_2026-07-02_lightagent__n8n_37fac3",
+  "generated_at": "2026-07-02T06:04:36Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.755,
+  "headline": "High: LightAgent can feed untrusted outputs into n8n workflows, creating prompt-injection, data-leakage, and cascading-action risk by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "LightAgent can use MCP and OpenAI-compatible APIs, so its outputs can be routed into n8n workflows. n8n\u2019s AI Agent node orchestrates tools as sub-nodes and can process workflow inputs, making prompt-like content from LightAgent a plausible injection vector. The pair lacks documented provenance isolation, so interaction risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF n8n ingests LightAgent output as workflow text or node input without provenance checks, injection is possible.",
+        "IF a shared MCP or file bridge passes LightAgent-generated content into n8n tool prompts, the content can steer downstream actions."
+      ],
+      "mitigations": [
+        "Add a strict content separator and schema validator between LightAgent and n8n.",
+        "Disable automatic prompt reuse from LightAgent outputs.",
+        "Require human review before n8n executes any tool call derived from LightAgent text.",
+        "Log and flag any instruction-like tokens in LightAgent outputs.",
+        "requires-engineering: implement provenance tagging across the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and secrets, while n8n reads and writes server filesystem data and sends workflow data to integration nodes. If LightAgent outputs or context are passed into n8n, sensitive data can traverse broad network egress and third-party integrations. The pairwise leakage pathway is credible in default workflow setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent forwards conversations, memory, or tool results into an n8n workflow, those data classes can be exposed to integrations.",
+        "IF n8n workflows write shared files or send workflow payloads to external nodes, LightAgent-originated secrets can leave the local boundary."
+      ],
+      "mitigations": [
+        "Restrict n8n workflows to redacted inputs only.",
+        "Remove secrets from LightAgent outputs before handoff.",
+        "Use separate credentials for the two systems.",
+        "Turn off any n8n nodes that export data externally for the affected workflow.",
+        "requires-engineering: add field-level DLP on the handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "LightAgent supports multiple instances and subprocesses, and n8n has server filesystem write plus shell execution. Both can mutate shared resources and run concurrently, while n8n explicitly shares state via datastore and connected systems. That creates a strong write-conflict pathway, especially if both touch the same files or workflow state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or datastore, race conditions can corrupt state.",
+        "IF n8n Execute Command nodes and LightAgent subprocesses target the same resources, concurrent mutation conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign separate directories per agent.",
+        "Disable n8n Execute Command for shared resources.",
+        "Serialize writes with a lock file or queue.",
+        "Run both agents under distinct OS users.",
+        "requires-engineering: add transactional locking around shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent can emit tool results and workflow state, and n8n\u2019s AI Agent node can act on workflow inputs through downstream nodes. If n8n treats LightAgent output as authoritative, errors or hallucinations can cascade into external actions such as API calls or file writes. The pair therefore has a dangerous default handoff without verification.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF n8n uses LightAgent output as a decision input without validation, downstream actions may be wrong.",
+        "IF a workflow node converts LightAgent text into API calls or shell commands, the error can propagate into real-world side effects."
+      ],
+      "mitigations": [
+        "Insert a verification step before any action node.",
+        "Require structured outputs from LightAgent.",
+        "Limit n8n to read-only actions until validation passes.",
+        "Add confidence thresholds for automated execution.",
+        "requires-engineering: implement cross-agent fact checking."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent handles user conversations, long-term memory, and secrets, while n8n processes whatever the workflow touches and stores credentials on its server. That creates a plausible retention and residency mismatch if regulated data flows through the pair. The profiles do not prove a specific jurisdiction breach, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through n8n workflows with different retention settings than LightAgent memory, compliance mismatch occurs.",
+        "IF n8n credentials or datastore retain LightAgent-originated personal data longer than intended, retention obligations may be violated."
+      ],
+      "mitigations": [
+        "Classify data before routing it through either agent.",
+        "Set explicit retention limits in n8n workflows.",
+        "Avoid sending regulated data into LightAgent memory.",
+        "Review credential and datastore retention settings.",
+        "requires-engineering: document a shared data-processing agreement and residency map."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5",
+      "A.8"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:821e9eae427ed62499c2eb745cd60ff095e1ace0487057206954dd13af6a9360",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
