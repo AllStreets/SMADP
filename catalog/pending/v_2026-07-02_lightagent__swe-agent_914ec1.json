@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-07-02_lightagent__swe-agent_914ec1",
+  "generated_at": "2026-07-02T06:15:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk data and action coupling: LightAgent\u2019s broad egress/MCP plus SWE-agent\u2019s shell/git/write access create dangerous default pathways for leakage, prompt injection, and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent can use MCP and browser/network surfaces, so it may ingest external or tool-generated content; SWE-agent reads and acts on repository files and shell output. No shared channel is documented, but if LightAgent\u2019s outputs are copied into SWE-agent\u2019s task context or files, instruction hijacking becomes plausible. Uncertainty remains because the bridge is not explicit, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent output is forwarded into SWE-agent prompts or files without sanitization, prompt injection is possible.",
+        "IF a shared filesystem or MCP bridge is introduced between the agents, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Disable automatic copying of LightAgent outputs into SWE-agent inputs.",
+        "Add a manual review step before any LightAgent-generated text is used by SWE-agent.",
+        "Restrict LightAgent MCP tools to trusted servers only.",
+        "requires-engineering: add provenance tags and content filtering on inter-agent handoff.",
+        "requires-engineering: isolate the agents into separate workspaces with no shared writable files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and provenance metadata, while SWE-agent can read and write files inside its sandbox and handles model-provider keys and GitHub tokens. The profiles do not show a shared workspace, but if any sensitive LightAgent state is exported into SWE-agent\u2019s repository context, leakage can occur. The interaction is inferred, not directly documented, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent exports memory, traces, or tool results into files that SWE-agent can read, sensitive data may leak.",
+        "IF SWE-agent is pointed at a workspace containing LightAgent logs or prompts, those contents can be exposed through its outputs or network calls."
+      ],
+      "mitigations": [
+        "Keep LightAgent logs and memory outside SWE-agent\u2019s workspace.",
+        "Rotate any API keys before sharing artifacts between agents.",
+        "Limit SWE-agent to a minimal repository snapshot.",
+        "requires-engineering: enforce per-agent directory isolation and deny cross-mount reads.",
+        "requires-engineering: redact secrets from any handoff bundle before execution."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "LightAgent has broad network egress, subprocesses, and MCP; SWE-agent has shell, package install, git-state modification, filesystem write, and broad egress. Their write-capable surfaces overlap in a way that can conflict if they target the same repo or environment. The profiles do not prove a shared directory, so this is not high, but the overlap is enough for medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same repository or directory, concurrent writes can race.",
+        "IF either agent modifies git state without external locking, commits or patches can be overwritten."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Serialize write operations with a lock file.",
+        "Assign one agent read-only access during the other\u2019s write phase.",
+        "requires-engineering: add optimistic concurrency checks before git or file writes.",
+        "requires-engineering: use per-agent containers with no shared writable mount."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent can generate tool outputs and provenance metadata, and SWE-agent is explicitly a coding agent with shell and git authority. If SWE-agent treats LightAgent output as authoritative, errors can cascade into code changes, package installs, or commits. Because SWE-agent\u2019s downstream actions can be irreversible and the pair lacks a built-in verification boundary, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes LightAgent output without independent verification, incorrect facts can become code or git actions.",
+        "IF LightAgent emits malformed instructions that SWE-agent parses as tasks, downstream execution errors can propagate."
+      ],
+      "mitigations": [
+        "Require SWE-agent to verify LightAgent outputs against source files.",
+        "Use a checklist before any shell or git action derived from LightAgent.",
+        "Limit LightAgent to drafting only, not action directives.",
+        "requires-engineering: add schema validation for inter-agent task handoffs.",
+        "requires-engineering: gate commits behind human approval for cross-agent outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent handles user conversations, long-term memory, and trace data, while SWE-agent handles repository code and may use GitHub tokens and model-provider keys. The profiles do not specify residency or retention mismatches, so there is no direct compliance breach proven. However, the mixed data classes and secret handling create a plausible policy mismatch if the same data is routed through both agents.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF user conversations or memory are routed into SWE-agent logs or issue mode, retention and disclosure policies may diverge.",
+        "IF either agent processes regulated data without a matching policy boundary, compliance obligations may be violated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents\u2019 shared artifacts.",
+        "Disable issue-mode or token-based workflows for sensitive tasks.",
+        "Document retention rules for each agent separately.",
+        "requires-engineering: add data-class routing controls and retention enforcement.",
+        "requires-engineering: perform a residency and DPA review before deployment."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
