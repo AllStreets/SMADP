@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "plandex"
+  ],
+  "verdict_id": "v_2026-07-02_agentic-flow__plandex_532419",
+  "generated_at": "2026-07-02T05:30:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and write-capable tooling make prompt injection, data leakage, and state conflicts plausible; compliance risk is lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP and stdin/stdout, while agent_b reads and writes the filesystem and runs subprocesses. That creates a plausible content-to-instruction bridge if A\u2019s outputs are placed in B\u2019s workspace. No direct shared channel is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs are copied into agent_b's project directory or plan-local sandbox, B may parse attacker-controlled text as instructions.",
+        "IF either agent treats file contents as trusted prompts, injection becomes actionable."
+      ],
+      "mitigations": [
+        "Keep A and B in separate directories.",
+        "Disable auto-apply in B for any content originating from A.",
+        "Require a human review step before B consumes A outputs.",
+        "Prefix A outputs with a fixed machine-readable schema.",
+        "requires-engineering: add provenance tags between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches task prompts, repository metadata, and code, and agent_b has filesystem read/write plus broad egress to model providers or Plandex Cloud. If they share a workspace, B can read A-produced artifacts and transmit them outward. The profiles do not prove a shared workspace by default, so medium is the highest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF A and B share the same project directory, B can read A-generated files.",
+        "IF B sends those files to its backend or model provider, A's prompts or repository metadata may leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate workspaces for A and B.",
+        "Restrict B to a redacted subset of files.",
+        "Turn off automatic uploads for sensitive directories.",
+        "Review outbound requests from B before execution.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands and modify git state, and agent_b also writes the filesystem while agent_a can spawn subprocesses. With multiple instances supported on both sides, concurrent writes to the same repo can corrupt state or overwrite commits unless external locking exists; no locking is documented, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git repository, concurrent commits or file writes can race.",
+        "IF no orchestrator lock is present, one agent can overwrite the other's changes."
+      ],
+      "mitigations": [
+        "Run only one writer per repository.",
+        "Serialize git operations with a lock file.",
+        "Assign disjoint file paths to each agent.",
+        "Require manual merge before apply.",
+        "requires-engineering: add transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can generate analysis and task prompts, and agent_b\u2019s review-then-apply workflow can turn upstream output into downstream actions. Because B is not documented as blindly trusting A, I stop at medium rather than high, but the pathway exists in default multi-step workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF B ingests A-produced plans or summaries without independent verification, errors can propagate into applied changes.",
+        "IF B auto-apply is enabled, a mistaken A output can become a committed action."
+      ],
+      "mitigations": [
+        "Require B to cite source files before acting.",
+        "Disable auto-apply for cross-agent handoffs.",
+        "Add a second human review for high-impact changes.",
+        "Compare A outputs against repository state before apply.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles Ed25519 signatures and repository metadata, while agent_b handles source code and model-provider API keys. The profiles do not show a residency or certification mismatch, so only a limited compliance concern remains: sensitive material may be logged or retained differently across the two tools.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF either tool logs secrets or prompts to a third-party service, retention policy mismatch can occur.",
+        "IF regulated data is placed into shared files, compliance obligations may diverge across the pair."
+      ],
+      "mitigations": [
+        "Avoid placing secrets in shared workspaces.",
+        "Review logging settings in both tools.",
+        "Use separate retention policies for each agent.",
+        "Redact sensitive fields before handoff.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:fc7a5022a8017fac721561e9f83f7ca7fef0ee27a642a6e75836eb5c97661f52",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
