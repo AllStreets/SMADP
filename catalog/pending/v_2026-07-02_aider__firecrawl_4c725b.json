@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "aider",
+    "firecrawl"
+  ],
+  "verdict_id": "v_2026-07-02_aider__firecrawl_4c725b",
+  "generated_at": "2026-07-02T00:56:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High-risk shared git and broad network egress create prompt-injection, leakage, and cascading-error exposure; compliance risk is moderate.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Aider reads and writes repo files and shares state via a git repo, so Firecrawl content placed into the workspace can be treated as trusted input. Firecrawl can fetch web content and expose it through API/MCP-style workflows, creating a plausible injection bridge. The pair lacks explicit provenance controls, but the bridge is not automatic in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is copied into the shared repo without sanitization, prompt injection becomes reachable.",
+        "IF Aider parses repo content as instructions, attacker-controlled web text can steer tool use."
+      ],
+      "mitigations": [
+        "Keep Firecrawl output in a separate staging directory.",
+        "Add a manual review step before Aider reads scraped content.",
+        "Strip instructions and code blocks from scraped text before import.",
+        "Use a provenance tag or filename convention for untrusted content.",
+        "requires-engineering: add content-sanitization and trust-boundary enforcement in the workflow."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Aider touches source code and git history and has broad network egress; Firecrawl handles web content, screenshots, structured data, and API keys. If they share a workspace, sensitive repo material can flow into Firecrawl inputs or Aider outputs can be sent onward. The profiles do not show a hard isolation boundary, so the shared-workspace leakage path is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace, repo contents can be exposed across the pair.",
+        "IF Firecrawl is used on pages containing secrets or screenshots, those artifacts can be retained in outputs."
+      ],
+      "mitigations": [
+        "Use separate workspaces for code and scraped data.",
+        "Avoid placing secrets in the shared repo.",
+        "Disable or minimize Firecrawl collection of screenshots and API-key-bearing pages.",
+        "Review Aider commits before pushing to remote.",
+        "requires-engineering: enforce per-agent data segregation and retention controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Aider can write the filesystem and modify git state, while Firecrawl is an API client/MCP-compatible agent that can also operate concurrently. The shared git-repo model in Aider means simultaneous edits can collide, and the profiles do not mention locking or optimistic concurrency. Because both can act on shared mutable resources, conflict risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repo, merge conflicts or lost updates can occur.",
+        "IF Firecrawl writes artifacts into the repo while Aider auto-commits, state races become likely."
+      ],
+      "mitigations": [
+        "Assign each agent a separate branch.",
+        "Pause one agent while the other commits.",
+        "Use a lock file around repo mutations.",
+        "Run git status before every commit.",
+        "requires-engineering: add orchestrator-level concurrency control and conflict resolution."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Aider can generate code or repo changes that Firecrawl may then ingest as authoritative input, and Firecrawl can return scraped facts or structured data that Aider may act on. Neither profile shows a verification gate between them. That makes error propagation plausible, though not automatically catastrophic without a downstream action step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl output is fed directly into Aider prompts, unverified errors can propagate.",
+        "IF Aider commits code based on scraped facts, downstream defects can be introduced."
+      ],
+      "mitigations": [
+        "Require human review of Firecrawl outputs before Aider uses them.",
+        "Add a checksum or citation check for scraped facts.",
+        "Keep generated artifacts separate from source files.",
+        "Use a second pass to verify high-impact changes.",
+        "requires-engineering: implement automated validation between scrape and commit steps."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Aider handles source code, git history, and provider API keys; Firecrawl handles web content, screenshots, structured data, and API keys. The profiles do not specify residency, retention, or certifications, so a compliance mismatch cannot be ruled out. Because uncertainty escalates and both agents touch sensitive classes, medium is the safest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is scraped or stored in the shared workflow, retention and residency obligations may diverge.",
+        "IF either agent logs API keys or screenshots, subject-rights and retention controls may be violated."
+      ],
+      "mitigations": [
+        "Do not route regulated data through the pair.",
+        "Review retention settings for both tools.",
+        "Store secrets outside agent-visible workspaces.",
+        "Document data-flow boundaries for code and scraped content.",
+        "requires-engineering: align residency, retention, and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:5fc5c1c39c9c8888fbf2544f501a2e8beadb5df8d0930c462b59db06572a9cdd",
+    "profile_b_hash": "sha256:fc9513ef7d2a028dd458d671909977e57386a2bd54861c9bb0b4cb411ee2b08a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
