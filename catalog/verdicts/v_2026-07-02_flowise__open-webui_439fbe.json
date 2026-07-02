@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "flowise",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_flowise__open-webui_439fbe",
+  "generated_at": "2026-07-02T02:37:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.725,
+  "headline": "High: shared filesystem, broad egress, and MCP/tooling create default risks of leakage, conflict, and unsafe cascades between Flowise and open-webui.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Flowise reads/writes files and can call browser/search/HTTP tools; open-webui can use MCP, plugins, and OpenAPI tool servers. That creates a plausible content-to-instruction bridge if one agent\u2019s outputs are fed into the other via shared files or tools. The pair lacks explicit provenance controls in the profiles, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Flowise outputs are written to a shared file that open-webui ingests as prompt text, injection is possible.",
+        "IF open-webui MCP or plugin inputs are sourced from Flowise-generated content without provenance checks, instructions can be hijacked."
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct workspaces.",
+        "Disable automatic ingestion of files produced by the other agent.",
+        "Add a provenance tag to all inter-agent artifacts.",
+        "Review any MCP/OpenAPI tool inputs before execution.",
+        "requires-engineering: enforce content-type and provenance filtering between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Flowise touches chatflow inputs/outputs and uploaded files, while open-webui handles prompts, documents, persistent memory, files, and API keys. Both have broad network egress and shared-state patterns, so sensitive data can flow from Flowise into open-webui outputs or third-party APIs by default. The blast radius includes secrets and documents, making this high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or mounted volume, file leakage becomes direct.",
+        "IF open-webui is configured with external model or search providers, data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate storage volumes for each agent.",
+        "Remove secrets from shared documents before ingestion.",
+        "Turn off external providers for sensitive sessions.",
+        "Restrict open-webui to offline mode for protected data.",
+        "requires-engineering: add per-agent DLP and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Flowise can write the server filesystem and uses server datastore shared across instances; open-webui can access local files and mounted volumes and supports persistent shared sessions. If both are deployed against the same directory or volume, concurrent writes can corrupt state or overwrite artifacts. The profiles show overlapping mutable surfaces without locking guarantees.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents mount the same writable directory, write conflicts are possible.",
+        "IF either agent edits shared artifacts without external locking, state corruption can occur."
+      ],
+      "mitigations": [
+        "Assign separate writable directories.",
+        "Make shared mounts read-only for one agent.",
+        "Serialize writes with a simple operator-run lock file.",
+        "Back up shared artifacts before concurrent runs.",
+        "requires-engineering: implement transactional locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Flowise is a graph-based agent flow builder that can emit tool outputs, and open-webui supports plugins, MCP, and function calling that may act on those outputs. If open-webui treats Flowise output as authoritative, errors or hallucinations can cascade into downstream actions or user-visible decisions. The interaction is plausible in default tool-driven setups, so this is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF open-webui forwards Flowise-generated text into tools without verification, cascades occur.",
+        "IF Flowise is used to generate facts or citations that open-webui renders as trusted output, errors propagate."
+      ],
+      "mitigations": [
+        "Insert a human review step before tool execution.",
+        "Require source citations for any Flowise-produced claims.",
+        "Disable auto-execution of tool suggestions.",
+        "Log and diff intermediate outputs before acting.",
+        "requires-engineering: add verification gates between generation and action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Flowise handles model provider keys and tool credentials, while open-webui handles API keys, documents, notes, and persistent memory. The profiles do not specify residency or certifications, so a compliance mismatch cannot be proven; however, the shared handling of sensitive data classes plus external egress creates a realistic retention and disclosure risk. Uncertainty keeps this at medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in open-webui persistent memory, retention obligations may be violated.",
+        "IF Flowise forwards secrets or documents to external providers, residency or DPA requirements may be implicated."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in persistent memory.",
+        "Document retention settings for both agents.",
+        "Use region-appropriate providers only.",
+        "Purge secrets after each session.",
+        "requires-engineering: align both systems to a common compliance policy."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4b01fcb2c64db3bbe090f406b49b9a52f6a87870d92813374fddcf55f0526780",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
