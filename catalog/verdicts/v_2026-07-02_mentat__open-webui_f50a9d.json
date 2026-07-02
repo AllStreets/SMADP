@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mentat",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-02_mentat__open-webui_f50a9d",
+  "generated_at": "2026-07-02T02:43:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad network/MCP surfaces create prompt-injection, leakage, and cascading-error risks between Mentat and open-webui.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Mentat reads and writes files and shares state via filesystem, while open-webui can use MCP, OpenAPI tools, and local/mounted files. That creates a plausible bridge where content from one can be treated as instructions by the other. The interaction is documented by both profiles, though not directly reproduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory or mounted volume, injected instructions can cross from one agent to the other.",
+        "IF open-webui ingests file or tool output as prompt context, Mentat-authored content can steer it."
+      ],
+      "mitigations": [
+        "Separate working directories per agent.",
+        "Disable MCP/tool ingestion for untrusted files.",
+        "Add a manual review step before either agent consumes the other's outputs.",
+        "Use read-only mounts for shared artifacts.",
+        "requires-engineering: add provenance tagging on all inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Mentat touches source code and model-provider API keys, and open-webui handles prompts, documents, files, persistent memory, and API keys. Because both can access files and broad network services, a shared workspace can leak sensitive code or secrets from one agent into the other's outputs or upstream APIs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF the same files or mounted volume are visible to both agents, sensitive code or keys can flow between them.",
+        "IF open-webui forwards loaded documents or memory to third-party APIs, Mentat-originated secrets may be exposed."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared folders.",
+        "Run open-webui in offline mode for shared workspaces.",
+        "Restrict Mentat to non-sensitive files only.",
+        "Rotate any API keys that were present in shared artifacts.",
+        "requires-engineering: enforce per-agent access controls on the workspace."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Mentat can modify git state and write the filesystem, while open-webui can access local files and mounted volumes and supports persistent multi-worker sessions. On a shared repo or volume, concurrent writes and git changes can collide, corrupt state, or overwrite each other's edits; the profiles show no locking mechanism by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or mounted directory, file and git conflicts can occur.",
+        "IF open-webui sessions are concurrent, one agent's edits can overwrite the other's state without locks."
+      ],
+      "mitigations": [
+        "Assign separate branches per agent.",
+        "Use one writer at a time on shared repos.",
+        "Make shared volumes read-only except during a scheduled edit window.",
+        "Back up the repo before concurrent runs.",
+        "requires-engineering: add file and git locking around shared paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Mentat produces diff-based edit proposals, and open-webui can consume files, documents, and tool outputs in persistent sessions. If open-webui treats Mentat's output as authoritative, errors can cascade into downstream actions or stored memory. The pair lacks a documented verification barrier, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF open-webui ingests Mentat diffs or summaries without verification, incorrect changes can propagate.",
+        "IF open-webui stores Mentat output in persistent memory, later sessions may reuse the error."
+      ],
+      "mitigations": [
+        "Require human approval before applying Mentat diffs.",
+        "Disable automatic memory writes for imported content.",
+        "Cross-check edits against the original files.",
+        "Limit open-webui to read-only review of Mentat output.",
+        "requires-engineering: add validation of proposed diffs before downstream use."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Mentat handles source code and model-provider API keys, while open-webui handles prompts, documents, files, persistent memory, analytics, and API keys with broad external integrations. The profiles do not specify residency or retention alignment, so a compliance mismatch is plausible, especially if regulated data is placed into open-webui's persistent stores or external connectors.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in open-webui persistent memory or analytics, retention obligations may be violated.",
+        "IF Mentat source files include sensitive data and are routed through external connectors, residency or DPA requirements may be breached."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared sessions.",
+        "Disable analytics and persistent memory for sensitive projects.",
+        "Review connector destinations before use.",
+        "Keep Mentat workspaces separate from open-webui storage.",
+        "requires-engineering: document and enforce residency/retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:caf12a153078caa56158bcf7b8361c9272129c91ef71c0f5d5459fbfc3063884",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
