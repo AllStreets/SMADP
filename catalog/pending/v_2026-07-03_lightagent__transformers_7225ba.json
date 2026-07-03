@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "transformers"
+  ],
+  "verdict_id": "v_2026-07-03_lightagent__transformers_7225ba",
+  "generated_at": "2026-07-03T06:32:45Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: LightAgent can exfiltrate and misroute data through broad egress and MCP/browser tooling, while transformers can read/write files and run shells, creating default-path leakage and conflict risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent can use MCP, browsers, and stdin/stdout, while transformers can read files and run pipelines. That creates a plausible content-to-instructions bridge if LightAgent outputs are fed into transformers as trusted text. No shared channel is explicitly documented, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent outputs are copied into transformers prompts or files without sanitization, injection is possible.",
+        "IF both agents are connected through a shared workspace or pipeline, attacker-controlled text can cross the boundary."
+      ],
+      "mitigations": [
+        "Add a strict content-delimiting wrapper before passing LightAgent output onward.",
+        "Disable automatic prompt ingestion from files or browser text.",
+        "Review and strip instructions from any text handed to transformers.",
+        "Use a separate staging directory for inter-agent handoff.",
+        "requires-engineering: add provenance tags and instruction-vs-data parsing."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent handles user conversations, long-term memory, tool results, and secrets, and has broad network egress. transformers can read and write files and also egress broadly. If they share a workspace or handoff files, sensitive LightAgent data can flow into transformers and then out over the network. The pairwise leakage path is plausible but not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent stores conversations or secrets in files accessible to transformers, leakage can occur.",
+        "IF transformers processes those files and sends results to external services, sensitive data can leave the boundary."
+      ],
+      "mitigations": [
+        "Keep each agent in a separate directory with OS permissions.",
+        "Do not place secrets in shared files or model inputs.",
+        "Turn off network egress for the handoff step if possible.",
+        "Redact conversations and tool results before file-based transfer.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "LightAgent supports multiple instances and subprocesses, and transformers can read/write the filesystem, execute shells, install packages, and spawn subprocesses. If both operate on the same mutable workspace, concurrent writes and package changes can collide and corrupt state. The profiles show overlapping write-capable surfaces, so the conflict risk is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory, file clobbering or state corruption can occur.",
+        "IF transformers installs or modifies packages while LightAgent is running, runtime conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Run only one writer at a time.",
+        "Freeze package installation during shared runs.",
+        "Use file locks for any shared artifacts.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LightAgent can produce tool results and workflow state, and transformers can consume files and run pipelines. If transformers treats LightAgent output as authoritative without verification, errors can cascade into downstream processing. The profiles do not show explicit autonomous action-taking, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF transformers consumes LightAgent output without validation, incorrect facts can propagate.",
+        "IF LightAgent tool results are rendered as ground truth in downstream pipelines, errors can cascade."
+      ],
+      "mitigations": [
+        "Insert a verification step between agents.",
+        "Require schema validation on all handoff files.",
+        "Mark LightAgent outputs as untrusted by default.",
+        "Compare outputs against source documents before acting.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent explicitly handles secrets and long-term memory, while transformers touches broad multimodal data and can write files. If regulated data is routed from LightAgent into transformers, retention and residency controls may diverge. The profiles do not specify a concrete jurisdiction mismatch, so this is a medium compliance risk rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in LightAgent memory and then written into transformers-managed files, retention mismatch can occur.",
+        "IF the deployment places EU or PHI data into this pair without a shared policy, compliance gaps can arise."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through shared files.",
+        "Set a single retention policy for both agents.",
+        "Delete temporary handoff files after each run.",
+        "Restrict secrets to the minimum necessary scope.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:c5c2556ede497899123cec74d45d33d4ad35291f9d576663e38e278b5f21120a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
