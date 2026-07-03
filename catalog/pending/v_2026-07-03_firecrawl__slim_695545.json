@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-03_firecrawl__slim_695545",
+  "generated_at": "2026-07-03T03:15:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.47,
+  "headline": "High: shared broad network egress and overlapping file/CLI surfaces create data-leak and conflict risks; prompt-injection risk is limited by lack of direct channel.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented: agent_a uses API/MCP-compatible client support, while agent_b has stdin/stdout and filesystem I/O but use_mcp is false. A prompt-injection bridge would require unusual manual copy/paste or external orchestration, so the pathway exists but is not default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF an operator manually copies agent_a output into agent_b stdin/stdout without sanitization, injection becomes plausible.",
+        "IF an external orchestrator writes agent_a output into a file that agent_b reads as instructions, the risk increases."
+      ],
+      "mitigations": [
+        "Use a strict delimiter and treat agent_a output as untrusted text.",
+        "Disable manual copy/paste between agents during shared tasks.",
+        "Require a human review step before agent_b executes any instruction-like text.",
+        "Log and flag any agent_a output containing tool directives.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches API keys and web content and has broad network egress; agent_b reads/writes filesystem artifacts and handles registry credentials plus private keys. Even without a documented shared workspace, the pair can leak sensitive data if outputs or files are exchanged through the filesystem or operator workflow. Uncertainty about the bridge escalates to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output containing API keys or web content is saved into a path agent_b can read, leakage is possible.",
+        "IF agent_b writes extracted secrets into a shared directory later uploaded or transmitted by agent_a, leakage is possible."
+      ],
+      "mitigations": [
+        "Keep agent_a and agent_b on separate workspaces.",
+        "Do not pass secrets through shared files or stdout.",
+        "Redact API keys and private keys before any handoff.",
+        "Restrict outbound network access for tasks that do not require it.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_b can write the filesystem and spawn subprocesses; agent_a can call APIs and supports multiple instances. They do not both have explicit same-dir write or git mutation, so high is not justified, but overlapping mutable surfaces still create race and overwrite risk if they share artifacts or a workspace.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same output directory, file overwrites or partial writes can occur.",
+        "IF an orchestrator reuses the same mutable artifact path across runs, conflicts become likely."
+      ],
+      "mitigations": [
+        "Assign distinct output directories per agent.",
+        "Serialize writes to any shared artifact.",
+        "Use temporary per-run filenames.",
+        "Avoid concurrent execution on the same workspace.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a produces scraped web content and structured data; agent_b can consume files and execute shell commands. If agent_b treats agent_a output as authoritative, a bad scrape or injected content can cascade into incorrect container analysis or unsafe commands. The pair lacks a documented verification barrier, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a output as input without validation, errors can propagate.",
+        "IF agent_a scrapes malformed or adversarial content and agent_b executes derived commands, cascading failure is likely."
+      ],
+      "mitigations": [
+        "Require schema validation on all agent_a outputs.",
+        "Have a human verify high-impact fields before agent_b acts.",
+        "Reject command generation from untrusted scraped text.",
+        "Keep a checksum or provenance record for transferred artifacts.",
+        "requires-engineering: add automated cross-checks against source URLs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a handles API keys and web content with broad egress; agent_b handles registry credentials, private keys, and environment variables while running shell commands. The profiles do not specify residency or certifications, so a compliance mismatch cannot be ruled out. Because sensitive data classes are clearly present on both sides, medium is the safest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF either agent processes regulated data such as customer secrets or private keys, retention and logging controls must match.",
+        "IF agent_a sends sensitive content to a third-party API while agent_b stores it locally, policy mismatch may occur."
+      ],
+      "mitigations": [
+        "Confirm both agents' retention settings before use.",
+        "Avoid regulated data in shared workflows.",
+        "Disable verbose logging for secret-bearing tasks.",
+        "Store secrets only in approved secret managers.",
+        "requires-engineering: document residency and DPA boundaries for both agents."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
