@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-03_airbyte__open-webui_9b1330",
+  "generated_at": "2026-07-03T05:02:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High risk of data leakage and cascading errors: Open WebUI\u2019s broad egress, browser/MCP tooling, and shared persistent sessions can expose Airbyte-handled business data to external services and unverified downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Open WebUI can ingest browser, MCP, and file content, so attacker-controlled text could be treated as instructions. Airbyte exposes business data via its API and broad egress, creating a plausible bridge if its outputs are copied into Open WebUI or surfaced through shared tools. No direct shared channel is documented, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte outputs are pasted into Open WebUI chats or tools, prompt injection becomes reachable.",
+        "IF Open WebUI MCP or browser content is allowed to influence tool calls without provenance checks, injected instructions can steer actions."
+      ],
+      "mitigations": [
+        "Disable copy-paste of raw Airbyte outputs into Open WebUI.",
+        "Require provenance tags on any content imported from Airbyte into Open WebUI.",
+        "Turn off or restrict MCP/browser tools for untrusted content.",
+        "Use a separate workspace or account for Airbyte admin tasks.",
+        "requires-engineering: add content-sanitization and instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Airbyte touches business data and has broad network egress; Open WebUI touches files, documents, notes, API keys, and can call external APIs and search services. If Airbyte data is routed through Open WebUI, the pair can leak sensitive business data to third parties in default tool-enabled setups. The interaction is not directly documented, so I choose high rather than medium due to the egress breadth.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte-managed business data is loaded into Open WebUI sessions, that data can be forwarded to external APIs or search tools.",
+        "IF Open WebUI is configured with connected file or cloud sources, Airbyte outputs may be retained or re-shared beyond the original workspace."
+      ],
+      "mitigations": [
+        "Keep Airbyte and Open WebUI on separate accounts and workspaces.",
+        "Disable external search and cloud connectors in Open WebUI for sensitive sessions.",
+        "Restrict Open WebUI access to non-sensitive sample data.",
+        "Review and redact Airbyte outputs before sending them to Open WebUI.",
+        "requires-engineering: enforce DLP controls on Open WebUI tool outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress, and Open WebUI can spawn subprocesses and manage persistent shared sessions. Airbyte can call its API and move data pipelines, so overlapping writes or concurrent mutations are plausible if they target the same downstream resources. No shared lock or common mutable resource is documented, so this remains medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same downstream API, database, or mounted volume, concurrent updates can conflict.",
+        "IF Open WebUI plugins or subprocesses mutate resources that Airbyte also syncs, race conditions become possible."
+      ],
+      "mitigations": [
+        "Assign separate target resources for Airbyte and Open WebUI.",
+        "Disable write access in Open WebUI plugins that touch Airbyte-managed systems.",
+        "Use per-resource locking in the orchestrator.",
+        "Schedule Airbyte syncs and Open WebUI actions in non-overlapping windows.",
+        "requires-engineering: add optimistic concurrency checks on shared destinations."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Open WebUI can present model outputs through tools and persistent sessions, while Airbyte can supply business data that may be treated as authoritative input. If Open WebUI forwards Airbyte-derived facts into downstream actions or reports without verification, errors can cascade into incorrect operational decisions. Because Open WebUI has action-capable tooling, the blast radius is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Open WebUI uses Airbyte outputs as source-of-truth inputs without validation, downstream summaries can be wrong.",
+        "IF Open WebUI tools act on Airbyte-fed data, a single bad sync can propagate into multiple actions or artifacts."
+      ],
+      "mitigations": [
+        "Require human review before any Open WebUI action based on Airbyte data.",
+        "Add validation checks between Airbyte exports and Open WebUI inputs.",
+        "Mark Airbyte-fed content as untrusted in Open WebUI.",
+        "Limit Open WebUI to read-only presentation for Airbyte data.",
+        "requires-engineering: implement schema and freshness checks before downstream actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airbyte handles business data, while Open WebUI handles files, documents, notes, persistent memory, and API keys with broad external connectors. That creates a plausible retention and residency mismatch if regulated business data is routed through Open WebUI\u2019s persistent storage or third-party APIs. No specific jurisdiction or certification mismatch is documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated business data is stored in Open WebUI persistent memory or files, retention obligations may be violated.",
+        "IF Open WebUI sends Airbyte-derived data to third-party APIs outside the required residency, compliance gaps arise."
+      ],
+      "mitigations": [
+        "Do not route regulated datasets through Open WebUI persistent memory.",
+        "Disable third-party connectors for compliance-sensitive sessions.",
+        "Set short retention and purge schedules for Open WebUI artifacts.",
+        "Keep Airbyte data in a separate compliant storage boundary.",
+        "requires-engineering: add residency and retention policy enforcement to the workflow."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
