@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "airflow"
+  ],
+  "verdict_id": "v_2026-07-03_agentic-flow__airflow_3fafe4",
+  "generated_at": "2026-07-03T07:13:51Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of prompt injection and cascading errors from agentic-flow into Airflow; shared MCP/stdin and write-capable automation make defaults unsafe.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP and stdin/stdout, so it can ingest external content; agent_b is Airflow, which commonly consumes task outputs as inputs in automation. No shared channel is explicitly documented, so I cannot justify high severity. The pair still has a plausible injection path if agent_a\u2019s outputs are fed into Airflow tasks or DAG text.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is copied into an Airflow DAG, task parameter, or templated field without sanitization, injection is possible.",
+        "IF a shared MCP or filesystem bridge is added between the agents, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Disable direct piping of agent_a text into Airflow templates.",
+        "Add a manual review step before any DAG/task update.",
+        "Strip instructions from agent_a outputs before reuse.",
+        "Use allowlisted schemas for inter-agent messages.",
+        "requires-engineering: add provenance tags and content signing between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches task prompts, repository metadata, and code, and can use network egress plus MCP; agent_b has broad network egress. Even without a documented shared workspace, the pair can leak sensitive content if agent_a forwards its context or files into Airflow-managed workflows. The evidence is indirect, so I choose medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a processes secrets or private repository content and passes them into Airflow tasks, leakage occurs.",
+        "IF Airflow tasks transmit agent_a-derived payloads to external services, data exposure expands beyond the original workspace."
+      ],
+      "mitigations": [
+        "Remove secrets from agent_a inputs before orchestration.",
+        "Block outbound requests from Airflow tasks except to approved endpoints.",
+        "Review logs for prompt or file-content capture.",
+        "Use separate service accounts for each agent.",
+        "requires-engineering: isolate workspaces and add DLP scanning on inter-agent payloads."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can execute shell commands, install packages, modify git state, spawn subprocesses, and supports multiple instances; agent_b is an automation orchestrator with broad egress. If both operate on the same repo or mutable workspace, concurrent writes and git changes can race and corrupt state. Uncertainty about shared storage does not reduce the risk enough, so I escalate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or directory, file and git conflicts can occur.",
+        "IF Airflow triggers overlapping runs while agent_a instances are active, concurrent mutation becomes likely."
+      ],
+      "mitigations": [
+        "Serialize runs with a single lock file.",
+        "Assign separate working directories per agent.",
+        "Pause Airflow tasks during agent_a git operations.",
+        "Review and merge git changes manually.",
+        "requires-engineering: add optimistic concurrency control around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a can generate and modify artifacts, while agent_b is an orchestrator that may act on upstream outputs. If Airflow treats agent_a\u2019s output as authoritative, errors can cascade into downstream jobs, commits, or external actions. Because the pair lacks documented verification boundaries, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Airflow consumes agent_a-produced facts or files without validation, downstream actions can be wrong.",
+        "IF agent_a writes a malformed artifact that Airflow schedules or publishes, the error propagates."
+      ],
+      "mitigations": [
+        "Require human approval before downstream execution.",
+        "Validate agent_a outputs against a schema.",
+        "Compare outputs against a second source before action.",
+        "Disable auto-publishing from agent_a artifacts.",
+        "requires-engineering: add verification gates in Airflow DAGs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles task prompts, repository metadata, and code, while agent_b\u2019s profile does not list sensitive data classes or special compliance constraints. No residency, retention, or certification mismatch is documented, so only a low, documentation-gap compliance concern remains. I do not cite agent_b beyond its empty sensitive-data profile because no specific mismatch is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is used on regulated data and Airflow logs or retains those artifacts longer than policy allows, compliance issues arise.",
+        "IF a future deployment routes EU or PHI data through either agent without a DPA or equivalent controls, the risk increases."
+      ],
+      "mitigations": [
+        "Confirm data-class handling before deployment.",
+        "Shorten log retention for orchestration runs.",
+        "Redact prompts and payloads in logs.",
+        "Document residency and retention settings.",
+        "requires-engineering: add policy enforcement for regulated datasets."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.6.1",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:47c97457395201b2f46bae6e097e5b0ac5dd3c4eadc1344b7484560c15c1a90b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
