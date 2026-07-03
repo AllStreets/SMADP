@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "autogpt"
+  ],
+  "verdict_id": "v_2026-07-03_agentic-flow__autogpt_43ed1f",
+  "generated_at": "2026-07-03T09:16:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: shared filesystem and shell-capable defaults create prompt-injection, data-leakage, and cascading-action risks between agentic-flow and AutoGPT.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agentic-flow can use MCP and stdin/stdout, while AutoGPT exposes filesystem and agent-protocol I/O. That creates a plausible content-bridging path where one agent\u2019s outputs can be treated as instructions by the other in default setups. The interaction is inferred, not directly documented, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF agentic-flow writes attacker-controlled text into a shared file or MCP channel that AutoGPT reads as instructions, injection is possible.",
+        "IF both agents are connected through a shared workspace or agent-protocol bridge, prompt content can cross trust boundaries."
+      ],
+      "mitigations": [
+        "Disable shared file handoff between the agents.",
+        "Add a strict instruction/data delimiter in any MCP or file bridge.",
+        "Require human review before AutoGPT executes content produced by agentic-flow.",
+        "Run each agent in separate directories with read-only cross-access.",
+        "requires-engineering: add provenance tagging and instruction filtering at the orchestrator layer."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agentic-flow touches code, repository metadata, task prompts, and Ed25519 signatures, and AutoGPT has filesystem access plus allowlisted egress. If they share a workspace, either agent can expose the other\u2019s files or prompts through its outputs or network calls. The profiles do not prove a shared workspace, so this remains medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same filesystem tree, file contents can be read and re-emitted.",
+        "IF agentic-flow stores signatures or prompts in files that AutoGPT can access, those data can leak through AutoGPT outputs or egress."
+      ],
+      "mitigations": [
+        "Place each agent in a separate workspace directory.",
+        "Remove secrets from any shared files before handoff.",
+        "Restrict AutoGPT to read-only access on agentic-flow artifacts.",
+        "Audit allowlisted egress destinations for file-content uploads.",
+        "requires-engineering: enforce per-agent storage isolation and secret redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands and spawn subprocesses, and agentic-flow can modify git state while AutoGPT can access the filesystem. In a shared repo or directory, concurrent writes can corrupt state or overwrite each other, and AutoGPT lacks multiple-instance support while agentic-flow supports it. This is a default-dangerous overlap if co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repository or filesystem path, race conditions and overwrite conflicts can occur.",
+        "IF AutoGPT and agentic-flow run concurrently without locking, one agent can clobber the other\u2019s intermediate state."
+      ],
+      "mitigations": [
+        "Run the agents in separate working directories.",
+        "Serialize write access with a lock file.",
+        "Disable git writes for one agent during shared runs.",
+        "Snapshot the workspace before concurrent execution.",
+        "requires-engineering: add transactional coordination around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agentic-flow is designed for hooks/workers and background analysis tasks, and AutoGPT is an autonomous agent with filesystem access. That makes it plausible that AutoGPT will consume agentic-flow output as authoritative and act on it without verification, creating a cascade from analysis to action. The profiles do not show a verification gate, so the safer high severity is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT uses agentic-flow outputs as task inputs without a validation step, incorrect facts can propagate into actions.",
+        "IF agentic-flow emits recommendations that AutoGPT turns into file edits or shell actions, downstream errors can compound."
+      ],
+      "mitigations": [
+        "Insert a human approval step before AutoGPT acts on agentic-flow output.",
+        "Require schema validation on all handoff messages.",
+        "Log and diff proposed actions before execution.",
+        "Limit agentic-flow to advisory output only.",
+        "requires-engineering: add automated verification against source artifacts."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not declare regulated data handling, residency, or retention commitments. agentic-flow explicitly touches task prompts and signatures, while AutoGPT lists no data classes touched and no special compliance claims. With no documented mismatch, only a low residual compliance risk is visible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into either agent\u2019s workspace, compliance obligations may change.",
+        "IF deployment policy requires residency or retention guarantees, the current profiles do not document them."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces.",
+        "Document retention and deletion expectations before deployment.",
+        "Review vendor terms for residency commitments.",
+        "Separate compliance-sensitive workloads from these agents.",
+        "requires-engineering: add policy enforcement for data-class routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:3e2c4e54b64bdefdbedd19855f9b9f71fede7211adadaab62650b9adf6f29b35",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
