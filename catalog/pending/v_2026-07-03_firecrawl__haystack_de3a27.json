@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "firecrawl",
+    "haystack"
+  ],
+  "verdict_id": "v_2026-07-03_firecrawl__haystack_de3a27",
+  "generated_at": "2026-07-03T02:58:20Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "High risk of prompt-injection and cascading errors via shared web-content/MCP workflows; data leakage and compliance risks are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Firecrawl ingests web content and exposes MCP-compatible/API surfaces; Haystack can use MCP servers. That creates a plausible path for attacker-controlled content from agent_a to be parsed by agent_b as instructions. The pairwise interaction is inferred from docs, not directly observed, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes Firecrawl output through MCP or REST without provenance filtering",
+        "IF agent_a scrapes attacker-controlled pages that contain instruction-like text"
+      ],
+      "mitigations": [
+        "Add a provenance tag to all Firecrawl outputs before passing them to Haystack",
+        "Disable automatic instruction-following on scraped text",
+        "Require a human review step for any web-derived prompt content",
+        "Restrict Haystack MCP tools to read-only retrieval paths",
+        "requires-engineering: implement content-sanitization and provenance enforcement between the agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Firecrawl touches API keys, screenshots, and structured data, while Haystack sends data over REST/MCP and touches anonymous usage stats. No shared filesystem is shown, but both have broad network egress and the pair can move sensitive web-derived data into a third-party inference path. The exact leakage path is undocumented, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Firecrawl processes pages containing API keys or screenshots",
+        "IF Haystack forwards retrieved content to external APIs or MCP backends"
+      ],
+      "mitigations": [
+        "Redact secrets from Firecrawl outputs before handoff",
+        "Limit Haystack inputs to non-sensitive fields only",
+        "Turn off external API calls for sensitive jobs",
+        "Separate credentials used by each agent",
+        "requires-engineering: add DLP scanning on the handoff boundary"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Both agents have broad network egress, and Firecrawl supports multiple instances, so concurrent writes to shared mutable resources are possible if the operator points them at the same backend. However, no shared filesystem, git, or database write surface is documented, so the conflict blast radius appears limited and configuration-dependent.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write to the same external API or datastore",
+        "IF the orchestrator does not provide locking or request serialization"
+      ],
+      "mitigations": [
+        "Assign separate output destinations per agent",
+        "Serialize writes through one coordinator",
+        "Use idempotent update endpoints only",
+        "Check for duplicate writes in logs",
+        "requires-engineering: add locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Haystack is a search-RAG system that can consume upstream outputs, and Firecrawl produces scraped web content and structured data. If Haystack treats Firecrawl output as authoritative, errors or hallucinated extractions can cascade into downstream answers or actions. The pairwise pathway is plausible from docs but not directly evidenced, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Haystack uses Firecrawl output as retrieval context without verification",
+        "IF downstream consumers trust Haystack answers as ground truth"
+      ],
+      "mitigations": [
+        "Require citation checks before downstream use",
+        "Compare Firecrawl output against a second source",
+        "Mark scraped content as untrusted by default",
+        "Add confidence thresholds before actioning results",
+        "requires-engineering: implement verification gates in the pipeline"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Firecrawl explicitly touches API keys and screenshots, while Haystack only documents anonymous usage statistics. No residency or certification mismatch is shown, so a compliance breach is not established. The main issue is a documented gap in data-class handling that could matter if regulated data is routed through Firecrawl.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated or personal data is scraped by Firecrawl",
+        "IF Haystack stores or logs that same data beyond anonymous statistics"
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through the pair",
+        "Strip identifiers before ingestion",
+        "Review retention settings for both agents",
+        "Document the data classes allowed in the workflow",
+        "requires-engineering: align residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:967ae79eecc28eedef0bfe237f6abd83ac40a28e37ef217d87db5fa0b8301a4c",
+    "profile_b_hash": "sha256:eef17619b07f4a6c640ae15cae37da4057ac4d6a1e5e92661186b6e147735356",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
