@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-03_kestra__open-webui_9ded4c",
+  "generated_at": "2026-07-03T05:19:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.755,
+  "headline": "High-risk pair: shared mutable files, broad egress, and MCP/tooling create dangerous prompt-injection, leakage, and cascading-action pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Kestra can read/write files, execute shell, and call APIs; Open WebUI can use MCP, plugins, and OpenAPI tool servers. That creates a default pathway where content from shared files or tool outputs can be treated as instructions. Because no provenance or isolation is documented between them, uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.onexus.frameworks_detected"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes attacker-controlled text into /app/storage or /tmp and Open WebUI ingests it through MCP or a tool plugin, instruction hijacking is possible.",
+        "IF Open WebUI forwards tool output into a prompt without provenance filtering, prompt injection can cross the pair."
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct volumes and disable shared file mounts.",
+        "Disable MCP/tool plugins for untrusted content paths.",
+        "Add provenance tags and strip instructions from retrieved text.",
+        "Run Open WebUI in a restricted workspace with read-only access to Kestra outputs.",
+        "requires-engineering: enforce content-type and provenance checks at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra touches logs, inputs, database data, cloud storage data, messages, and notifications, while Open WebUI handles prompts, chat messages, documents, notes, files, and API keys. Both have broad network egress and file access, so sensitive data can flow from Kestra into Open WebUI and then out through third-party APIs or plugins by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Kestra workflows place secrets, logs, or database data into files or messages that Open WebUI can read, leakage is possible.",
+        "IF Open WebUI sends retrieved context to external APIs or search tools, data can leave the pair without user awareness."
+      ],
+      "mitigations": [
+        "Keep sensitive Kestra outputs off shared volumes.",
+        "Disable external tool calls in Open WebUI for sensitive sessions.",
+        "Use separate service accounts and API keys per agent.",
+        "Redact secrets from logs and workflow artifacts before handoff.",
+        "requires-engineering: add DLP/redaction at the file and prompt boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Kestra has filesystem write, shell, subprocess, and elevated-privilege requests; Open WebUI supports persistent shared sessions, mounted volumes, and multiple instances. If both operate on the same mutable workspace, concurrent writes and state corruption are plausible, and the profiles do not show locking or coordination. Uncertainty keeps this at high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or mounted volume, file clobbering and inconsistent state can occur.",
+        "IF Kestra modifies workflow artifacts while Open WebUI persists session or memory files in the same storage, conflicts are likely."
+      ],
+      "mitigations": [
+        "Assign separate writable directories to each agent.",
+        "Mount shared data read-only wherever possible.",
+        "Serialize writes with an external lock or queue.",
+        "Avoid running both agents against the same git or artifact workspace.",
+        "requires-engineering: add transactional coordination for shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra can generate workflow outputs, logs, and notifications; Open WebUI can consume documents, notes, and persistent memory and can act through tools/plugins. If Open WebUI treats Kestra output as authoritative, errors can cascade into downstream actions such as API calls or messages. No verification step is documented, so the safer high severity applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-produced text is inserted into Open WebUI memory or prompts without verification, hallucinations or bad facts can propagate.",
+        "IF Open WebUI then uses tools or APIs based on that content, the cascade can trigger external side effects."
+      ],
+      "mitigations": [
+        "Require human review before Open WebUI acts on Kestra outputs.",
+        "Mark Kestra outputs as untrusted in the UI and prompt templates.",
+        "Disable autonomous tool execution for imported content.",
+        "Add a verification step that checks workflow outputs against source data.",
+        "requires-engineering: implement signed, schema-validated handoff records."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra handles database data, cloud storage data, messages, and notifications; Open WebUI handles prompts, chat messages, documents, files, and API keys, plus persistent memory and analytics. The profiles do not state residency or certifications, so a compliance mismatch is plausible but not proven. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as EU PII, PHI, or secrets is routed through both agents, residency or retention obligations may be implicated.",
+        "IF Open WebUI stores prompts or memory longer than Kestra retains workflow data, retention mismatch can occur."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through both agents.",
+        "Align retention settings before enabling shared workflows.",
+        "Document data residency for each storage backend.",
+        "Use separate tenants or deployments for regulated workloads.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
