@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "firecrawl"
+  ],
+  "verdict_id": "v_2026-07-03_dagster__firecrawl_ce57ec",
+  "generated_at": "2026-07-03T01:41:09Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.395,
+  "headline": "High: Firecrawl\u2019s broad network/API access can leak data and amplify unverified Dagster outputs into downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Dagster has no clipboard, stdin/stdout, filesystem, or MCP surfaces, so it cannot directly ingest Firecrawl output by default. Firecrawl can expose web content through API/MCP-style workflows, but the pair lacks a documented shared channel. The main pathway would require unusual orchestration or manual copy-paste, so risk stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.onexus.mcp_adapter"
+        }
+      ],
+      "conditions": [
+        "IF an operator wires Firecrawl output into Dagster via manual copy-paste or a shared file, prompt injection becomes plausible.",
+        "IF Dagster is extended with an MCP or file-ingest bridge, attacker-controlled web text can reach its parsers."
+      ],
+      "mitigations": [
+        "Keep Firecrawl outputs out of Dagster prompts and configs.",
+        "Use a human review step before any text from Firecrawl is reused.",
+        "Disable any ad hoc shared folder between the two agents.",
+        "Add a simple allowlist for expected fields in imported content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Dagster is local-only with no network egress and no filesystem read/write, while Firecrawl has broad network egress and handles API keys plus web content. There is no documented shared workspace, but if Dagster receives sensitive data and forwards it into Firecrawl\u2019s API/MCP flow, leakage to a third party is plausible in default Firecrawl usage. Uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Dagster is used to stage secrets or regulated data and then passes them to Firecrawl APIs, those contents can leave the local boundary.",
+        "IF both agents are pointed at the same shared workspace, Firecrawl may ingest files that Dagster prepared."
+      ],
+      "mitigations": [
+        "Do not route secrets or regulated records through Firecrawl.",
+        "Strip API keys and identifiers before any Firecrawl call.",
+        "Use separate workspaces for orchestration and scraping.",
+        "Review Firecrawl request logs for sensitive payloads.",
+        "requires-engineering: add a redaction proxy in front of Firecrawl."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Dagster cannot write files, modify git state, or egress network, so it has little direct write conflict surface. Firecrawl supports multiple instances and broad API activity, but the pair lacks a shared mutable resource in the profiles. Any conflict would require unusual external coordination, so the blast radius is small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF an external orchestrator gives both agents write access to the same directory or git repo, conflicts become possible.",
+        "IF Firecrawl and Dagster are both pointed at one mutable API-backed resource, last-writer-wins races can occur."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Avoid shared git working trees.",
+        "Serialize writes through one orchestrator.",
+        "Use per-agent locks on any shared resource."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dagster is a data orchestrator, so it can propagate Firecrawl-produced artifacts into pipelines, while Firecrawl can emit scraped web content and structured data. The profiles do not prove Dagster blindly trusts Firecrawl, but the default interaction is an inference chain where unverified scraped content can become pipeline input. That makes cascading error plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Dagster consumes Firecrawl output without validation, scraped errors or prompt-injected text can propagate downstream.",
+        "IF Firecrawl is used to generate facts that Dagster schedules or transforms, incorrect data can be operationalized."
+      ],
+      "mitigations": [
+        "Validate Firecrawl outputs before downstream use.",
+        "Add schema checks in Dagster tasks.",
+        "Require a manual approval step for high-impact jobs.",
+        "Log provenance for scraped fields.",
+        "requires-engineering: add automated source verification."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Dagster\u2019s profile shows no touched data classes or special compliance claims, while Firecrawl explicitly touches web content, screenshots, structured data, and API keys and has broad network egress. The pair therefore creates a compliance gap around externally sourced content and secrets handling, but the profiles do not show a specific residency or regulated-data mismatch. Medium fits the documented gap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated or personal data is scraped by Firecrawl and then retained or logged by Dagster, retention and subject-rights obligations may diverge.",
+        "IF Firecrawl processes EU or PHI data without a matching policy boundary, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Classify data before scraping.",
+        "Block PHI and secrets from Firecrawl jobs.",
+        "Set short retention on scraped artifacts.",
+        "Document where scraped data is stored.",
+        "requires-engineering: align residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:fc9513ef7d2a028dd458d671909977e57386a2bd54861c9bb0b4cb411ee2b08a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
