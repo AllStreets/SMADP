@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-07-04_kotaemon__unstructured_45e74e",
+  "generated_at": "2026-07-04T08:57:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: shared document workspace plus broad egress creates leakage and injection paths; B can also overwrite A\u2019s files.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, PDFs, HTML, MHTML, XLSX, DOC/DOCX and uses a web UI with broad egress; unstructured reads filesystem documents and writes files in a dockerized pipeline. If A\u2019s outputs are fed into B or vice versa through shared files, attacker-controlled content can be treated as instructions. The pairwise bridge is inferred, not directly documented, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF A and B share any workspace directory or file handoff path, prompt injection becomes reachable.",
+        "IF B parses A-produced documents as instructions or metadata, malicious content can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Separate A and B into distinct directories.",
+        "Disable automatic ingestion of A outputs by B.",
+        "Add a manual review step before B consumes A-generated files.",
+        "Use allowlisted file types only.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "A handles API keys and broad document classes, while B has filesystem read/write plus allowlisted network egress. If they share a workspace, B can read A\u2019s sensitive files and potentially transmit them through its network path. Because A\u2019s file surface and B\u2019s egress are both documented, the leakage pathway is credible and the blast radius includes secrets.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF A stores API keys or chat transcripts in a shared directory, B can access them.",
+        "IF B is configured to send extracted content to remote services, sensitive data can leave the environment."
+      ],
+      "mitigations": [
+        "Move secrets out of any shared workspace.",
+        "Restrict B to a read-only input folder.",
+        "Block B network egress except to approved endpoints.",
+        "Rotate any API keys that may have been exposed.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "A can write to ./ktem_app_data and supports multiple instances; B can read and write the filesystem, install packages, and spawn subprocesses. If both operate on the same directory, concurrent writes can corrupt state or overwrite outputs. The conflict is not guaranteed by the profiles alone, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path, write conflicts are possible.",
+        "IF either agent modifies shared artifacts without locking, race conditions can corrupt outputs."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Run only one writer per directory.",
+        "Use file locks for shared artifacts.",
+        "Make B\u2019s input directory read-only.",
+        "requires-engineering: add transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "kotaemon is a RAG/chat system that can emit citations and answers, while unstructured is a document-processing pipeline that can transform those outputs into downstream text. If B consumes A\u2019s generated content without verification, A\u2019s mistakes can cascade into B\u2019s outputs or actions. The pairwise dependency is plausible but not directly evidenced, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated summaries or citations as authoritative input, errors propagate.",
+        "IF downstream users act on B\u2019s transformed output, any upstream hallucination is amplified."
+      ],
+      "mitigations": [
+        "Require human review of A outputs before B ingests them.",
+        "Compare A outputs against source documents.",
+        "Log provenance for each transformed field.",
+        "Reject outputs lacking citations.",
+        "requires-engineering: add confidence-based gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A explicitly handles API keys and chat transcripts, while B processes documents and images with documented privacy-policy endpoints. If regulated or sensitive documents flow through both, differing retention or residency terms may apply, but the profiles do not show a direct residency mismatch. Because the compliance posture is only partially documented, medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both agents, retention and disclosure obligations must be checked.",
+        "IF B\u2019s privacy policy or deployment region differs from A\u2019s handling of the same data class, compliance gaps emerge."
+      ],
+      "mitigations": [
+        "Review both privacy policies before deployment.",
+        "Exclude PHI and highly sensitive data from the pair.",
+        "Set explicit retention limits for shared artifacts.",
+        "Document data-flow ownership for each agent.",
+        "requires-engineering: implement residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
