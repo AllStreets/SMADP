@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "ecc"
+  ],
+  "verdict_id": "v_2026-07-04_airbyte__ecc_2c704d",
+  "generated_at": "2026-07-04T00:20:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High: ECC\u2019s writable, networked workspace can conflict with Airbyte\u2019s broad egress and create default-path data leakage and cascading errors; prompt-injection risk is lower but present via shared files/MCP.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC can read/write the filesystem, use MCP, and run browsers, so it can ingest content from shared files or MCP outputs. Airbyte has broad network egress and API-based I/O, so if its outputs are placed into shared files or pipelines, ECC could parse attacker-controlled content as instructions. The pair lacks explicit provenance controls, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte outputs are written into a shared file or MCP-fed artifact that ECC later parses as instructions",
+        "IF ECC browser or MCP workflows ingest Airbyte-produced content without provenance tagging"
+      ],
+      "mitigations": [
+        "Separate Airbyte and ECC workspaces",
+        "Disable MCP ingestion for untrusted artifacts",
+        "Add a provenance header to Airbyte outputs",
+        "Review any file-based handoff before ECC consumes it",
+        "requires-engineering: enforce content-type and provenance checks in the orchestrator"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data and has broad network egress, while ECC reads and writes local files, session summaries, and MCP configs. A shared workspace or copied artifacts could expose business data to ECC\u2019s local state, and Airbyte\u2019s egress increases the chance that copied data leaves the boundary. The profiles do not show a hard isolation mechanism between them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF business data from Airbyte is copied into ECC-managed files or session summaries",
+        "IF both agents operate on the same workspace or home-directory subtree"
+      ],
+      "mitigations": [
+        "Use separate OS users or home directories",
+        "Keep Airbyte outputs in a dedicated non-shared folder",
+        "Redact business data before handing it to ECC",
+        "Turn off ECC session retention for sensitive runs",
+        "requires-engineering: add workspace isolation in the launcher"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ECC has write_filesystem, modify_git_state, and spawn_subprocesses, while Airbyte has broad network egress and API calls. If both touch the same repo or workspace, ECC can overwrite files or git state while Airbyte updates pipeline artifacts, creating direct write contention. The profiles also note ECC supports multiple instances with shared-state warnings, so concurrency hazards are real.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte and ECC write into the same directory or git repository",
+        "IF multiple ECC instances run alongside Airbyte without separate roots or locks"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Avoid concurrent git writes",
+        "Run only one ECC instance per workspace",
+        "Use file locks around shared artifacts",
+        "requires-engineering: add orchestrator-level locking and workspace partitioning"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ECC\u2019s workflow surface is explicitly agentic, with skills, hooks, and subagents, so it may treat upstream artifacts as actionable. Airbyte produces integration outputs and documentation-like artifacts that ECC could consume without verification. That creates a default-path cascade where a bad Airbyte output can propagate into ECC-driven actions or commits, and uncertainty favors the higher severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF ECC consumes Airbyte-generated files, docs, or configs as authoritative input",
+        "IF ECC then commits, edits, or triggers downstream actions based on those inputs"
+      ],
+      "mitigations": [
+        "Insert a human review step before ECC acts on Airbyte outputs",
+        "Mark Airbyte artifacts as untrusted by default",
+        "Require checksum or schema validation before use",
+        "Limit ECC write permissions during ingestion",
+        "requires-engineering: add verification gates between generation and action"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data and has broad egress, while ECC stores session summaries, metrics, git history, and security findings in local files and external services. Even without a documented residency mismatch, the pair can create retention and logging exposure if business data is copied into ECC-managed state or sent through Airbyte\u2019s integrations. The evidence is indirect, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF regulated business data is routed through ECC session files, metrics, or git history",
+        "IF Airbyte integrations transmit that same data to external services without a DPA or retention review"
+      ],
+      "mitigations": [
+        "Classify data before routing it through ECC",
+        "Disable or shorten ECC retention for sensitive runs",
+        "Review Airbyte destination policies",
+        "Keep regulated data out of git history",
+        "requires-engineering: document residency and retention controls for both tools"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:5694b65397a1615f2e190897d5dd00e8ce3a820aa8bd1a3908a5d8b2c4aa5f65",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
