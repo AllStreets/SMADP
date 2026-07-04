@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "social-auto-upload"
+  ],
+  "verdict_id": "v_2026-07-04_lightagent__social-auto-upload_01209b",
+  "generated_at": "2026-07-04T07:11:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High risk of prompt-injection and cascading errors if LightAgent\u2019s MCP/browser outputs are fed into social-auto-upload workflows; data leakage and compliance risks are lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "LightAgent can run browsers, use MCP, and handle tool results, so it can ingest attacker-controlled web content or MCP payloads. social-auto-upload is a downstream automation agent with CLI-based uploads; if its inputs come from LightAgent, prompt-like content can be propagated into actions. The pair lacks documented provenance isolation, so the interaction is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent output is copied into social-auto-upload prompts or metadata without sanitization",
+        "IF an MCP server returns attacker-controlled content that LightAgent forwards into the upload workflow"
+      ],
+      "mitigations": [
+        "Add a provenance tag to every LightAgent output before handoff",
+        "Strip instructions from any text passed from LightAgent to social-auto-upload",
+        "Use a manual review step for all browser-sourced content",
+        "Disable automatic prompt chaining between the agents",
+        "requires-engineering: enforce content-type separation between instructions and data"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and provenance metadata, while social-auto-upload touches account data and media files. Both have broad network egress, so sensitive content can move across the pair if shared through files or prompts. The profiles do not show a shared filesystem, so this is plausible but not proven as a default leak path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent stores conversations or tool results in a location social-auto-upload can read",
+        "IF account data or media from social-auto-upload is included in LightAgent prompts or logs"
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces",
+        "Redact secrets before passing any text between agents",
+        "Turn off verbose logging for both agents",
+        "Use separate OS users for each agent",
+        "requires-engineering: add per-field data-loss prevention checks"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "LightAgent supports multiple instances and subprocesses, while social-auto-upload supports multiple instances but cannot write files, modify git, or run shells. There is little direct write-write overlap, so conflict risk is limited unless an external orchestrator gives them the same mutable resource. Uncertainty is low because the profiles show asymmetric write capability.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents are granted write access to the same external directory",
+        "IF an orchestrator maps both agents onto the same mutable account file or git repo"
+      ],
+      "mitigations": [
+        "Assign distinct output directories",
+        "Lock shared resources before writes",
+        "Avoid concurrent runs on the same account file",
+        "Use one account file per session as documented",
+        "requires-engineering: add cross-agent locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent can generate browser-derived facts and tool outputs, and social-auto-upload can act on account/media workflows. If B consumes A\u2019s output as authoritative, a mistaken or injected LightAgent result can cascade into incorrect uploads or account actions. Because B is an automation agent and no verification step is documented, the blast radius can include irreversible external actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF social-auto-upload uses LightAgent-generated text, captions, or decisions without verification",
+        "IF LightAgent browser output is treated as ground truth for upload actions"
+      ],
+      "mitigations": [
+        "Require human approval before any upload",
+        "Compare LightAgent outputs against source URLs or files",
+        "Reject outputs lacking provenance metadata",
+        "Limit B to draft-only mode when fed by A",
+        "requires-engineering: add validation rules before action execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent handles user conversations, long-term memory, and secrets like API keys, while social-auto-upload handles account data and media. If regulated or personal content flows from LightAgent into social-media uploads, retention and residency obligations can diverge. The profiles do not specify certifications or residency, so the safest reading is a moderate compliance mismatch risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF personal data from LightAgent is uploaded through social-auto-upload",
+        "IF retention or deletion policies differ for the same content class across the two agents"
+      ],
+      "mitigations": [
+        "Classify data before transfer",
+        "Avoid sending secrets or personal data to social-auto-upload",
+        "Set explicit retention limits for logs",
+        "Document deletion/export handling for both agents",
+        "requires-engineering: align residency and retention policies"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:24e9901778f233b303f615d2034598fe84de2e7b0529ec8b278d268595fa3dfb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
