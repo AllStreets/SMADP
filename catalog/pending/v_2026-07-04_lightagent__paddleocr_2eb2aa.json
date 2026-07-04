@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-07-04_lightagent__paddleocr_2eb2aa",
+  "generated_at": "2026-07-04T05:49:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk default egress and browser use in LightAgent can leak or mis-handle OCR outputs when paired with PaddleOCR, while shared document workflows create injection and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent can use browsers, MCP, and stdin/stdout, so it may ingest PaddleOCR outputs through shared files or pipelines; PaddleOCR processes documents/images that can contain attacker-controlled text. No direct shared-channel evidence exists, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent reads PaddleOCR-produced text from a shared file, pipe, or MCP message without provenance checks",
+        "IF OCR output is later interpreted as instructions by LightAgent"
+      ],
+      "mitigations": [
+        "Add a provenance tag to every OCR output before LightAgent consumes it",
+        "Disable automatic instruction-following on OCR text",
+        "Insert a manual review step for any document-derived prompt",
+        "Use separate workspaces for raw documents and agent prompts",
+        "requires-engineering: enforce content-type separation in the orchestrator"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent touches conversations, memory, tool results, and provenance metadata and has broad network egress; PaddleOCR handles documents and images. If they share a workspace, OCR inputs or LightAgent outputs can expose sensitive document content, and LightAgent can transmit it outward. The pairwise path is plausible in default document workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same document workspace or output directory",
+        "IF LightAgent sends document-derived content to external APIs during processing"
+      ],
+      "mitigations": [
+        "Store raw documents in a separate folder from agent outputs",
+        "Turn off network egress for LightAgent during OCR runs",
+        "Redact sensitive fields before OCR or downstream processing",
+        "Review outbound requests from LightAgent for document content",
+        "requires-engineering: add workspace ACLs between the two agents"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "LightAgent supports multiple instances and subprocesses, and PaddleOCR is a document-processing service with API access. Overlapping writes to shared files or mutable artifacts can conflict in normal multi-step pipelines, even though PaddleOCR lacks explicit filesystem-write detail. Uncertainty about the exact write surface keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same output directory or temp files",
+        "IF the orchestrator does not provide locking or per-job isolation"
+      ],
+      "mitigations": [
+        "Assign each job a unique output directory",
+        "Serialize writes with a simple lock file",
+        "Avoid concurrent runs against the same document set",
+        "Check for stale temp files before starting a job",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent can produce tool results and workflow state that PaddleOCR may consume in a document-processing pipeline; if PaddleOCR treats LightAgent output as authoritative, errors can propagate into downstream extraction or actions. Because LightAgent has browser and MCP tooling plus broad egress, the blast radius can extend beyond a single document, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF PaddleOCR consumes LightAgent-generated text or metadata without verification",
+        "IF downstream automation acts on extracted fields from that pipeline"
+      ],
+      "mitigations": [
+        "Require a validation step before PaddleOCR consumes LightAgent output",
+        "Compare extracted fields against the source document",
+        "Log and diff intermediate artifacts for review",
+        "Limit downstream actions to read-only previews",
+        "requires-engineering: add schema validation between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent requests API keys and handles long-term memory, trace data, and workflow state, while PaddleOCR processes documents and images. If regulated documents flow through LightAgent's broader egress or retention-heavy state, retention or residency mismatches can arise. The profiles do not show a specific jurisdiction mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents or personal data are processed through LightAgent memory or trace storage",
+        "IF retention settings differ between the two agents for the same document class"
+      ],
+      "mitigations": [
+        "Minimize what LightAgent stores in memory",
+        "Set short retention for traces and workflow state",
+        "Keep regulated documents out of long-term memory",
+        "Review vendor data-processing terms before deployment",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
