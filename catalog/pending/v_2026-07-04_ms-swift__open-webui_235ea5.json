@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "open-webui"
+  ],
+  "verdict_id": "v_2026-07-04_ms-swift__open-webui_235ea5",
+  "generated_at": "2026-07-04T00:03:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High: open-webui\u2019s broad network/MCP surface plus ms-swift\u2019s file and shell access create default data-leakage and cascading-error risks; prompt-injection is also plausible via shared content flows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift can read/write files and process stdin/stdout, while open-webui exposes MCP, plugins, and tool servers plus persistent shared sessions. That creates a plausible content bridge where attacker-controlled text from open-webui can reach ms-swift as trusted input. The interaction is inferred, not directly documented, so uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF open-webui forwards user or tool output into files, stdin/stdout, or MCP payloads consumed by ms-swift",
+        "IF ms-swift parses that content as instructions or prompts without provenance checks"
+      ],
+      "mitigations": [
+        "Disable any automatic handoff from open-webui to ms-swift",
+        "Require explicit human review before copying outputs between agents",
+        "Add provenance tags to all inter-agent messages",
+        "Restrict ms-swift to read-only inputs for shared content",
+        "requires-engineering: add content-sanitization and instruction-stripping at the bridge"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "ms-swift touches datasets, checkpoints, logs, and secrets like hub_token/sdk-token, while open-webui handles files, mounted volumes, persistent memory, and API keys. open-webui also has broad network egress and external API integrations, so shared workspace data can plausibly leave the boundary by default. The pairwise leakage path is strong enough to rate high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents can access the same mounted directory or workspace",
+        "IF open-webui is configured to send file contents or memory to external APIs",
+        "IF ms-swift stores secrets or training artifacts in paths visible to open-webui"
+      ],
+      "mitigations": [
+        "Separate workspaces and mount points immediately",
+        "Move secrets out of shared directories",
+        "Disable external API connectors in open-webui for sensitive projects",
+        "Use read-only mounts for ms-swift outputs",
+        "requires-engineering: enforce per-agent filesystem and network isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ms-swift can write the filesystem and spawn subprocesses; open-webui can run browsers, spawn subprocesses, and use persistent shared sessions with Redis-backed multi-worker state. They do not both advertise unrestricted git writes, but they do overlap on mutable local resources and process execution, so conflicts are plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or mounted volume",
+        "IF open-webui workers share Redis/session state while ms-swift mutates files concurrently"
+      ],
+      "mitigations": [
+        "Assign separate output directories per agent",
+        "Serialize writes with a simple lock file",
+        "Avoid concurrent runs against the same mounted volume",
+        "Turn off multi-worker sharing for sensitive jobs",
+        "requires-engineering: add transactional locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "open-webui is a web UI that can route tool outputs into downstream actions, while ms-swift can generate training, evaluation, and configuration outputs that may be treated as authoritative. If open-webui consumes ms-swift output without verification, errors can cascade into user-visible actions or persisted artifacts. The default interaction is risky enough to rate high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF open-webui uses ms-swift output as a prompt, artifact, or tool argument without validation",
+        "IF downstream actions in open-webui are triggered from those outputs"
+      ],
+      "mitigations": [
+        "Insert a verification step before any downstream action",
+        "Require schema validation on ms-swift outputs",
+        "Mark ms-swift outputs as untrusted by default",
+        "Limit open-webui actions to read-only review mode",
+        "requires-engineering: add typed contracts between generation and action layers"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift handles datasets, checkpoints, logs, and secrets, while open-webui handles persistent memory, files, API keys, and external services. The profiles do not state residency or certification mismatches, so I cannot claim a specific breach; however, differing retention and logging surfaces create a credible compliance gap in default use. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in ms-swift datasets, checkpoints, or logs",
+        "IF open-webui persists the same data in memory, files, or analytics",
+        "IF retention or deletion requests must be honored across both systems"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in either agent",
+        "Disable analytics and long-term memory in open-webui",
+        "Keep ms-swift logs and checkpoints on a separate retention policy",
+        "Document deletion/export procedures for both systems",
+        "requires-engineering: align residency, retention, and access-control policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:b2e1904acd036515e57be4fde3b7d57d57e89d30a974598bef03428579b99f1b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
