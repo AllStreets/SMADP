@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "ecc"
+  ],
+  "verdict_id": "v_2026-07-05_authelia__ecc_f8ebb4",
+  "generated_at": "2026-07-05T03:54:32Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: ECC\u2019s writable, networked, MCP-enabled workspace can conflict with Authelia\u2019s OAuth/ForwardAuth surface, creating default-path data leakage and cascading misconfiguration risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC reads and writes local files, uses MCP, and treats skills/commands/hooks as workflow surfaces, so attacker-controlled content in shared files or MCP inputs could steer it. Authelia exposes OAuth2/OpenID Connect and ForwardAuth, but no shared channel is documented, so the interaction is inferred rather than proven. Uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ECC ingests Authelia-generated files or MCP payloads as trusted instructions, injection is possible.",
+        "IF both agents share a writable workspace or hook directory, malicious content can bridge them."
+      ],
+      "mitigations": [
+        "Disable shared writable folders between the two agents.",
+        "Require provenance labels on files passed from Authelia to ECC.",
+        "Turn off MCP routes that accept untrusted text.",
+        "Review and pin ECC hooks/skills before use.",
+        "requires-engineering: add content-sanitization and provenance checks at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ECC explicitly touches session summaries, agent definitions, git history, documentation, and security findings, and it has broad filesystem read/write plus network egress to external services. Authelia handles authentication flows and broad network egress, so if they share a workspace or credentials, sensitive material can flow into ECC outputs or third-party APIs. The exact shared path is undocumented, so medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Authelia artifacts or secrets are placed in ECC-readable paths, ECC can ingest them.",
+        "IF ECC forwards its context to GitHub, Supabase, Vercel, Railway, or Nutrient API, leaked data can leave the boundary."
+      ],
+      "mitigations": [
+        "Keep Authelia configs and secrets outside ECC-readable directories.",
+        "Restrict ECC network destinations to a test tenant.",
+        "Rotate any credentials exposed in shared files.",
+        "Audit ECC logs for secret-bearing prompts.",
+        "requires-engineering: enforce per-agent filesystem and egress isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ECC can execute shell, modify git state, write files, and spawn subprocesses; Authelia has broad network egress and OAuth/ForwardAuth integration points. If both operate on the same repo or config tree, concurrent writes and auth-state changes can race and corrupt state. Because ECC\u2019s concurrency model already warns about separate roots, the default overlap is dangerous enough for high.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repository or config directory, state conflicts can occur.",
+        "IF Authelia-managed auth files are edited while ECC runs hooks or skills, writes can race."
+      ],
+      "mitigations": [
+        "Use separate roots for each agent immediately.",
+        "Pause ECC while Authelia config changes are applied.",
+        "Protect shared repos with a lock file or branch policy.",
+        "Limit ECC to read-only mode for Authelia-managed paths.",
+        "requires-engineering: add transactional locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ECC\u2019s skills and session summaries can turn prior outputs into reusable guidance, while Authelia\u2019s ForwardAuth/OIDC surface can operationalize those outputs in access-control workflows. If ECC consumes Authelia-generated instructions or config suggestions without verification, a mistaken recommendation can cascade into repeated misconfiguration. The pathway exists, but no direct evidence shows automatic action-taking, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ECC stores Authelia-derived guidance in skills or session summaries, errors can persist across sessions.",
+        "IF Authelia config changes are applied from ECC output without review, misconfigurations can propagate."
+      ],
+      "mitigations": [
+        "Require human review before applying ECC-generated auth changes.",
+        "Mark Authelia-derived notes as untrusted in ECC.",
+        "Delete stale session summaries after config changes.",
+        "Compare ECC suggestions against Authelia docs before execution.",
+        "requires-engineering: add verification gates before any auth-related action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Authelia is an authentication service with no touched data classes listed, while ECC explicitly handles session summaries, agent definitions, git history, and security findings. The profiles do not show a residency or certification mismatch, but ECC\u2019s retention and logging surfaces could still conflict with stricter handling of auth-related records if those records are stored there. Only ECC is cited because the compliance concern is its retention surface.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Authelia authentication logs or user identifiers are stored in ECC session files, retention policy mismatch becomes relevant.",
+        "IF ECC retains security findings longer than the operator\u2019s policy allows, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Set a short retention window for ECC session files.",
+        "Exclude auth logs from ECC storage.",
+        "Document which data classes may enter ECC.",
+        "Purge old session summaries now.",
+        "requires-engineering: align retention and deletion workflows across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "GOVERN-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:5694b65397a1615f2e190897d5dd00e8ce3a820aa8bd1a3908a5d8b2c4aa5f65",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
