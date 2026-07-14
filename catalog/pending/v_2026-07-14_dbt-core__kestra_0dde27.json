@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-07-14_dbt-core__kestra_0dde27",
+  "generated_at": "2026-07-14T09:35:52Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.605,
+  "headline": "High: Kestra can write and execute workflows against shared resources, creating dangerous conflict and cascading-action risks with dbt-core; prompt-injection and leakage are lower due to limited direct ingestion evidence.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented, but Kestra can read/write files and ingest stdin/stdout while dbt-core can call a data warehouse and emit artifacts. A prompt-injection path would require unusual copy/paste or file handoff, so the blast radius is limited. Uncertainty keeps this above none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF Kestra workflows ingest dbt-generated text as instructions via stdin/stdout or files, injection becomes actionable.",
+        "IF an operator manually copies dbt output into a Kestra task definition, malicious content can steer execution."
+      ],
+      "mitigations": [
+        "Keep dbt outputs out of workflow definitions.",
+        "Use a strict template/allowlist for any copied text.",
+        "Disable ad hoc stdin/stdout handoff between the tools.",
+        "Review any file-based handoff before execution."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and has allowlisted network egress; Kestra reads files and can send logs, inputs, variables, artifacts, and notifications to many external services. A shared workspace or copied artifacts could leak sensitive warehouse data in default operational use, though direct cross-agent sharing is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF dbt artifacts or warehouse extracts are placed in Kestra /app/storage or /tmp, Kestra can forward them onward.",
+        "IF Kestra notifications or logs include dbt outputs containing sensitive rows, leakage occurs."
+      ],
+      "mitigations": [
+        "Store dbt artifacts outside Kestra-managed paths.",
+        "Redact sensitive fields before handing outputs to Kestra.",
+        "Restrict Kestra notification payloads.",
+        "Turn off verbose logging for shared runs.",
+        "Use separate service accounts and workspaces."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Kestra has write_filesystem, execute_shell, spawn_subprocesses, and broad network egress, while dbt-core can call a data warehouse. Even without a documented shared directory, the pair can contend over the same mutable warehouse or files if orchestrated together; uncertainty about the exact deployment should be treated conservatively.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same warehouse tables or shared files without locking, concurrent writes can conflict.",
+        "IF Kestra launches multiple dbt runs in parallel, stateful artifacts can be overwritten."
+      ],
+      "mitigations": [
+        "Serialize writes to shared tables.",
+        "Use per-run working directories.",
+        "Add explicit locking around dbt state files.",
+        "Disable parallel execution for overlapping jobs.",
+        "Separate mutable resources by environment."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra is an automation/orchestration system with email, Slack, PagerDuty, and cloud actions; dbt-core produces transformation outputs that Kestra can treat as workflow inputs. If Kestra trusts dbt outputs without verification, a bad model can cascade into downstream notifications or actions. This is a default-dangerous pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses dbt-produced artifacts or status flags as authoritative triggers, downstream actions can be wrong.",
+        "IF dbt output is promoted into a Kestra task without validation, errors cascade to notifications or cloud tasks."
+      ],
+      "mitigations": [
+        "Add validation gates before downstream tasks.",
+        "Require schema checks on dbt outputs.",
+        "Route failures to a manual approval step.",
+        "Limit automation to read-only notifications.",
+        "Log provenance for every dbt-derived input."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while Kestra handles logs, inputs, variables, artifacts, and notifications and can send them to third parties like Slack, email, and cloud services. That creates a plausible retention and residency mismatch for the same data class, but no specific jurisdictional violation is documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is copied into Kestra logs or notifications, retention and residency controls may diverge.",
+        "IF warehouse data is exported through Kestra to a third-party service, compliance obligations can change."
+      ],
+      "mitigations": [
+        "Exclude regulated fields from logs.",
+        "Disable external notifications for sensitive runs.",
+        "Set short retention on Kestra artifacts.",
+        "Use region-matched services only.",
+        "Review data-flow mappings before enabling new tasks."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
