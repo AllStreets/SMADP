@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "plano"
+  ],
+  "verdict_id": "v_2026-07-14_kotaemon__plano_6f1f47",
+  "generated_at": "2026-07-14T02:50:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "Medium prompt-injection and cascading-error risk: kotaemon\u2019s web/RAG ingestion can feed plano\u2019s OpenAI-compatible routing without verification, while both have broad egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents/HTML/MHTML and exposes a web UI, while plano routes chat completions through an OpenAI-compatible gateway. That creates a plausible default path where attacker-controlled content from A is passed into B as instructions. No shared filesystem is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon content is forwarded into plano prompts without sanitization",
+        "IF plano preserves raw upstream text in routed messages"
+      ],
+      "mitigations": [
+        "Add a prompt-injection filter before forwarding A outputs to B",
+        "Strip HTML/MHTML and hidden text from A outputs",
+        "Require a human review step for any instruction-like content",
+        "Log and block messages containing tool directives",
+        "requires-engineering: add provenance tags across the handoff"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "kotaemon explicitly handles API keys and broad document types, and plano sends traffic to an OpenAI-compatible chat endpoint with broad egress. If both are used on the same sensitive workspace, data can flow from A into B\u2019s outbound requests. The profiles do not prove a shared workspace, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same documents or transcripts",
+        "IF plano forwards prompt context containing A-ingested secrets to its upstream API"
+      ],
+      "mitigations": [
+        "Separate the workspaces for A and B",
+        "Remove secrets from A inputs before routing",
+        "Disable upstream calls for sensitive jobs",
+        "Review outbound payloads for API keys",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "kotaemon supports multiple instances and writes to ./ktem_app_data, while plano uses config.yaml and does not support multiple instances. If they share a mutable directory or deployment state, concurrent writes can conflict. The profiles do not show a shared lock or orchestrator, so the safest reading is a default-capable conflict at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem path or config volume",
+        "IF no external lock serializes updates"
+      ],
+      "mitigations": [
+        "Place each agent in its own directory",
+        "Make config.yaml read-only during runtime",
+        "Run only one writer at a time",
+        "Back up mutable state before changes",
+        "requires-engineering: add file locking or transactional writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "kotaemon produces retrieved answers from documents and citations, and plano is an AI gateway that can route those outputs onward. If plano treats A\u2019s text as authoritative, errors or hallucinations can cascade into downstream actions. Because no verification layer is documented, I choose medium and not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF plano forwards kotaemon-generated answers without validation",
+        "IF downstream consumers act on routed text as factual"
+      ],
+      "mitigations": [
+        "Require citation checks before forwarding",
+        "Add a confidence threshold for routed answers",
+        "Insert a human approval step for high-impact outputs",
+        "Compare A outputs against source documents",
+        "requires-engineering: implement structured verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon touches API keys and customer-support documents, while plano stores logs/metrics/traces and routes prompts to an external chat endpoint. That creates a plausible retention and residency mismatch for sensitive support data, even though the profiles do not specify jurisdictions or certifications. I therefore keep this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF customer-support documents or secrets are sent through plano",
+        "IF plano retains logs or traces longer than the source system"
+      ],
+      "mitigations": [
+        "Minimize sensitive fields before routing",
+        "Set short retention on logs and traces",
+        "Document data-flow boundaries for support data",
+        "Exclude API keys from prompts",
+        "requires-engineering: align residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
