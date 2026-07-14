@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "pdf-js"
+  ],
+  "verdict_id": "v_2026-07-14_kotaemon__pdf-js_2b4763",
+  "generated_at": "2026-07-14T05:30:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Medium prompt-injection and data-leakage risks from shared document handling; no direct evidence of a dangerous default bridge.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, HTML, MHTML, and chat transcripts, while pdf.js renders PDF files in a browser-based worker model. If kotaemon feeds pdf.js-rendered or user-supplied content back into its RAG flow, malicious instructions in documents could be treated as trusted text. The pairwise bridge is plausible but not directly documented, so uncertainty stays medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon passes rendered PDF text or HTML into downstream instruction prompts without sanitization, injection is possible.",
+        "IF pdf.js output is copied into kotaemon's chat or retrieval pipeline, attacker-controlled document text can influence responses."
+      ],
+      "mitigations": [
+        "Disable automatic prompt ingestion from document text.",
+        "Add a provenance label to all imported document chunks.",
+        "Require a human review step before using extracted text as instructions.",
+        "Strip hidden text, annotations, and embedded scripts from PDFs.",
+        "requires-engineering: isolate pdf.js output from any agent prompt context."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "kotaemon handles API keys and broad document classes, while pdf.js only touches PDF files and has no network egress. A shared workspace or file handoff could expose sensitive documents from kotaemon to pdf.js, but pdf.js itself is not documented to exfiltrate data. The main risk is local leakage through shared files rather than remote transmission.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents read from the same directory, pdf.js can access kotaemon-managed PDFs or transcripts.",
+        "IF kotaemon stores API-key-bearing artifacts in ./ktem_app_data and those files are opened by pdf.js, secrets may be exposed."
+      ],
+      "mitigations": [
+        "Separate the agents into different directories.",
+        "Move secrets out of any shared workspace.",
+        "Restrict pdf.js to a read-only input folder.",
+        "Scan imported PDFs for embedded secrets before opening.",
+        "requires-engineering: enforce OS-level workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Both agents support multiple instances, but kotaemon has broad network egress and file access while pdf.js is browser-based with PDF-file-only I/O and no network egress. Overlap exists mainly on reading PDFs, not on the same mutable resources, so write-write conflict is limited. The pair does not show a default shared writable target.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, file contention can occur.",
+        "IF an orchestrator maps both to the same PDF output path, one agent may overwrite the other's artifacts."
+      ],
+      "mitigations": [
+        "Use separate output directories.",
+        "Make shared inputs read-only.",
+        "Serialize writes with a lock file.",
+        "Rename outputs with unique run IDs.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "kotaemon is a customer-support RAG system that can generate answers from documents, and pdf.js is a document-processing renderer. If kotaemon treats pdf.js-extracted text as authoritative, downstream answers can inherit extraction errors or prompt-injected content. The pair lacks a built-in verification step in the profiles, so cascading mistakes are plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon uses pdf.js output as retrieval ground truth without verification, extraction errors propagate.",
+        "IF downstream support responses are generated directly from imported PDF text, false claims can be repeated."
+      ],
+      "mitigations": [
+        "Require citation checks before answering.",
+        "Show extracted text alongside source page images.",
+        "Flag low-confidence OCR or parsing results.",
+        "Add a second-pass verifier for generated answers.",
+        "requires-engineering: block direct action-taking from unverified document text."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "kotaemon explicitly handles API keys and chat transcripts, while pdf.js only processes PDF documents and has no secrets or network egress. No residency or certification mismatch is documented, so compliance risk is limited to local handling gaps rather than a clear policy breach. The other agent is not cited for a separate residency issue because none is stated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon stores regulated documents in a workspace that pdf.js can open, retention controls may diverge.",
+        "IF PDFs contain personal data and are retained in ./ktem_app_data beyond policy, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Document a shared retention policy.",
+        "Keep regulated PDFs out of general-purpose folders.",
+        "Delete temporary exports after review.",
+        "Restrict access to API-key-bearing directories.",
+        "requires-engineering: add policy-based retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:1e9e0acfec5fb2563830c22f72803a5b63869e22361b17cd8f61df2d27a8ff7d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
