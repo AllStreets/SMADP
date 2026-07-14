@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # scripts/agents-nightly-sync.sh
 #
-# Nightly ONEXUS-Agents -> SMADP research bridge. Runs in two bounded steps:
+# Nightly ONEXUS-Agents -> SMADP research bridge. Runs in three bounded steps:
 #
+#   0. git pull --ff-only in the local ONEXUS-Agents checkout, so this bridge
+#      (and the NEXUS catalog hot-reload, which reads the same directory) see
+#      the latest upstream nightly refresh instead of a stale snapshot.
 #   1. onexus-agents-smadp-sync: write fresh runnable agents as seed profiles
 #      into catalog/profiles/_unverified/ (additive staging). Slugs SMADP
 #      already has anywhere under catalog/profiles/ are skipped, and at most
@@ -45,6 +48,17 @@ fi
 if [ ! -d "$ONEXUS_AGENTS_REPO/catalog" ]; then
   log "ONEXUS-Agents catalog not found at $ONEXUS_AGENTS_REPO; skipping"
   exit 0
+fi
+
+# Step 0: freshen the local ONEXUS-Agents checkout. Fast-forward only — a
+# dirty or diverged checkout is left untouched and the sync proceeds on
+# whatever is on disk, exactly as it did before this step existed.
+if git -C "$ONEXUS_AGENTS_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if out=$(git -C "$ONEXUS_AGENTS_REPO" pull --ff-only 2>&1); then
+    log "pull: $(echo "$out" | tail -1)"
+  else
+    log "pull failed (continuing with on-disk catalog): $(echo "$out" | tail -1)"
+  fi
 fi
 
 # Step 1: stage new runnable agents (bounded; skip anything SMADP already has).
