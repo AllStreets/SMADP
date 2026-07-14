@@ -10,7 +10,8 @@ Surfaces updated:
   - README badges: profiles, verdicts, sandbox-validated, MCP_adapters
   - README inline catalog-layout table mentions (~N today)
   - README repo-layout code block ("# N Safety Profiles", etc.)
-  - Banner SVG "verdicts" round-down-to-50 stat
+  - Banner SVG stats: profiles (round-down-to-250), verdicts
+    (round-down-to-50), sandbox-validated (exact)
 """
 from __future__ import annotations
 
@@ -149,17 +150,31 @@ def update_readme(
     return True
 
 
-def update_banner(verdicts: int) -> bool:
+def update_banner(profiles: int, verdicts: int, sandbox: int) -> bool:
     if not BANNER.exists():
         return False
     text = BANNER.read_text(encoding="utf-8")
-    # The banner's "verdicts" stat reads as a round display value with "+".
-    # Round down to the nearest 50 so we under-promise rather than over.
-    display = f"{round_down(verdicts, 50)}+"
+    new = text
+    # The banner's "profiles" stat reads as a round display value with "+".
+    # Round down to the nearest 250 so we under-promise rather than over.
     new = re.sub(
-        r'fill="#A78BFA">\d+\+</text>',
-        f'fill="#A78BFA">{display}</text>',
-        text,
+        r'fill="#e6dffa">[\d,]+\+</text>',
+        f'fill="#e6dffa">{fmt(round_down(profiles, 250))}+</text>',
+        new,
+        count=1,
+    )
+    # Verdicts: same idea, nearest 50.
+    new = re.sub(
+        r'fill="#A78BFA">[\d,]+\+</text>',
+        f'fill="#A78BFA">{fmt(round_down(verdicts, 50))}+</text>',
+        new,
+        count=1,
+    )
+    # Sandbox-validated stays exact — the meaningful number stays precise.
+    new = re.sub(
+        r'fill="url\(#tierGreen\)">\d+</text>',
+        f'fill="url(#tierGreen)">{sandbox}</text>',
+        new,
         count=1,
     )
     if new == text:
@@ -175,7 +190,7 @@ def main() -> int:
     adapters = count_adapters()
 
     readme_changed = update_readme(profiles, verdicts, sandbox, adapters)
-    banner_changed = update_banner(verdicts)
+    banner_changed = update_banner(profiles, verdicts, sandbox)
 
     parts = [
         f"profiles={profiles}",
