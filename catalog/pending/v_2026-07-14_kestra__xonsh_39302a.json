@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-14_kestra__xonsh_39302a",
+  "generated_at": "2026-07-14T03:40:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "Medium risk: shared filesystem and broad egress create prompt-injection, leakage, and cascading-error pathways between kestra and xonsh.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can read/write /app/storage and /tmp and emits workflow inputs, logs, and messages; xonsh reads/writes the filesystem and processes shell commands/stdin-stdout. That creates a plausible shared-file or copy-paste bridge where content from one can be treated as instructions by the other. No direct provenance controls are documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, injected text can cross from one to the other.",
+        "IF xonsh consumes Kestra-produced files or stdout as shell input, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Disable automatic file ingestion between agents.",
+        "Prefix shared files with provenance headers.",
+        "Review any stdin/stdout handoff before execution.",
+        "requires-engineering: add content-sanitizing wrappers around shared channels."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches logs, inputs, variables, artifacts, database data, cloud storage data, messages, and notifications, while xonsh touches filesystem contents, source code, configuration, and environment variables. Both have broad network egress, so if they share a workspace, sensitive material can flow from one agent into the other's outputs or remote calls. The pairwise leakage path is plausible in default-style deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share a workspace containing secrets or logs, either can expose them.",
+        "IF either agent forwards its context to external services, shared data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate service accounts and workspaces.",
+        "Restrict network egress for one agent during shared-data handling.",
+        "Move secrets to per-agent vault mounts.",
+        "Audit outbound requests for file-content payloads.",
+        "requires-engineering: enforce data-loss-prevention filters on shared outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write the filesystem, and Kestra also requests root/docker.sock while xonsh lacks multiple-instance support. If they target the same directory or runtime state, concurrent writes and orchestration actions can collide and corrupt jobs or artifacts. The overlap is broad and dangerous by default unless explicitly isolated.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering is possible.",
+        "IF Kestra uses elevated privileges while xonsh mutates the same host state, conflicts can affect system-level resources."
+      ],
+      "mitigations": [
+        "Assign disjoint filesystem roots.",
+        "Serialize writes with a lock file.",
+        "Run xonsh in a separate container or VM.",
+        "Avoid granting Kestra root or docker.sock on shared hosts.",
+        "requires-engineering: add orchestrator-level resource locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra produces workflow definitions, logs, inputs, variables, artifacts, messages, and notifications, and xonsh can execute shell commands and Python expressions. If Kestra output is fed into xonsh without verification, xonsh may act on incorrect or malicious instructions, causing downstream operational errors. The pair forms a classic producer-consumer chain with no documented validation step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-generated text is passed directly into xonsh, xonsh can execute it.",
+        "IF xonsh scripts act on Kestra notifications or artifacts without validation, errors cascade into actions."
+      ],
+      "mitigations": [
+        "Insert a human review step before execution.",
+        "Validate Kestra outputs against a schema.",
+        "Use allowlisted commands only.",
+        "Log and diff generated commands before running them.",
+        "requires-engineering: build typed handoff contracts between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention mismatch documented. Kestra touches messages, notifications, and cloud data, while xonsh touches source code and environment variables, but the profiles do not show a specific regulated-data transfer or policy conflict. I therefore keep this low rather than inferring a stronger compliance issue.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is routed through Kestra into xonsh, a compliance review is required.",
+        "IF either deployment has stricter retention than the other, shared logs may violate policy."
+      ],
+      "mitigations": [
+        "Document data-class boundaries.",
+        "Keep regulated data out of shared workspaces.",
+        "Align retention settings before deployment.",
+        "Review residency and DPA requirements.",
+        "requires-engineering: add policy enforcement for cross-agent transfers."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
