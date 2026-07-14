@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "comfyui"
+  ],
+  "verdict_id": "v_2026-07-14_agentic-flow__comfyui_0f8c21",
+  "generated_at": "2026-07-14T03:01:41Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.29,
+  "headline": "Medium prompt-injection and cascading-error risk; low data-leakage and compliance risk due to offline ComfyUI and allowlisted agentic-flow.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP and stdin/stdout, so it may ingest agent_b outputs if orchestrated together; agent_b has no clipboard or stdin/stdout surface, so the bridge is one-way and not default. The pairwise pathway exists but is not directly documented, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is wired to parse agent_b text or workflow outputs as instructions, injection becomes reachable.",
+        "IF a shared MCP or message channel is added between the agents, the attack surface expands."
+      ],
+      "mitigations": [
+        "Disable any text-to-command parsing in agent_a.",
+        "Route agent_b outputs through a strict schema validator.",
+        "Keep the agents on separate channels with no shared clipboard or queue.",
+        "Add a prompt-injection canary test to the workflow.",
+        "requires-engineering: enforce provenance tags on all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "agent_a touches code, repository metadata, and task prompts and can use network egress; agent_b is offline-capable, has no filesystem read/write, and vendor-only egress. There is no shared workspace documented, so leakage is possible only through explicit orchestration or copied content, making the blast radius limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF sensitive prompts or repository data are copied into agent_b inputs, those data can appear in generated images/workflows.",
+        "IF agent_a is allowed to transmit its context to external services, leakage risk increases."
+      ],
+      "mitigations": [
+        "Avoid passing secrets or prompts into agent_b workflows.",
+        "Use redacted inputs for any shared task handoff.",
+        "Confirm agent_a egress destinations are allowlisted only.",
+        "Store sensitive artifacts outside any shared orchestration path.",
+        "requires-engineering: add automatic DLP scanning before handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "agent_a can modify git state and spawn subprocesses, while agent_b cannot write the filesystem or modify git state. Because only one agent has mutable repo capabilities, direct write-write conflict is unlikely; the remaining risk is limited to orchestration mistakes, so low fits better than none due to shared workflow context.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable repository, agent_a can race with external processes.",
+        "IF agent_b is wrapped by a custom adapter that adds write access, conflict risk increases."
+      ],
+      "mitigations": [
+        "Run agent_a and agent_b in separate working directories.",
+        "Lock the git repo before agent_a writes.",
+        "Keep agent_b read-only with no filesystem bridge.",
+        "Serialize any shared workflow steps.",
+        "requires-engineering: add distributed locking around mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can generate workflow outputs and agent_b can consume workflows or prompts for image generation, so A-to-B handoff can propagate errors if B treats A's output as authoritative. agent_b lacks verification primitives in the profile, and agent_a's MCP/stdio surfaces make unvetted transfer plausible in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_a's generated instructions are fed directly into agent_b workflows, errors can cascade into downstream artifacts.",
+        "IF no human or schema verification step exists between agents, B may execute flawed guidance."
+      ],
+      "mitigations": [
+        "Insert a human review step before agent_b execution.",
+        "Validate agent_a outputs against a schema.",
+        "Require agent_b to ignore free-form instructions.",
+        "Log and diff all handoff payloads.",
+        "requires-engineering: add automated consistency checks between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and show no explicit residency, certification, or retention mismatch. agent_a handles task prompts and repository metadata, while agent_b handles media/model assets; absent evidence of regulated data classes or cross-border policy conflict, only a small compliance gap is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is introduced into either workflow, compliance review is required.",
+        "IF deployment policy imposes retention or residency constraints not reflected in the profiles, the gap becomes material."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both workflows.",
+        "Document retention settings for shared artifacts.",
+        "Confirm deployment region for any hosted components.",
+        "Review vendor terms before production use.",
+        "requires-engineering: map data flows to a formal compliance matrix."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:d06da4b94a49a9a234070da2162222d86616e5de873903f765845b4e78d29f08",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
