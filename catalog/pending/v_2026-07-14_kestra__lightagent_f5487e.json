@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-14_kestra__lightagent_f5487e",
+  "generated_at": "2026-07-14T08:18:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.725,
+  "headline": "High-risk default interaction: Kestra can write/egress broadly while LightAgent can observe/replace lifecycle payloads and use MCP, creating leakage, conflict, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can write files and emit workflow outputs; LightAgent can use MCP and runtime hooks can observe, replace, or block lifecycle payloads. That creates a plausible instruction-smuggling path if Kestra-produced content is fed into LightAgent through shared files or tool payloads. The interaction is inferred, not directly documented, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra outputs are passed into LightAgent as tool input or lifecycle payloads",
+        "IF LightAgent runtime hooks are configured to process untrusted content as instructions"
+      ],
+      "mitigations": [
+        "Add a strict content/schema separator between Kestra outputs and LightAgent prompts",
+        "Prefix all Kestra-generated text as data, not instructions",
+        "Disable any hook that rewrites untrusted payloads",
+        "Review one sample handoff for prompt-injection markers",
+        "requires-engineering: add provenance tagging on every cross-agent message"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, and has broad network egress. LightAgent handles user conversations, long-term memory, trace data, tool results, and secrets, with MCP and browser access. In default pairings, sensitive data can flow from Kestra into LightAgent and then out over broad egress, so the blast radius includes exfiltration and compliance breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Kestra workflows process sensitive inputs or artifacts",
+        "IF LightAgent receives those outputs in conversation, memory, or tool results",
+        "IF either agent forwards the shared data over external APIs"
+      ],
+      "mitigations": [
+        "Restrict both agents to a redacted test dataset",
+        "Turn off or proxy external egress for one side",
+        "Separate credentials and OAuth principals immediately",
+        "Inspect one workflow for secret-bearing fields",
+        "requires-engineering: add field-level DLP/redaction before handoff"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Kestra has write_filesystem, execute_shell, spawn_subprocesses, and elevated privilege requests including root and docker.sock; LightAgent can spawn subprocesses, run browsers, and use MCP. Both support multiple instances, so concurrent writes or shared mutable resources can collide without locking. The overlap is broad enough that default operation can corrupt shared state or overwrite each other's work.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem, container, or MCP-backed resource",
+        "IF either agent runs with the requested elevated privileges",
+        "IF concurrent instances modify shared state without locks"
+      ],
+      "mitigations": [
+        "Assign separate working directories immediately",
+        "Run only one writer at a time for shared resources",
+        "Remove root/docker.sock access for the test run",
+        "Check for overlapping MCP or API credentials",
+        "requires-engineering: add advisory locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra produces workflow definitions, logs, variables, artifacts, and notifications; LightAgent consumes tool calls/results and maintains workflow state and provenance metadata. That makes it easy for Kestra output to become LightAgent input without a verification gate, and LightAgent can then act on or re-emit the result. The pair therefore supports a default cascade from generated content to downstream action with potentially irreversible effects.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-generated artifacts or notifications are fed into LightAgent",
+        "IF LightAgent treats those inputs as authoritative without verification",
+        "IF LightAgent then triggers tool calls or browser actions based on them"
+      ],
+      "mitigations": [
+        "Insert a human verification step before any downstream action",
+        "Require checksum or signature validation on Kestra outputs",
+        "Log provenance on every handoff",
+        "Run one dry-run workflow before enabling actions",
+        "requires-engineering: add policy checks that block unaudited tool execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra touches database data, cloud storage data, messages, and notifications, while LightAgent handles conversations, long-term memory, trace data, and secrets. The profiles do not state residency or certification mismatches, so I cannot claim a specific breach. However, the pair clearly mixes multiple sensitive data classes with different retention surfaces, which creates a default compliance-management gap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed by both agents",
+        "IF retention or deletion policies differ across their stores",
+        "IF logs or traces are retained longer than the source data"
+      ],
+      "mitigations": [
+        "Inventory which regulated fields each agent stores",
+        "Align retention settings to the shortest required period",
+        "Disable trace retention for sensitive runs",
+        "Review residency and DPA terms before production",
+        "requires-engineering: implement unified deletion/export handling"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
