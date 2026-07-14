@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-07-14_autogpt__pipecat_643e1d",
+  "generated_at": "2026-07-14T05:57:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Medium prompt-injection, leakage, and cascading-error risks from shared text/audio pipelines; no direct evidence of a blocking control.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and act on filesystem content and agent-protocol inputs, while pipecat moves text through shared-bus/session pipelines and stdin/stdout. That creates a plausible instruction-smuggling path if AutoGPT consumes pipecat outputs as trusted text. No direct provenance or isolation controls are documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF pipecat output is copied into AutoGPT prompts or files without provenance tags, injection is possible.",
+        "IF both agents share a bus, clipboard, or workspace, attacker-controlled text can traverse the boundary."
+      ],
+      "mitigations": [
+        "Add a manual review step before AutoGPT ingests pipecat text.",
+        "Prefix all inter-agent messages with immutable provenance labels.",
+        "Disable automatic file ingestion for shared outputs.",
+        "Use separate workspaces for each agent.",
+        "requires-engineering: add content filtering and instruction-stripping at the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGPT has filesystem access and allowlisted egress; pipecat handles text, audio, video, images, and conversation state over shared-bus/session state. If sensitive content enters pipecat, it can be forwarded into AutoGPT outputs or external APIs. The profiles do not show explicit data-class restrictions, so a shared-workspace leakage path is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF sensitive text or media is placed on the shared bus, AutoGPT may read it from files or prompts.",
+        "IF AutoGPT forwards that content to an allowlisted API, the data leaves the local boundary."
+      ],
+      "mitigations": [
+        "Keep sensitive data out of the shared bus.",
+        "Use separate OS users and directories for each agent.",
+        "Turn off AutoGPT access to shared folders.",
+        "Review outbound destinations in AutoGPT allowlists.",
+        "requires-engineering: enforce per-agent data-loss-prevention rules."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "AutoGPT can execute shell commands and spawn subprocesses, and pipecat supports multiple instances with shared-bus state. Even without explicit write scopes, both can mutate shared files or runtime state if orchestrated together. Because locking or coordination is not documented, the overlap is enough for a default conflict risk rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same workspace or config files, state races can occur.",
+        "IF the orchestrator lacks locks, concurrent subprocesses can clobber shared artifacts."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes with a simple lock file.",
+        "Run only one writer at a time.",
+        "Keep pipecat state in memory-only mode where possible.",
+        "requires-engineering: add transactional coordination for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Pipecat can pass conversation state and text through its pipeline, and AutoGPT can act on that text via shell or API calls. If AutoGPT-generated content is treated as authoritative by pipecat components, errors can cascade into downstream actions or user-facing speech. No verification step is documented, so the interaction is inferred and should be treated as medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF pipecat forwards AutoGPT output directly into downstream actions, mistakes propagate.",
+        "IF AutoGPT hallucinates facts and pipecat speaks or routes them without verification, users receive false outputs."
+      ],
+      "mitigations": [
+        "Insert a verification step before pipecat acts on AutoGPT output.",
+        "Require human approval for any action-taking branch.",
+        "Limit AutoGPT to drafting, not executing, in the shared flow.",
+        "Log and diff outputs before downstream use.",
+        "requires-engineering: add schema validation for all inter-agent messages."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, with no explicit residency, certification, or retention commitments. The only concrete compliance signal is pipecat's analytics/metrics and third-party service integrations, while AutoGPT exposes allowlisted egress. Because no specific regulated data class or jurisdiction mismatch is documented, this is a documented-gap risk rather than a stronger breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through pipecat analytics or external STT/LLM/TTS services, policy review is required.",
+        "IF the deployment has residency or retention requirements, the current profiles do not document compliance controls."
+      ],
+      "mitigations": [
+        "Avoid regulated data in the pair.",
+        "Disable analytics where possible.",
+        "Review third-party service destinations.",
+        "Document retention settings before deployment.",
+        "requires-engineering: add jurisdiction-aware routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
