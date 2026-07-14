@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "haystack",
+    "plano"
+  ],
+  "verdict_id": "v_2026-07-14_haystack__plano_a2f4f6",
+  "generated_at": "2026-07-14T10:30:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Medium risk: shared network/MCP and API surfaces create injection, leakage, and workflow-conflict pathways; no direct pairwise evidence is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Haystack can call MCP servers and REST APIs, while Plano exposes an OpenAI-compatible chat endpoint and config files. That creates a plausible content-to-instruction bridge if Haystack ingests untrusted outputs and forwards them into Plano. The profiles do not prove a shared channel by default, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Haystack forwards retrieved text into Plano prompts without sanitization, injection is possible.",
+        "IF Plano consumes model-visible content from Haystack as instructions, attacker-controlled text can steer behavior."
+      ],
+      "mitigations": [
+        "Add a prompt delimiter and instruction/data separation rule.",
+        "Disable MCP routes that can ingest untrusted content.",
+        "Require human review before forwarding retrieved text to Plano.",
+        "Log and flag any prompt containing external instructions.",
+        "requires-engineering: add provenance tagging across the handoff."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Haystack has broad network egress and uses MCP/REST APIs; Plano also has broad network egress and handles logs, traces, and metrics. If they share a workspace or pass sensitive retrieval results through prompts, data can leak to external services or logs. The profiles do not show PHI or secrets, so this is medium, not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Haystack retrieves sensitive documents and forwards them to Plano, those contents may enter logs or traces.",
+        "IF either agent is configured to export telemetry externally, prompt or retrieval data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Turn off verbose logging for both agents.",
+        "Redact secrets before any handoff.",
+        "Restrict outbound destinations with a firewall allowlist.",
+        "Review config.yaml for telemetry and retention settings.",
+        "requires-engineering: isolate the agents into separate workspaces."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Haystack can use MCP and REST APIs, and Plano reads config.yaml while running out-of-process. Even without explicit filesystem write claims, both can act on shared mutable resources through APIs or configuration, so conflicting updates are plausible. The lack of documented locking or shared-write details prevents a higher severity, but uncertainty still supports medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same API-backed resource, last-write-wins conflicts can occur.",
+        "IF Plano reloads config.yaml while Haystack updates related settings, inconsistent state may result."
+      ],
+      "mitigations": [
+        "Assign separate resource namespaces.",
+        "Freeze config.yaml during runs.",
+        "Serialize writes through one operator.",
+        "Check for concurrent edits before deployment.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Haystack is a search-RAG system that can surface retrieved facts, and Plano is a travel-planning gateway that can consume chat completions. If Plano treats Haystack output as authoritative, retrieval errors can cascade into downstream plans or actions. The profiles do not document direct action-taking, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Plano uses Haystack output without verification, hallucinations or stale retrievals can propagate.",
+        "IF Haystack returns low-confidence snippets and Plano renders them as facts, downstream decisions may be wrong."
+      ],
+      "mitigations": [
+        "Require source citations in every handoff.",
+        "Add a verification step before Plano acts on Haystack output.",
+        "Mark retrieved content as untrusted in prompts.",
+        "Sample-check outputs for factual consistency.",
+        "requires-engineering: implement confidence-aware routing."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and only explicitly touch anonymous usage statistics, agentic signals, traces, metrics, logs, and config.yaml. No residency, certification, or regulated-data mismatch is documented, so compliance risk is limited to logging/retention gaps rather than a clear breach. The other agent is cited because the risk is pairwise telemetry and handoff handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through either agent's logs or traces, retention policy mismatches become relevant.",
+        "IF deployment policy requires residency controls, external API calls may violate them."
+      ],
+      "mitigations": [
+        "Confirm what data classes are allowed.",
+        "Disable or shorten log retention.",
+        "Review config.yaml for telemetry settings.",
+        "Keep regulated data out of the pair.",
+        "requires-engineering: add residency and retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.8.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:39a712547c3e10c933938244688af26e6669963233b9a8dee5ee66d84559a6bf",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
