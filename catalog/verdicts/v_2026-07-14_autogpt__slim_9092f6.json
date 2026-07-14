@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-14_autogpt__slim_9092f6",
+  "generated_at": "2026-07-14T05:52:16Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High-risk filesystem and shell overlap: AutoGPT can write/run commands while slim reads/writes container artifacts and secrets, creating dangerous default interaction paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can execute shell commands and access the filesystem, while slim reads/writes filesystem artifacts and exposes stdin/stdout plus interactive CLI prompts. If slim outputs untrusted content that AutoGPT ingests from files or terminal transcripts, instruction hijacking is plausible. The pair lacks a documented isolation bridge, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT ingests slim-generated files or terminal output as instructions",
+        "IF both agents share a writable workspace or copied transcripts"
+      ],
+      "mitigations": [
+        "Separate working directories for each agent",
+        "Disable automatic parsing of slim output by AutoGPT",
+        "Require manual review before AutoGPT follows file-based instructions",
+        "Use read-only mounts for slim outputs where possible",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGPT has filesystem access and allowlisted egress; slim touches certificate private keys, environment variables, and registry credentials, and has broad network egress. If they share a workspace, sensitive artifacts can flow from slim into AutoGPT and then out through AutoGPT's network path. The profiles do not prove a shared workspace, so this is inferred but credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF AutoGPT can read files produced by slim",
+        "IF slim processes images containing secrets or credentials"
+      ],
+      "mitigations": [
+        "Keep slim secrets in a separate directory",
+        "Block AutoGPT from reading slim output folders",
+        "Rotate any registry credentials used by slim",
+        "Restrict AutoGPT egress to non-sensitive destinations",
+        "requires-engineering: enforce per-agent workspace isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, and AutoGPT can spawn subprocesses while slim can write the filesystem and also spawn subprocesses. If they operate on the same directory, concurrent writes can corrupt artifacts or overwrite each other's outputs. The profiles do not show locking or shared-state protection, so the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path",
+        "IF either agent writes build or analysis outputs without locking"
+      ],
+      "mitigations": [
+        "Assign disjoint output directories",
+        "Run only one agent at a time on shared paths",
+        "Make slim outputs read-only before AutoGPT sees them",
+        "Check for file locks before writes",
+        "requires-engineering: add orchestrator-level mutual exclusion"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGPT can generate plans or file-based outputs, and slim can act on filesystem artifacts and container targets. If slim treats AutoGPT output as authoritative, a mistaken plan can cascade into destructive container or filesystem actions. Because no verification workflow is documented, the interaction is plausible in default operator workflows but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF slim consumes AutoGPT-produced instructions without human verification",
+        "IF AutoGPT writes commands that slim later executes"
+      ],
+      "mitigations": [
+        "Require human approval before slim executes AutoGPT output",
+        "Add a checksum or review step between agents",
+        "Limit AutoGPT output to suggestions, not commands",
+        "Log and diff all handoffs between agents",
+        "requires-engineering: implement structured handoff validation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly handles certificate private keys, environment variables, and registry credentials, while AutoGPT has filesystem access and network egress. If those regulated secrets are placed in a shared workspace, AutoGPT can expose them beyond the intended container boundary. The profiles do not specify residency or certifications, so compliance risk is inferred from secret handling rather than a named regime.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or credentials are present in slim's target artifacts",
+        "IF AutoGPT can access the same files and transmit them externally"
+      ],
+      "mitigations": [
+        "Exclude secrets from shared paths",
+        "Purge credentials from slim inputs before handoff",
+        "Restrict AutoGPT to non-sensitive projects",
+        "Review retention settings for both tools",
+        "requires-engineering: separate compliance domains per agent"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
