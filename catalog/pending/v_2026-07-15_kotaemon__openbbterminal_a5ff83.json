@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "openbbterminal"
+  ],
+  "verdict_id": "v_2026-07-15_kotaemon__openbbterminal_a5ff83",
+  "generated_at": "2026-07-15T01:45:31Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: shared API/MCP and filesystem-adjacent workflows create default risks of data leakage, prompt injection, and action-cascade between kotaemon and OpenBBTerminal.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, HTML, PDFs, and chat transcripts, while OpenBBTerminal exposes MCP servers and stdin/stdout. That creates a plausible bridge where attacker-controlled content from kotaemon can be passed into OpenBBTerminal as instructions or parameters. The pair lacks documented provenance tracking, so the interaction is inferred rather than directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon output is forwarded into OpenBBTerminal via MCP or stdin/stdout without sanitization, injection is possible.",
+        "IF a shared workspace or message queue is added between the agents, prompt content can cross trust boundaries."
+      ],
+      "mitigations": [
+        "Add a strict allowlist for fields passed from kotaemon to OpenBBTerminal.",
+        "Insert a human review step before any OpenBBTerminal action triggered by kotaemon output.",
+        "Disable MCP routes that accept free-form text from kotaemon unless required.",
+        "Log and diff all cross-agent payloads for suspicious instruction-like text.",
+        "requires-engineering: add provenance tags and schema validation on every inter-agent message."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "kotaemon touches API keys and many document types, and OpenBBTerminal touches financial and licensed data while using MCP/REST APIs. If they share a workspace or if kotaemon forwards files into OpenBBTerminal, sensitive content can leak across the pair and out through OpenBBTerminal's networked interfaces. The profiles do not show isolation strong enough to rule this out.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory or mounted volume, file contents can cross from kotaemon to OpenBBTerminal.",
+        "IF kotaemon sends documents or API keys into OpenBBTerminal workflows, those data classes may be exposed through network APIs."
+      ],
+      "mitigations": [
+        "Store each agent in a separate directory or container volume.",
+        "Rotate any API keys handled by kotaemon before cross-agent testing.",
+        "Block OpenBBTerminal network egress except to approved endpoints.",
+        "Review MCP and REST payloads for secrets before enabling automation.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents support multiple instances, and kotaemon has broad network egress while OpenBBTerminal uses MCP/REST APIs. Even though OpenBBTerminal cannot write files or modify git state, they can still contend over shared mutable external resources such as APIs, localhost services, or credentials. The overlap is real but narrower than a filesystem-write conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same API account or localhost service, they can race on shared mutable state.",
+        "IF kotaemon and OpenBBTerminal share credentials, one agent can invalidate or consume resources needed by the other."
+      ],
+      "mitigations": [
+        "Use separate API credentials per agent.",
+        "Assign distinct localhost ports and service endpoints.",
+        "Serialize writes to any shared external resource.",
+        "Monitor for rate-limit or auth failures during concurrent runs.",
+        "requires-engineering: add locking around shared mutable backends."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "kotaemon is a RAG/chat system that can generate cited answers, and OpenBBTerminal can consume inputs through MCP, REST, or stdin/stdout. If OpenBBTerminal treats kotaemon output as authoritative, a mistaken or hallucinated answer can cascade into downstream financial analysis or actions. The pair does not prove automatic action-taking, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF OpenBBTerminal consumes kotaemon output without verification, errors can propagate into financial workflows.",
+        "IF kotaemon-generated citations are accepted as ground truth, downstream decisions may be based on false premises."
+      ],
+      "mitigations": [
+        "Require source verification before OpenBBTerminal acts on kotaemon output.",
+        "Display kotaemon output as advisory only, not authoritative.",
+        "Add a second-pass check against primary market data.",
+        "Flag low-confidence or uncited claims for manual review.",
+        "requires-engineering: implement structured provenance and confidence propagation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon handles API keys, chat transcripts, and documents, while OpenBBTerminal handles financial and licensed data. If EU personal data or regulated customer material is routed from kotaemon into OpenBBTerminal, retention and residency obligations may diverge. The profiles do not document matching compliance controls, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated customer documents from kotaemon are processed by OpenBBTerminal, retention and access rules may diverge.",
+        "IF EU personal data is included in shared workflows, residency or DPA requirements may be implicated."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows.",
+        "Separate retention policies for each agent's outputs.",
+        "Review whether any data class requires a DPA or residency control.",
+        "Purge transcripts containing secrets after testing.",
+        "requires-engineering: document and enforce compliance boundaries per agent."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:9f7cc7deecb12f606091b0786e8815ccee614e75375ad9120d8af42154e2d4d5",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
