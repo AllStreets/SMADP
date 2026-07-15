@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "autogpt",
+    "ms-swift"
+  ],
+  "verdict_id": "v_2026-07-15_autogpt__ms-swift_6030fe",
+  "generated_at": "2026-07-15T01:12:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.5,
+  "headline": "High risk of shared-filesystem prompt injection and data leakage; ms-swift\u2019s file-reading/writing plus AutoGPT\u2019s filesystem and shell access create unsafe default interaction paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "AutoGPT can read and act on filesystem content, and ms-swift can read/write files and emit logs/configs/training outputs. That creates a plausible shared-file pathway where attacker-controlled content from one agent can be interpreted as instructions by the other. No MCP or clipboard bridge is documented, so this is not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace directory",
+        "IF ms-swift writes prompt-like text into logs, configs, or outputs that AutoGPT later reads"
+      ],
+      "mitigations": [
+        "Use separate directories for each agent",
+        "Disable AutoGPT access to ms-swift output folders",
+        "Prefix shared files with machine-readable schemas only",
+        "Review any file AutoGPT ingests before execution",
+        "requires-engineering: add provenance tags to shared artifacts"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "AutoGPT has filesystem access and allowlisted egress; ms-swift reads and writes datasets, checkpoints, logs, and configuration files and handles hub/sdk tokens. If they share a workspace, sensitive training artifacts or secrets can flow from ms-swift into AutoGPT outputs or outbound requests. The pair is open-source, but the shared-file leakage path is credible in default-like setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a filesystem or mounted workspace",
+        "IF ms-swift stores tokens, checkpoints, or logs in paths AutoGPT can read",
+        "IF AutoGPT is allowed to send retrieved file contents over its allowlisted network egress"
+      ],
+      "mitigations": [
+        "Place secrets and checkpoints outside AutoGPT-readable paths",
+        "Rotate any hub_token or sdk-token before co-running",
+        "Restrict AutoGPT egress to non-sensitive endpoints",
+        "Run each agent under separate OS users",
+        "requires-engineering: enforce per-directory ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can execute shell commands, and AutoGPT can spawn subprocesses while ms-swift can install packages and write files. Even though ms-swift does not modify git state, overlapping write and execution capabilities on a shared directory can race on files, configs, or installed dependencies. The conflict is real but narrower than a full git-state collision.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same working directory",
+        "IF ms-swift installs or rewrites packages while AutoGPT is running subprocesses",
+        "IF either agent writes to files the other reads without locking"
+      ],
+      "mitigations": [
+        "Use separate virtual environments",
+        "Assign distinct working directories",
+        "Pause one agent during package installation by the other",
+        "Avoid shared mutable config files",
+        "requires-engineering: add file locks around shared artifacts"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "AutoGPT can generate plans or file-based outputs, and ms-swift exposes CLI/Python workflows that may consume those outputs as inputs. If ms-swift treats AutoGPT-produced artifacts as authoritative without verification, errors can cascade into training, evaluation, or configuration changes. There is no documented verification barrier in either profile, so the safer medium rating applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift consumes AutoGPT-generated files, configs, or prompts without validation",
+        "IF AutoGPT output is used to drive training, evaluation, or deployment commands"
+      ],
+      "mitigations": [
+        "Require human review of AutoGPT outputs before reuse",
+        "Validate schemas for any exchanged files",
+        "Keep AutoGPT outputs read-only to ms-swift",
+        "Log and diff all handoffs between agents",
+        "requires-engineering: add automated verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift explicitly touches datasets, checkpoints, logs, and secrets, while AutoGPT has filesystem access and network egress. If regulated or sensitive data is placed in the shared workspace, the pair can create retention or residency mismatches through file reuse and outbound transmission. The profiles do not state HIPAA/GDPR specifics, so this is a compliance-risk inference rather than a confirmed violation.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in ms-swift datasets, checkpoints, or logs",
+        "IF AutoGPT is permitted to read and transmit those files",
+        "IF retention or deletion requirements apply to the shared workspace"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared folders",
+        "Document retention rules for logs and checkpoints",
+        "Disable outbound access for sensitive runs",
+        "Separate environments by data classification",
+        "requires-engineering: implement residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:20a17b1685b6be04a6afdcbd842f23a23cb267b0abaf1ff4e5d14d203f34d7f5",
+    "profile_b_hash": "sha256:8b55891618aa6e5b0a45bb24d6296352f5f263e479fb39dbf604041793a159aa",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
