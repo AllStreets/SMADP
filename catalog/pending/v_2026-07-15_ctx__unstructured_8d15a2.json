@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "unstructured"
+  ],
+  "verdict_id": "v_2026-07-15_ctx__unstructured_8d15a2",
+  "generated_at": "2026-07-15T00:00:26Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.53,
+  "headline": "High: shared filesystem and write-capable document processing create prompt-injection, leakage, and cascading-error risks; ctx also observes Claude Code events.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and uses MCP stdio, while unstructured reads filesystem documents and processes them as content. If ctx ingests unstructured outputs or shared files, attacker-controlled document text can become instructions. The pairwise bridge is plausible but not directly documented, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ctx consumes unstructured output from a shared file or MCP channel without provenance checks, injection is possible.",
+        "IF document text is forwarded into Claude Code prompts or hooks, attacker-controlled instructions can steer behavior."
+      ],
+      "mitigations": [
+        "Add provenance tags to all handoffs between agents.",
+        "Restrict ctx to parsing only structured metadata, not raw document text.",
+        "Use separate directories for each agent's outputs.",
+        "requires-engineering: enforce allowlisted message schemas on the MCP bridge.",
+        "Run a quick red-team test with a malicious document containing instructions."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches filesystem and audit/runtime logs, and unstructured has read/write filesystem plus allowlisted network egress. A shared workspace could expose documents or logs from one agent to the other, and unstructured may transmit file contents to its backend. The pairwise leakage path is plausible in default setups, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace directory, files written by one can be read by the other.",
+        "IF unstructured sends document contents to its inference backend, any sensitive text in shared files can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable network egress for unstructured during sensitive runs.",
+        "Move logs to a private directory with restricted permissions.",
+        "requires-engineering: add per-file access controls or container mounts.",
+        "Review and redact sensitive documents before processing."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx can install packages and use filesystem-backed workflows, while unstructured can read and write the filesystem and spawn subprocesses. Both support multiple instances, so concurrent writes to the same directory can race and corrupt outputs. Because shared-write conflict is a default plausible pathway and can damage artifacts, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or partial writes can occur.",
+        "IF package installation happens concurrently with document processing, environment drift can break reproducibility."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Serialize writes with a lock file.",
+        "Run one agent at a time for shared resources.",
+        "requires-engineering: add transactional or atomic write wrappers.",
+        "Snapshot the workspace before batch runs."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx observes tool events and unstructured produces parsed document outputs; if ctx treats those outputs as authoritative, downstream summaries or actions can propagate parsing mistakes. unstructured is not documented as verifying ctx's claims, so the chain is one-way and the blast radius is multiple work products rather than direct external harm. Medium fits the default inference path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ctx forwards unstructured extractions into later prompts without verification, errors can cascade.",
+        "IF downstream automation consumes those extracted facts, a parsing mistake can affect multiple artifacts."
+      ],
+      "mitigations": [
+        "Require a human review step for extracted facts.",
+        "Keep raw source text alongside every summary.",
+        "Compare outputs against a second parser on a sample set.",
+        "requires-engineering: add confidence thresholds before downstream actions.",
+        "Log provenance for each extracted field."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "ctx touches audit/runtime logs and harness records, while unstructured processes documents, images, and text. The profiles show privacy-policy and docs URLs for unstructured but no explicit residency or certification mismatch, so only a limited compliance gap is evidenced. I do not cite ctx's docs alone because the issue is the pairwise handling of document data and logs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through shared logs, retention policy mismatch can arise.",
+        "IF document data is routed to a service with stricter residency requirements than the workspace, compliance review is needed."
+      ],
+      "mitigations": [
+        "Minimize logged document content.",
+        "Confirm retention settings for both agents.",
+        "Process regulated data in a segregated workspace.",
+        "requires-engineering: document residency and DPA controls.",
+        "Delete temporary artifacts after each run."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:54a644f5695e76e5e5991f1edf7b7929d6be974f6a19041402f74ca79c29aa37",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
