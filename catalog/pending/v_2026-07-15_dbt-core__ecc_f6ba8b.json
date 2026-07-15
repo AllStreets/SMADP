@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "ecc"
+  ],
+  "verdict_id": "v_2026-07-15_dbt-core__ecc_f6ba8b",
+  "generated_at": "2026-07-15T00:11:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High risk of prompt injection and cascading errors from ECC\u2019s shared file/MCP surfaces; dbt-core\u2019s warehouse-facing outputs can be misused downstream.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC reads/writes local files, uses MCP, and exposes stdin/stdout, so it can ingest dbt-core outputs if wired together. dbt-core emits warehouse-facing artifacts and documentation, which ECC may treat as workflow input. No direct shared channel is documented, so this is inferred from overlapping surfaces rather than observed interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF ECC is configured to consume dbt-core output files or stdout as instructions",
+        "IF both agents share a filesystem or MCP bridge"
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces",
+        "Disable MCP routes that ingest untrusted text",
+        "Require manual review before ECC acts on dbt-core output",
+        "Use read-only mounts for dbt-core artifacts",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and can call warehouse APIs, while ECC reads/writes local files and handles session summaries, hooks, and agent definitions. If dbt-core artifacts or warehouse-derived outputs are placed in ECC\u2019s workspace, ECC can expose them through its broader file and API surfaces. The pairwise leakage path is plausible but not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF warehouse-derived dbt artifacts are stored in ECC-accessible directories",
+        "IF ECC is allowed to upload or transmit those files through its APIs"
+      ],
+      "mitigations": [
+        "Keep warehouse outputs out of ECC-managed folders",
+        "Restrict ECC to non-sensitive projects",
+        "Turn off automatic file ingestion for sensitive directories",
+        "Review outbound API destinations before enabling sync",
+        "requires-engineering: enforce data-class-based access controls"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "dbt-core can call warehouse APIs, and ECC can execute shell, modify git state, write files, and use MCP. Both can mutate shared project state if pointed at the same repo or workspace, creating a realistic write/write conflict and possible irreversible git or file corruption. ECC\u2019s concurrency notes explicitly warn about shared state across instances, increasing the likelihood of conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same repository or workspace",
+        "IF dbt-core writes generated artifacts while ECC modifies git or files concurrently"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize writes with a single operator",
+        "Pause ECC during dbt-core runs",
+        "Use git worktrees or branches per agent",
+        "requires-engineering: add locking around shared mutable state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ECC has broad action-taking capabilities and can run browsers, shells, and subprocesses, so it may treat dbt-core outputs as authoritative and act on them. dbt-core produces data-modeling and documentation outputs that ECC could render or operationalize without verification. That creates a default pathway for incorrect upstream outputs to cascade into downstream actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ECC consumes dbt-core-generated artifacts without a verification step",
+        "IF ECC is configured to execute follow-on actions from those artifacts"
+      ],
+      "mitigations": [
+        "Insert a human approval step before actions",
+        "Require schema or test validation before use",
+        "Limit ECC to read-only summarization of dbt outputs",
+        "Flag dbt artifacts as untrusted by default",
+        "requires-engineering: add automated verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while ECC handles session summaries, metrics, hooks, and retention-related secrets. If warehouse data or regulated metadata flows into ECC\u2019s retained session state, the pair can create retention or residency mismatches. The profiles do not show a specific jurisdiction mismatch, so this is a policy-gap risk rather than a confirmed breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF regulated warehouse data is copied into ECC session summaries or retained files",
+        "IF retention settings keep those records longer than the source policy"
+      ],
+      "mitigations": [
+        "Exclude regulated data from session summaries",
+        "Shorten ECC retention for sensitive projects",
+        "Review retention settings before enabling sync",
+        "Store compliance-sensitive artifacts outside ECC",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:5694b65397a1615f2e190897d5dd00e8ce3a820aa8bd1a3908a5d8b2c4aa5f65",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
