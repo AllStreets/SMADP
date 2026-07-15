@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "paddleocr"
+  ],
+  "verdict_id": "v_2026-07-15_ctx__paddleocr_6b2d1c",
+  "generated_at": "2026-07-15T00:50:16Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Highest risk is medium: ctx can ingest filesystem/MCP content while PaddleOCR processes documents/images, creating plausible prompt-injection and data-flow issues in default workflows.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx explicitly observes Claude Code PostToolUse/Stop events and has filesystem/MCP surfaces, so it can ingest tool outputs or shared content. PaddleOCR processes documents/images and can feed attacker-controlled text back into downstream workflows. The pair lacks documented provenance isolation, so prompt injection is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx reads PaddleOCR-produced text from a shared file or MCP channel, injection is possible.",
+        "IF PaddleOCR output is forwarded into ctx without provenance tagging, instructions can be smuggled."
+      ],
+      "mitigations": [
+        "Add a manual review step before ctx consumes OCR output.",
+        "Prefix OCR text as untrusted data in prompts.",
+        "Separate OCR output and agent instruction channels.",
+        "Use per-run temp directories for exchanged files.",
+        "requires-engineering: add provenance labels to MCP/file handoffs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs, graph data, and MCP servers, while PaddleOCR handles documents and images and can send API traffic with allowlisted egress. If sensitive documents are OCR'd into shared files or logs, both agents can expose the same data class through different paths. The pairwise leakage pathway is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF sensitive documents are placed in a shared workspace, both agents can access them.",
+        "IF PaddleOCR forwards document contents to external APIs, those contents may leave the local boundary."
+      ],
+      "mitigations": [
+        "Store OCR inputs in a restricted directory.",
+        "Redact secrets before OCR processing.",
+        "Disable external API calls for sensitive jobs.",
+        "Rotate and minimize runtime logs.",
+        "requires-engineering: enforce data-loss-prevention controls on shared outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ctx supports multiple instances and filesystem access; PaddleOCR has allowlisted network egress and browser capability. Their overlapping write/read paths can conflict on shared files or derived artifacts even without explicit git state. Because no locking or isolation is documented, uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.run_browsers"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same workspace, file clobbering can occur.",
+        "IF one agent rewrites OCR artifacts while the other reads them, race conditions are possible."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Use atomic rename for shared artifacts.",
+        "Serialize writes with a simple lock file.",
+        "Keep browser sessions isolated per agent.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx is a context-management harness that observes tool events, and PaddleOCR turns documents/images into extracted text. If ctx treats OCR output as authoritative, downstream actions can propagate OCR mistakes or prompt-injected text. The pair lacks a documented verification step, so cascading error is a realistic default-path risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF ctx consumes PaddleOCR text without validation, OCR errors can cascade.",
+        "IF extracted text is used to drive later tool actions, mistakes become operational."
+      ],
+      "mitigations": [
+        "Require human review of OCR summaries.",
+        "Compare OCR output against source images for critical fields.",
+        "Mark OCR text as untrusted input.",
+        "Limit downstream actions to read-only until verified.",
+        "requires-engineering: add confidence thresholds and validation gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No residency, certification, or retention mismatch is documented for either agent. ctx touches audit/runtime logs and harness records, while PaddleOCR handles documents/images, so compliance issues are possible only if the operator routes regulated data through both. Because the profiles do not show a concrete policy conflict, this stays low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents are processed through both agents, retention and logging policies must be checked.",
+        "IF either deployment stores OCR outputs longer than policy allows, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared runs.",
+        "Review log retention settings.",
+        "Delete temporary OCR artifacts after use.",
+        "Confirm data-processing agreements before deployment.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:aa119e9cff40e39b44ad119e8c1b8d2b2437b8316d2eef80b757cb221f9ba903",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
