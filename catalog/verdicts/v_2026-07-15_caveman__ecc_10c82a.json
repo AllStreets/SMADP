@@ -1,0 +1,191 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "caveman",
+    "ecc"
+  ],
+  "verdict_id": "v_2026-07-15_caveman__ecc_10c82a",
+  "generated_at": "2026-07-15T00:33:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High: shared MCP and overlapping filesystem/git surfaces create dangerous prompt-injection, leakage, and conflict pathways; ECC\u2019s default session/root behavior adds compliance risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents use MCP, and ECC also exposes stdin/stdout plus skills as a primary workflow surface, so content from caveman can plausibly be routed into ECC without strong provenance controls. caveman\u2019s file surfaces include CLAUDE.md and project notes, which ECC can read and act on. This is not proven hijackability, but the shared channel exists in default docs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF caveman output is copied into ECC skills or MCP inputs without provenance checks, injection risk materializes.",
+        "IF ECC treats CLAUDE.md or project notes as instructions, attacker-controlled text can steer behavior."
+      ],
+      "mitigations": [
+        "Add a provenance prefix to all cross-agent text transfers.",
+        "Disable automatic ingestion of CLAUDE.md/project notes into ECC skills.",
+        "Require a human review step before ECC executes any instruction-like text.",
+        "Use separate MCP servers or namespaces per agent.",
+        "requires-engineering: add content-sanitization and instruction/data separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "caveman touches session logs, memory files, project notes, and CLAUDE.md, while ECC touches session summaries, git history, code, documentation, and security findings. ECC also has filesystem write/read and allowlisted network egress, so shared workspace data can flow outward if the pair is co-located. The profiles do not prove a shared directory, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or home directory, file contents can cross between them.",
+        "IF ECC uploads code, docs, or findings from a shared workspace, caveman-originated notes may leak externally."
+      ],
+      "mitigations": [
+        "Place each agent in a separate workspace directory.",
+        "Restrict ECC network egress to only required destinations.",
+        "Move sensitive notes out of shared project files.",
+        "Rotate or redact session logs before cross-agent use.",
+        "requires-engineering: enforce per-agent filesystem and egress isolation at the launcher level."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ECC can write the filesystem, modify git state, and spawn subprocesses; caveman supports multiple instances and uses MCP, so concurrent access to the same repo or config tree can race. caveman\u2019s docs mention files like CLAUDE.md and project notes, while ECC writes ~/.claude and related state, making overlapping mutable surfaces likely. Without locking, irreversible git or config corruption is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same git repository, concurrent writes can conflict.",
+        "IF both agents share ~/.claude or related config paths, session/state files can overwrite each other."
+      ],
+      "mitigations": [
+        "Run the agents in separate repositories or branches.",
+        "Set distinct home/config roots for each agent.",
+        "Pause one agent before the other writes git state.",
+        "Back up config and session files before concurrent runs.",
+        "requires-engineering: add file locks around shared mutable paths."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ECC\u2019s workflow centers on skills and subagents, while caveman is a content-writing agent that can emit project notes, CLAUDE.md edits, or other text artifacts. That creates a plausible path where ECC treats caveman output as authoritative input, especially through MCP or shared files. The profiles do not show explicit verification gates, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ECC consumes caveman-generated notes or instructions without verification, errors can cascade into downstream actions.",
+        "IF caveman writes claims into files that ECC later summarizes or operationalizes, falsehoods can propagate."
+      ],
+      "mitigations": [
+        "Require ECC to cite source files before acting.",
+        "Insert a verification checklist between caveman and ECC outputs.",
+        "Limit caveman to draft-only outputs for shared artifacts.",
+        "Review any generated git commits before merge.",
+        "requires-engineering: add automated fact-checking or schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ECC explicitly handles session retention, hooks, agent definitions, and security findings, while caveman touches session logs and memory files. That creates a retention and logging mismatch risk if the pair shares data classes with different policies. No residency or regulated-data claim is documented, so this is a compliance-process issue rather than a residency breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the same session logs or memory files are retained under both agents, differing retention settings can conflict.",
+        "IF security findings or notes contain regulated data, ECC\u2019s hooks or external APIs may preserve them longer than intended."
+      ],
+      "mitigations": [
+        "Align retention settings before sharing data.",
+        "Exclude regulated data from session logs and memory files.",
+        "Review hook outputs for sensitive content.",
+        "Document which agent owns deletion requests.",
+        "requires-engineering: implement unified retention and deletion controls across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:10a2d1358745d49114841835adca711e0264cdfff09aece9b48273cdc2a4b985",
+    "profile_b_hash": "sha256:5694b65397a1615f2e190897d5dd00e8ce3a820aa8bd1a3908a5d8b2c4aa5f65",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
