@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "social-auto-upload"
+  ],
+  "verdict_id": "v_2026-07-15_ms-swift__social-auto-upload_9fe650",
+  "generated_at": "2026-07-15T06:03:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.335,
+  "headline": "High risk of cascading errors and capability conflict: ms-swift can write files and run shell commands while social-auto-upload can upload content to social platforms, creating unsafe handoff paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented, but ms-swift can read/write files and use stdin/stdout, while social-auto-upload consumes local files for uploads. That makes manual or file-based handoff possible, so prompt injection via content in shared artifacts is plausible, though not default and the blast radius is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies ms-swift outputs into files that social-auto-upload later reads, injection becomes possible.",
+        "IF social-auto-upload is pointed at ms-swift-generated text or captions without sanitization, attacker-controlled instructions can propagate."
+      ],
+      "mitigations": [
+        "Keep a strict human review step before any file handoff.",
+        "Separate input/output directories for the two agents.",
+        "Strip instructions from generated text before upload.",
+        "Use a fixed template for captions and metadata.",
+        "requires-engineering: add provenance tagging between producer and uploader."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "ms-swift handles hub_token and sdk-token and can read/write local files; social-auto-upload touches account data and uploads media. The profiles do not show a shared workspace or shared OAuth principal, so leakage is not default, but file-based transfer of sensitive artifacts is plausible if the operator bridges them.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift writes secrets or logs into a directory later consumed by social-auto-upload, leakage can occur.",
+        "IF both agents are run under the same OS account with shared files, account data may be exposed."
+      ],
+      "mitigations": [
+        "Store secrets outside any shared working directory.",
+        "Rotate any token that appears in logs or outputs.",
+        "Use separate OS users for the two agents.",
+        "Review upload inputs for embedded credentials before posting.",
+        "requires-engineering: enforce workspace isolation with filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ms-swift has shell, subprocess, package install, and filesystem write capabilities; social-auto-upload has broad network egress and account-file concurrency. Even without overlapping write permissions on the same dir, a shared operator workflow can create conflicts over files, credentials, and upload state. Uncertainty about shared state escalates this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same working directory, file clobbering can occur.",
+        "IF the same account file is reused across multiple social-auto-upload instances, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign distinct working directories per agent.",
+        "Avoid concurrent runs against the same account file.",
+        "Lock shared files during upload steps.",
+        "Keep ms-swift outputs read-only for the uploader.",
+        "requires-engineering: add explicit coordination/locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can generate training outputs, logs, and configuration data; social-auto-upload can act on media/account data and broad network egress. If the uploader treats ms-swift-produced artifacts as authoritative captions, metadata, or upload inputs, errors can cascade into incorrect or harmful posts. The profiles do not show verification by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF social-auto-upload consumes ms-swift-generated text or metadata without validation, wrong content can be posted.",
+        "IF ms-swift outputs are used as configuration for uploads, a bad model output can trigger downstream mistakes."
+      ],
+      "mitigations": [
+        "Require manual approval before upload.",
+        "Validate captions and metadata against a schema.",
+        "Preview posts in a staging account first.",
+        "Reject outputs that contain unsupported fields.",
+        "requires-engineering: add automated verification of model-generated upload payloads."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and the evidence does not show a residency or certification mismatch. However, ms-swift handles hub_token/sdk-token and social-auto-upload handles account data, so compliance risk exists if those secrets or account artifacts are logged or retained together. The other agent is not separately cited because no cross-border or certification mismatch is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF logs from either agent retain tokens or account data beyond the operator's policy, retention mismatch can arise.",
+        "IF EU personal data is uploaded through social-auto-upload to a non-compliant destination, compliance obligations may be triggered."
+      ],
+      "mitigations": [
+        "Minimize logging of tokens and account data.",
+        "Delete temporary files after each run.",
+        "Use a retention policy for upload artifacts.",
+        "Confirm the destination platform's data handling terms.",
+        "requires-engineering: implement automated retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:24e9901778f233b303f615d2034598fe84de2e7b0529ec8b278d268595fa3dfb",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
