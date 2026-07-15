@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "argo-workflows",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-15_argo-workflows__lightagent_f35f78",
+  "generated_at": "2026-07-15T06:37:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.67,
+  "composite_score": 0.56,
+  "headline": "High risk of cascading errors and capability conflict: LightAgent can ingest and act on Argo outputs via MCP/streaming, while both expose overlapping networked workflow surfaces.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Argo Workflows can emit artifacts over REST/gRPC, and LightAgent can consume tool results via MCP/stdin-stdout with runtime hooks. That creates a plausible bridge where content from A is treated as instructions by B. No shared filesystem is documented, so this is not high, but the interaction exists in default-style integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent ingests Argo-produced artifacts or API responses as prompt text, injection becomes reachable.",
+        "IF an MCP tool or hook forwards A's output into B without provenance filtering, B may follow attacker-controlled instructions."
+      ],
+      "mitigations": [
+        "Add a provenance tag to all A\u2192B payloads.",
+        "Strip instruction-like text before passing artifacts to B.",
+        "Require a human review step for any A-generated content before B acts on it.",
+        "Disable automatic forwarding between REST/gRPC outputs and MCP inputs.",
+        "requires-engineering: implement content-type and provenance enforcement in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches artifacts and parameters, while B touches conversations, memory, trace data, tool calls/results, and workflow state, and B also handles API keys. If they share a workspace or B receives A outputs, sensitive material can flow into B's broader logging and memory surfaces. A's allowlisted egress reduces but does not eliminate leakage risk; B's broad egress increases it.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF A artifacts contain secrets or parameters and are forwarded into B's context, leakage is reachable.",
+        "IF B logs tool results or memory for the same workflow, copied A data may persist beyond the original task."
+      ],
+      "mitigations": [
+        "Keep A and B in separate workspaces.",
+        "Redact secrets from artifacts before any handoff.",
+        "Turn off or minimize B memory for shared workflows.",
+        "Review B logs for copied A outputs after each run.",
+        "requires-engineering: add per-field data-loss prevention on the A\u2192B boundary."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "A has allowlisted network egress and API access, while B has broad egress, browser use, subprocesses, and MCP. Their write surfaces are not fully specified, so I cannot claim high-severity shared-write conflict; uncertainty escalates to medium because overlapping networked action surfaces can still race on shared mutable resources or external APIs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same external API or workflow state, conflicting writes are possible.",
+        "IF the orchestrator runs multiple B instances alongside A without locking, race conditions can occur."
+      ],
+      "mitigations": [
+        "Serialize access to shared external resources.",
+        "Assign disjoint API credentials per agent.",
+        "Disable concurrent B instances for the same job.",
+        "Use optimistic-lock retries on shared state.",
+        "requires-engineering: add resource-level locking around mutable targets."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A produces workflow artifacts and parameters; B handles tool calls, results, workflow state, and provenance metadata. That makes it plausible that B will treat A's outputs as authoritative inputs and then act on them through tools or browser/subprocess paths. Because B has action-taking authority and the pairwise handoff is not documented as verified, the safer choice is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A-generated artifacts without validation, downstream actions can amplify A's mistakes.",
+        "IF A outputs malformed parameters and B executes them, errors can cascade into external side effects."
+      ],
+      "mitigations": [
+        "Require schema validation on all A outputs before B uses them.",
+        "Add a human approval gate for any B action derived from A.",
+        "Log and diff A outputs against expected templates.",
+        "Disable auto-execution of B tool calls from A-produced content.",
+        "requires-engineering: implement typed contracts between A and B."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A is open-source Argo Workflows with docs-only evidence and no explicit residency or retention claims; B is LightAgent with broad egress, memory, trace data, and secrets handling. The pair can therefore move data into a more persistent, less constrained processing environment, but the profiles do not prove a specific jurisdiction or certification mismatch, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from A is routed into B's memory or trace logs, retention/compliance obligations may be violated.",
+        "IF the deployment requires residency or deletion guarantees, B's broader processing surfaces may conflict with those requirements."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data through B.",
+        "Disable or minimize B retention for shared jobs.",
+        "Document the data flow from A to B.",
+        "Review whether B stores traces or memory for the workflow.",
+        "requires-engineering: add residency and retention controls at the orchestrator boundary."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a0cadeaf7262db8c57a556935999245469c99416e8300154b0ccac7fbd9702fd",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
