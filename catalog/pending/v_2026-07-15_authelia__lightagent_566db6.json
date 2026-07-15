@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-15_authelia__lightagent_566db6",
+  "generated_at": "2026-07-15T04:18:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High risk of data leakage and cascading errors: LightAgent\u2019s MCP/tooling can ingest Authelia-authenticated flows, while Authelia\u2019s broad egress and LightAgent\u2019s secret-handling create unsafe default pairings.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent exposes MCP over stdio/SSE and runtime hooks that can observe or replace lifecycle payloads, so it can ingest external content by default. Authelia provides OIDC/ForwardAuth and broad egress, but no direct shared channel is documented; the interaction is inferred, not proven. This is more than low because a shared integration path exists, but uncertainty keeps it below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Authelia outputs are forwarded into LightAgent MCP inputs without provenance checks",
+        "IF runtime hooks are configured to rewrite lifecycle payloads"
+      ],
+      "mitigations": [
+        "Add provenance tags to every Authelia-derived message before MCP ingestion",
+        "Disable payload-rewrite hooks for untrusted inputs",
+        "Route Authelia outputs through a read-only adapter",
+        "requires-engineering: add allowlisted message schemas between the agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "LightAgent explicitly handles user conversations, long-term memory, tool results, and secrets, while Authelia has broad network egress and OIDC/ForwardAuth APIs. If Authelia-authenticated data or tokens flow into LightAgent, LightAgent can retain or transmit them; the pair therefore creates a default leakage path with sensitive blast radius. Authelia\u2019s lack of touched data classes does not remove the risk because the bridge is on LightAgent\u2019s side.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Authelia-authenticated requests include secrets or identity claims",
+        "IF LightAgent stores those values in long-term memory or tool traces"
+      ],
+      "mitigations": [
+        "Redact tokens and claims before handing data to LightAgent",
+        "Turn off long-term memory for the paired workflow",
+        "Restrict LightAgent egress with an outbound allowlist",
+        "Separate Authelia admin data from LightAgent sessions",
+        "requires-engineering: add secret-scanning on all inter-agent messages"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Authelia has broad network egress and LightAgent has broad egress plus browsers, subprocesses, and MCP tool use, so both can act on shared mutable external resources if connected to the same backend. No locking or coordination primitive is documented for either agent, making write conflicts plausible in default multi-agent deployments. The overlap is broader than read-only, but not enough to justify high without a shared writable target being explicit.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable API or database",
+        "IF no external lock or lease is enforced"
+      ],
+      "mitigations": [
+        "Assign separate service accounts per agent",
+        "Use per-agent write namespaces",
+        "Add a mutex or lease around shared writes",
+        "Disable one agent\u2019s write path for the shared resource",
+        "requires-engineering: implement optimistic concurrency with conflict retries"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent is a tool-calling agent with MCP and runtime hooks, so it can act on upstream outputs; Authelia provides authentication/authorization context that downstream systems may treat as authoritative. If LightAgent consumes Authelia-derived claims or decisions without verification, errors can cascade into incorrect access or workflow actions. Because the pair can create an authority chain by default, the blast radius is potentially irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent treats Authelia outputs as authoritative identity or policy signals",
+        "IF downstream actions are executed from those signals without human review"
+      ],
+      "mitigations": [
+        "Require explicit verification before acting on Authelia-derived claims",
+        "Insert a human approval step for access-changing actions",
+        "Log and diff all claims before tool execution",
+        "Disable automatic action execution on first-pass outputs",
+        "requires-engineering: add signed assertions between the agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent explicitly handles long-term memory, trace data, tool results, and secrets, while Authelia is an authentication layer that may carry identity data through those flows. The profiles do not document residency or certification mismatches, so this is not high; however, differing retention and logging behavior on the same identity data class is plausible in default use. Authelia is the only clearly compliance-relevant source here, so it is the main citation.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF identity claims or secrets are logged into LightAgent traces or memory",
+        "IF retention settings differ between Authelia and LightAgent"
+      ],
+      "mitigations": [
+        "Minimize identity data sent to LightAgent",
+        "Set LightAgent retention to the shortest available window",
+        "Disable trace capture for authentication flows",
+        "Review export/delete handling for paired sessions",
+        "requires-engineering: align retention and deletion policies across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
