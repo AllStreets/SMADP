@@ -1,0 +1,222 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "haystack",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-07-16_haystack__kestra_007cc1",
+  "generated_at": "2026-07-16T04:12:25Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: Haystack can ingest instructions via MCP while Kestra can execute them into shell, filesystem, and external actions; data leakage and cascading errors are also material.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Haystack exposes MCP servers and REST APIs, so it can ingest external content; Kestra can consume workflow inputs and stdin/stdout and then act on them. The pair lacks documented provenance or isolation, so prompt-like content from Haystack can plausibly reach Kestra as trusted instructions. This is not proven by direct pair evidence, so uncertainty keeps it at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Haystack forwards retrieved text into an MCP tool call or workflow payload without sanitization, THEN Kestra may execute attacker-shaped instructions.",
+        "IF Kestra templates workflow steps from Haystack output without provenance checks, THEN instruction injection is possible."
+      ],
+      "mitigations": [
+        "Disable automatic handoff from Haystack outputs to Kestra triggers.",
+        "Add a strict allowlist for MCP tool names and payload schemas.",
+        "Insert a human review step before Kestra executes any Haystack-derived workflow.",
+        "Strip or escape instruction-like text before passing content across the boundary.",
+        "requires-engineering: add provenance tags and rejection rules for untrusted retrieved content."
+      ],
+      "framework_mappings": {
+        "nist_ai_rmf": [
+          "MAP-2.2",
+          "MEASURE-2.7"
+        ]
+      }
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Haystack has broad network egress and touches anonymous usage statistics; Kestra reads and writes files, logs, artifacts, databases, cloud storage, and messages, with broad egress too. If Haystack retrieves sensitive inputs and Kestra persists or forwards them, the pair can leak data across multiple stores. The profiles do not show a hard isolation boundary, so medium is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF Haystack is pointed at sensitive documents or internal indexes, THEN Kestra can persist those contents into logs, artifacts, or cloud storage.",
+        "IF Kestra sends workflow outputs to Slack, email, or external APIs, THEN Haystack-derived content may leave the local boundary."
+      ],
+      "mitigations": [
+        "Restrict Haystack to non-sensitive corpora.",
+        "Disable or redact Kestra logging for workflow payloads.",
+        "Route only hashed or summarized outputs between agents.",
+        "Limit Kestra destinations to approved internal endpoints.",
+        "requires-engineering: enforce data-class-based egress controls."
+      ],
+      "framework_mappings": {
+        "nist_ai_rmf": [
+          "MAP-2.4",
+          "GOV-3.1"
+        ]
+      }
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Haystack can call APIs and MCP servers, while Kestra can execute shell, spawn subprocesses, write files, and use elevated privileges including root and docker.sock. Both can reach broad network egress and mutable resources, so concurrent writes or overlapping actions can conflict and cause destructive races. The overlap is directly documented in both profiles, making high appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path, database, or external API without locking, THEN last-writer-wins conflicts can corrupt state.",
+        "IF Kestra runs with root or docker.sock while Haystack issues API-driven actions, THEN one agent can overwrite or invalidate the other's work."
+      ],
+      "mitigations": [
+        "Assign disjoint working directories and resource namespaces.",
+        "Serialize access with a lock or queue around shared resources.",
+        "Disable root and docker.sock unless explicitly required.",
+        "Use idempotent writes and optimistic concurrency checks.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ],
+      "framework_mappings": {
+        "nist_ai_rmf": [
+          "MAP-2.3",
+          "MEASURE-2.1"
+        ]
+      }
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Haystack produces retrieved or generated content, and Kestra is an automation orchestrator that can execute shell, cloud, messaging, and notification actions. If Kestra treats Haystack output as authoritative, a bad retrieval or hallucination can cascade into emails, deployments, or data movement. The downstream action authority makes the blast radius potentially irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses Haystack output as a workflow parameter or decision input without verification, THEN incorrect content can trigger downstream actions.",
+        "IF Haystack returns stale or fabricated facts and Kestra sends notifications or runs jobs from them, THEN the error propagates operationally."
+      ],
+      "mitigations": [
+        "Require schema validation on all Haystack-to-Kestra payloads.",
+        "Add a verification step before any Kestra action that changes state.",
+        "Limit Haystack outputs to suggestions, not executable directives.",
+        "Log and review all automated actions triggered by model output.",
+        "requires-engineering: implement confidence-gated execution policies."
+      ],
+      "framework_mappings": {
+        "nist_ai_rmf": [
+          "MAP-2.5",
+          "MEASURE-2.4"
+        ]
+      }
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, and neither shows PHI, EU-only residency, or a certification mismatch. Haystack touches anonymous usage statistics, while Kestra handles workflow and operational data, so the documented compliance gap is limited. Because no residency or retention conflict is evidenced, only a low residual risk remains.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF either agent is configured to process regulated data classes not listed in the profiles, THEN compliance review is required.",
+        "IF Kestra is used to route data to a jurisdictionally restricted service, THEN residency obligations may change."
+      ],
+      "mitigations": [
+        "Keep regulated data out of both agents.",
+        "Document retention settings for Kestra logs and artifacts.",
+        "Review destination services before enabling exports.",
+        "Add a data-class checklist for each workflow.",
+        "requires-engineering: enforce residency-aware routing policies."
+      ],
+      "framework_mappings": {
+        "nist_ai_rmf": [
+          "GOV-4.1"
+        ]
+      }
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-2.2",
+      "MAP-2.3",
+      "MAP-2.4",
+      "MAP-2.5",
+      "MEASURE-2.1",
+      "MEASURE-2.4",
+      "MEASURE-2.7",
+      "GOV-3.1",
+      "GOV-4.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:39a712547c3e10c933938244688af26e6669963233b9a8dee5ee66d84559a6bf",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
