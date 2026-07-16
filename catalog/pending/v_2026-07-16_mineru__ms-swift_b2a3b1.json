@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mineru",
+    "ms-swift"
+  ],
+  "verdict_id": "v_2026-07-16_mineru__ms-swift_b2a3b1",
+  "generated_at": "2026-07-16T04:06:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk write/conflict and cascading-error pathways exist; prompt-injection and leakage are lower but nonzero due to shared file/MCP surfaces.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "MinerU can use an MCP server and reads local document inputs; ms-swift can consume files and stdin/stdout. A shared file or MCP bridge could let attacker-controlled document text influence downstream instructions, though no direct shared channel is documented. Uncertainty about the exact orchestration escalates above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF the orchestrator passes MinerU-extracted text into ms-swift prompts or stdin without sanitization, injection is plausible.",
+        "IF both agents share a workspace or MCP bridge, document content can cross trust boundaries."
+      ],
+      "mitigations": [
+        "Disable automatic prompting from extracted text.",
+        "Insert a strict delimiter/schema wrapper around MinerU output.",
+        "Review any MCP route that forwards document text.",
+        "Use a separate workspace per agent.",
+        "requires-engineering: add provenance tags to all cross-agent payloads."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "MinerU touches PDFs, DOCX, PPTX, XLSX, and OCR text; ms-swift reads files and handles hub/sdk tokens plus logs and checkpoints. If they share a workspace, sensitive document content can be copied into training outputs or logs. The pairwise leakage path is inferred rather than directly documented, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory, document contents can be exposed through ms-swift logs or outputs.",
+        "IF MinerU extracts sensitive text and ms-swift ingests it for training or evaluation, leakage occurs."
+      ],
+      "mitigations": [
+        "Use separate directories for inputs and outputs.",
+        "Redact secrets before handing text to ms-swift.",
+        "Turn off verbose logging.",
+        "Restrict file permissions on shared artifacts.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "MinerU has allowlisted network egress and MCP-based I/O, while ms-swift has shell, subprocess, install, read/write filesystem, and API access. Both can mutate files in overlapping workspaces, and ms-swift can create additional processes that race with MinerU. With no locking or shared-state guarantees, default concurrent use is dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory, concurrent writes can clobber outputs.",
+        "IF ms-swift installs packages or spawns subprocesses while MinerU is running, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint working directories.",
+        "Run only one agent at a time on shared artifacts.",
+        "Disable package installation during shared runs.",
+        "Use file locks around mutable outputs.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "MinerU produces extracted text, tables, and OCR output that ms-swift can consume via files or stdin/stdout. ms-swift can then act through CLI/Python/API without an explicit verification step in the profiles. That makes A's extraction errors likely to cascade into B's downstream actions, and uncertainty about safeguards pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF MinerU output is used as authoritative input to ms-swift, extraction errors propagate.",
+        "IF ms-swift triggers training, evaluation, or API actions from that output, downstream mistakes become operational."
+      ],
+      "mitigations": [
+        "Require human review before B acts on A output.",
+        "Add validation checks for extracted tables and OCR text.",
+        "Compare against source documents for critical fields.",
+        "Log provenance for every derived artifact.",
+        "requires-engineering: implement a verification gate between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "MinerU is documented as private/offline, while ms-swift explicitly handles hub tokens and can call external model APIs. If regulated document data from MinerU flows into ms-swift, residency and retention obligations may diverge. The profiles do not prove a specific jurisdiction mismatch, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated documents processed by MinerU are forwarded to ms-swift APIs, external retention policies apply.",
+        "IF the deployment requires offline-only handling, ms-swift's API use violates that requirement."
+      ],
+      "mitigations": [
+        "Keep regulated data out of ms-swift API calls.",
+        "Use local-only endpoints where possible.",
+        "Separate retention policies by data class.",
+        "Review token handling and logs.",
+        "requires-engineering: document residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d46444da1c6ab192bf5d8c6721200103334cbfae893d1a7ddfe56c465d237e43",
+    "profile_b_hash": "sha256:8b55891618aa6e5b0a45bb24d6296352f5f263e479fb39dbf604041793a159aa",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
