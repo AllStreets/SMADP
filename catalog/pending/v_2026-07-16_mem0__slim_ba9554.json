@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "mem0",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-16_mem0__slim_ba9554",
+  "generated_at": "2026-07-16T05:06:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.45,
+  "headline": "High: slim can write and exfiltrate container artifacts while mem0 has no documented I/O bridge, so the main risks are data leakage and capability conflict if they are co-located.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "none",
+      "rationale": "No shared communication channel is documented. mem0 shows no I/O surfaces or network egress, while slim uses stdin/stdout, filesystem, and Docker APIs but no clipboard or MCP bridge to mem0. Without a bridge, prompt injection from one into the other is not plausible from the profiles alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF an orchestrator copies slim stdout into mem0 prompts, injection becomes possible.",
+        "IF a shared filesystem or message queue is added between them, re-evaluate for instruction smuggling."
+      ],
+      "mitigations": [
+        "Keep the agents on separate workspaces.",
+        "Do not pipe slim output directly into mem0 prompts.",
+        "Add provenance tags to any copied text.",
+        "requires-engineering: insert a sanitizer between slim output and mem0 input."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "mem0 is a knowledge-management agent with no documented egress, but slim reads files, environment variables, certificate private keys, and has broad network egress. If they share a workspace or credentials, slim can expose sensitive artifacts that mem0 may retain or surface later. The pairwise leakage path is inferred, not directly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory, slim can read artifacts mem0 may later summarize.",
+        "IF registry credentials or private keys are present in slim's scope, they can be exposed through downstream outputs."
+      ],
+      "mitigations": [
+        "Separate sensitive files from shared workspaces.",
+        "Redact secrets before handing slim outputs to mem0.",
+        "Run slim on least-privilege inputs only.",
+        "Review mem0 memory entries for secret-like strings.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "slim has write_filesystem, execute_shell, spawn_subprocesses, and broad network egress; mem0's profile does not show write or network capabilities, so direct write-write conflict is not documented. However, if both are pointed at the same mutable workspace, slim can overwrite artifacts that mem0 indexes or relies on, creating coordination risk. Uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, slim can clobber files mem0 expects to remain stable.",
+        "IF mem0 is extended with write access later, the conflict surface increases."
+      ],
+      "mitigations": [
+        "Use separate output directories.",
+        "Mount mem0 data read-only for slim.",
+        "Serialize access to any shared workspace.",
+        "Check for file locks before running slim.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "mem0 can store and later reuse slim-generated summaries, while slim produces command-driven analysis of container artifacts. If mem0 treats slim output as authoritative, errors can cascade into repeated bad memory or downstream decisions. The profiles do not show explicit verification steps, so the interaction is plausible but not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF mem0 ingests slim output without validation, incorrect findings can persist in memory.",
+        "IF downstream automation consumes mem0 memories, a single slim error can propagate."
+      ],
+      "mitigations": [
+        "Require human review before saving slim outputs.",
+        "Store source artifacts alongside any mem0 memory entry.",
+        "Mark slim-derived memories as untrusted.",
+        "Compare slim claims against original files.",
+        "requires-engineering: add verification gates before memory writes."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly handles certificate private keys, environment variables, and registry credentials, while mem0 is a memory system with no documented residency or retention controls in the profile. If the pair is used on regulated secrets, mem0 may retain data longer than intended. The other agent is cited because the compliance risk arises from their combined handling of the same sensitive material.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets are processed through slim and then stored in mem0, retention mismatch becomes relevant.",
+        "IF mem0 is configured to persist memories indefinitely, deletion obligations may be harder to satisfy."
+      ],
+      "mitigations": [
+        "Avoid storing secrets in mem0.",
+        "Tag sensitive memories for deletion.",
+        "Limit slim inputs to non-regulated artifacts.",
+        "Review retention settings before use.",
+        "requires-engineering: implement data-class-aware retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:62e09873198b56a5fee1edeb5d0e0e157d80ffa5915562ad63392182cae54d41",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
