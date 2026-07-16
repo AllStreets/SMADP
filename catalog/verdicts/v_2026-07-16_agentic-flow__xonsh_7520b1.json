@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-16_agentic-flow__xonsh_7520b1",
+  "generated_at": "2026-07-16T00:26:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.53,
+  "headline": "High risk of prompt-injection and cascading errors from shared stdin/stdout and shell-based handoff; data leakage and compliance risks are lower but present.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use stdin/stdout and MCP, while agent_b reads/writes the filesystem and also uses stdin/stdout. That creates a plausible handoff path where content from agent_a is treated as instructions by agent_b. The pair lacks explicit provenance or isolation controls, so the interaction is possible in default use, though not as directly dangerous as a shared MCP server.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is piped into agent_b input without sanitization, injection is possible.",
+        "IF a shared file or terminal transcript is used as the bridge, agent_b may follow attacker-controlled instructions."
+      ],
+      "mitigations": [
+        "Add a manual review step before passing agent_a output to agent_b.",
+        "Use separate files per agent and avoid shared transcripts.",
+        "Strip imperative text from agent_a outputs before reuse.",
+        "Disable MCP handoff for untrusted content.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches repository metadata, code, task prompts, and secrets-related signatures, while agent_b can read the filesystem and has broad network egress. If they share a workspace, agent_b can access material produced by agent_a and potentially transmit it onward. The profiles do not prove a shared workspace, so this is not high, but the leakage pathway is credible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF agent_a writes sensitive artifacts into a directory readable by agent_b, leakage is possible.",
+        "IF agent_b is pointed at the same workspace and uploads file contents, exfiltration risk increases."
+      ],
+      "mitigations": [
+        "Keep agents in separate workspaces.",
+        "Move secrets and signatures out of shared directories.",
+        "Restrict agent_b network access during shared tasks.",
+        "Review files before agent_b reads them.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "agent_a can execute shell, install packages, modify git state, and spawn subprocesses; agent_b can execute shell, write the filesystem, and spawn subprocesses. Both support multiple instances only for agent_a, while agent_b does not, so concurrent writes to the same repo or workspace can race and corrupt state. The overlap is broad enough to make default shared use dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same repository directory, git and file races can occur.",
+        "IF agent_a installs packages while agent_b writes files concurrently, environment drift can break tasks."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Serialize write operations with a lock file.",
+        "Avoid concurrent git operations.",
+        "Pin package installs to a single operator-controlled step.",
+        "requires-engineering: add workspace-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a is designed for hooks/workers and background analysis, and agent_b runs shell commands and Python expressions. If agent_b consumes agent_a output as authoritative, mistakes can cascade into incorrect shell actions or file edits. The profiles do not show explicit verification gates, so the pathway exists, but the downstream blast radius is not clearly irreversible by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a summaries without validation, errors can propagate.",
+        "IF agent_a emits incorrect build or analysis guidance, agent_b may act on it directly."
+      ],
+      "mitigations": [
+        "Require a human check before agent_b acts on agent_a output.",
+        "Ask agent_b to verify critical claims against source files.",
+        "Limit agent_b to read-only mode for the first pass.",
+        "Log agent_a outputs separately from executable commands.",
+        "requires-engineering: add structured validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles task prompts and repository metadata, while agent_b handles filesystem contents, configuration, and environment variables. Both are open-source and docs-only, and no residency or regulated-data mismatch is documented. The main compliance concern is a generic retention/logging mismatch if shared data includes sensitive material, which is a smaller, configuration-dependent risk.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared workspace, retention and logging policies must be aligned.",
+        "IF one agent persists outputs longer than the other, deletion/export handling can diverge."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in the shared workspace.",
+        "Check retention settings before running both agents.",
+        "Delete temporary artifacts after each run.",
+        "Document which agent stores logs.",
+        "requires-engineering: align retention and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
