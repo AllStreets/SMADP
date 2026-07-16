@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-07-16_airbyte__pipecat_7cc9e3",
+  "generated_at": "2026-07-16T03:45:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High: Pipecat\u2019s shared-bus, multi-instance defaults plus broad egress create interaction risks; Airbyte adds data-moving pathways that can amplify leakage and cascading errors.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Pipecat explicitly uses a shared bus and supports multiple instances, so one instance\u2019s outputs can reach another without isolation. Airbyte can move business data through APIs and broad network egress, making it plausible that content from one side is treated as trusted input by the other. No direct prompt-parser evidence is present, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte outputs are routed onto Pipecat's shared bus",
+        "IF Pipecat consumes bus messages as instructions or tool directives",
+        "IF either agent ingests file or message content without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct buses or queues",
+        "Add provenance tags to every cross-agent message",
+        "Reject instruction-like content from Airbyte outputs",
+        "Disable automatic consumption of shared-bus messages",
+        "requires-engineering: add message signing and verification"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data and has broad network egress; Pipecat touches text, conversation state, audio/video/images, and can call many third-party model APIs. If they share a workspace or bus, sensitive business data can flow into Pipecat outputs or external services. The profiles do not prove a shared filesystem, so this is medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte data is forwarded into Pipecat prompts or transcripts",
+        "IF Pipecat is configured to use any third-party STT/LLM/TTS service",
+        "IF both agents share a workspace, bus, or logs containing business data"
+      ],
+      "mitigations": [
+        "Route sensitive data through a redaction step first",
+        "Disable third-party model backends for sensitive sessions",
+        "Store Airbyte outputs in a separate workspace",
+        "Turn off shared-bus persistence for transcripts",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Airbyte can write via its API and broad egress, while Pipecat supports multiple instances with shared bus state. That creates overlapping mutable-state risk if both act on the same downstream resource or queue. The profiles do not show unrestricted filesystem writes or git access, so the stronger high-severity indicator is not met.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same API-backed resource",
+        "IF shared-bus messages mutate shared conversation or job state",
+        "IF no locking or idempotency keys are used"
+      ],
+      "mitigations": [
+        "Assign separate resource namespaces",
+        "Add idempotency keys to writes",
+        "Serialize writes through one coordinator",
+        "Pause one agent during critical updates",
+        "requires-engineering: implement distributed locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Pipecat can consume text and conversation state from shared bus inputs, and Airbyte can generate business-data outputs that may be treated as authoritative downstream. If Pipecat acts on Airbyte-produced facts without verification, errors can cascade into external model calls or user-facing responses. Because this is a default interaction pattern risk and can propagate incorrect actions, high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat uses Airbyte outputs as source-of-truth text",
+        "IF downstream actions are triggered from those outputs",
+        "IF no verification or human review step is inserted"
+      ],
+      "mitigations": [
+        "Require a validation step before Pipecat consumes Airbyte output",
+        "Mark Airbyte-derived fields as untrusted",
+        "Log and review all downstream actions",
+        "Limit Pipecat to read-only summarization",
+        "requires-engineering: add schema validation and provenance checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Airbyte handles business data and Pipecat handles conversation state plus analytics/metrics, so the pair can mix regulated and operational data classes. The profiles do not specify residency, certifications, or retention policies, so a concrete mismatch is not proven; however, the shared handling surface makes policy divergence plausible and medium severity fits the rubric.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF business data is routed into Pipecat transcripts or analytics",
+        "IF retention settings differ between Airbyte and Pipecat backends",
+        "IF regulated data is processed by a third-party Pipecat service without a DPA"
+      ],
+      "mitigations": [
+        "Classify and segregate regulated fields",
+        "Disable analytics on sensitive sessions",
+        "Align retention windows across both systems",
+        "Review vendor DPAs before enabling external services",
+        "requires-engineering: implement residency-aware routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
