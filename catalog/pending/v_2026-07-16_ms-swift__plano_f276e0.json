@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "plano"
+  ],
+  "verdict_id": "v_2026-07-16_ms-swift__plano_f276e0",
+  "generated_at": "2026-07-16T01:10:59Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.425,
+  "headline": "Medium risk: shared file-based workflows can leak or corrupt data; no direct prompt-injection bridge is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented, but agent_a reads/writes files and stdin/stdout while agent_b consumes an OpenAI-compatible chat endpoint and out-of-process dataplane. A prompt-injection bridge is therefore only plausible through manual file handoff or operator-mediated copying, not by default. The pairwise pathway is weaker than data leakage or conflict.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies agent_a output into agent_b prompts without sanitization, injection becomes possible.",
+        "IF a shared file or ticket queue is used as an instruction channel, agent_b may ingest attacker-controlled text."
+      ],
+      "mitigations": [
+        "Use a strict prompt template that strips instructions from copied text.",
+        "Keep agent_a outputs and agent_b prompts in separate files.",
+        "Add a human review step before forwarding content.",
+        "requires-engineering: add provenance tags to all handoff text."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches datasets, checkpoints, logs, and secrets such as hub_token/sdk-token, while agent_b has broad network egress and ingests logs/metrics/traces. Even without a documented shared workspace, a file-based handoff or shared config can move sensitive content from agent_a into agent_b and then off-box. Uncertainty about the exact workspace should escalate to medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_a outputs logs, checkpoints, or configs into a shared location, agent_b can read them.",
+        "IF agent_b forwards received context to its upstream API, sensitive agent_a content may leave the local boundary."
+      ],
+      "mitigations": [
+        "Do not place agent_a artifacts in any directory agent_b can read.",
+        "Redact secrets from agent_a logs before handoff.",
+        "Disable forwarding of raw context from agent_b where possible.",
+        "Review shared config files for embedded tokens.",
+        "requires-engineering: enforce workspace isolation between the agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can write the filesystem, execute shell commands, and spawn subprocesses; agent_b has broad network egress and reads config files. They do not both advertise unrestricted write to the same directory, so high is not justified. Still, overlapping mutable access through shared files or configs can create racey overwrites or inconsistent state, especially because neither profile states locking or multi-instance support.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same config.yaml or workspace path, writes can conflict.",
+        "IF agent_a mutates files while agent_b reads them concurrently, stale or partial state may be consumed."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes with a simple operator checklist.",
+        "Make shared files read-only for one agent.",
+        "Compare file hashes before and after handoff.",
+        "requires-engineering: add file locks or transactional updates."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can generate training outputs, logs, and configuration data, and agent_b is a routing/gateway-style agent that can act on received text via chat completions. If agent_b treats agent_a output as authoritative, errors can cascade into downstream decisions or routing. The profiles do not prove automatic action-taking, so medium is the right escalation for an unverified but plausible pipeline.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a outputs as policy, prompts, or routing rules without verification, errors propagate.",
+        "IF agent_a emits malformed configs or summaries that agent_b forwards unchanged, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require a human review of agent_a outputs before agent_b uses them.",
+        "Add schema validation on handoff files.",
+        "Keep a rollback copy of prior configs.",
+        "Log provenance for every forwarded artifact.",
+        "requires-engineering: add automated consistency checks between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and docs-only, but agent_a handles hub_token/sdk-token and broad training artifacts while agent_b handles logs/metrics/traces with broad egress. No residency or regulated-data mismatch is documented, so only a limited compliance gap is visible: sensitive operational data could be retained or transmitted differently across the pair. The other agent is cited because the risk arises from their combined handling and transport patterns.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated or secret-bearing data is placed into shared logs, retention and transmission policies may diverge.",
+        "IF agent_b forwards traces containing agent_a secrets to an external API, compliance obligations increase."
+      ],
+      "mitigations": [
+        "Avoid placing secrets in shared logs.",
+        "Set short retention on any shared artifacts.",
+        "Review outbound destinations for agent_b.",
+        "Tag regulated data before handoff.",
+        "requires-engineering: document and enforce a common retention policy."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:979759bf40dd4f78ede6a4cf1f3681016308c7d5e590aa41df300606915f666b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
