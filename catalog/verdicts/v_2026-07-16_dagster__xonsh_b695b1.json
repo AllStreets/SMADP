@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-16_dagster__xonsh_b695b1",
+  "generated_at": "2026-07-16T02:27:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.305,
+  "headline": "High risk of cascading error and capability conflict: xonsh can execute shell and write files while dagster is a non-runnable orchestrator with no direct I/O, limiting injection and leakage.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Dagster has no clipboard, stdin/stdout, filesystem, or MCP surfaces, so it cannot directly ingest xonsh output. Xonsh does expose stdin/stdout and filesystem access, but the pair lacks a documented shared channel. The only plausible bridge is manual copy-paste or external orchestration, so injection risk is limited.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF an operator manually copies xonsh output into dagster task definitions or logs, prompt injection becomes possible.",
+        "IF a shared filesystem or message queue is introduced outside these profiles, the risk increases."
+      ],
+      "mitigations": [
+        "Keep dagster and xonsh in separate terminals with no copy-paste workflow.",
+        "Disable any automation that forwards xonsh stdout into dagster configs.",
+        "Use a human review step before pasting shell output into orchestration assets.",
+        "requires-engineering: add provenance tagging for any text passed between tools."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "Dagster touches no data classes and has no filesystem or network egress, while xonsh can read and write local files and broad network egress. There is no documented shared workspace or shared OAuth principal, so leakage is not inherent to the pair. The main risk appears only if both are pointed at the same sensitive directory.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are given access to the same sensitive filesystem path, xonsh can expose contents that dagster may later surface in logs or artifacts.",
+        "IF dagster is configured to ingest files from xonsh-managed directories, leakage risk increases."
+      ],
+      "mitigations": [
+        "Restrict xonsh to a non-sensitive working directory.",
+        "Do not mount secrets or PHI into the shared workspace.",
+        "Review dagster logs for accidental file-content capture.",
+        "Separate credentials and environment files from any shared path.",
+        "requires-engineering: enforce directory-level access controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Xonsh can execute shell commands, spawn subprocesses, read/write the filesystem, and use broad network egress. Dagster is non-runnable and shows no direct write or shell capability, so there is no symmetric conflict. However, if dagster-managed workflows and xonsh operate on the same files or artifacts, xonsh can race or overwrite outputs in default local setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same output directory, xonsh can overwrite files produced by dagster workflows.",
+        "IF dagster schedules jobs that assume exclusive file ownership, xonsh can create conflicts."
+      ],
+      "mitigations": [
+        "Assign separate output directories to each agent.",
+        "Use read-only mounts for dagster inputs.",
+        "Avoid concurrent writes to the same path.",
+        "Check file timestamps before overwriting.",
+        "requires-engineering: add locking or transactional writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Dagster is an orchestrator and xonsh can execute shell commands, so a workflow can easily pass dagster-produced artifacts into xonsh for execution or transformation. Because xonsh treats shell commands as first-class and dagster has no built-in verification surface here, erroneous or malicious upstream output can cascade into downstream actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF dagster output is fed directly into xonsh commands without validation, incorrect instructions can be executed.",
+        "IF xonsh scripts consume dagster-generated configs as authoritative, errors can propagate downstream."
+      ],
+      "mitigations": [
+        "Insert a validation step before xonsh execution.",
+        "Require allowlisted commands only.",
+        "Review generated configs before running them.",
+        "Log and diff dagster outputs before handoff.",
+        "requires-engineering: add schema validation between orchestration and shell execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "none",
+      "rationale": "No compliance mismatch is evidenced in the profiles: both agents are open-source, unverified, and no residency, certification, retention, or PHI handling claims are present. Dagster touches no data classes, and xonsh lists general local data types only. Without a documented regulated-data flow, a compliance violation pathway is not established.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as PHI or EU PII is introduced into a shared workflow, compliance review is required.",
+        "IF either agent is later deployed under a residency or retention policy not shown here, reassess."
+      ],
+      "mitigations": [
+        "Document the data classes each workflow may touch.",
+        "Keep regulated data out of this pair unless reviewed.",
+        "Record retention and residency settings before deployment."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
