@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "dbt-core"
+  ],
+  "verdict_id": "v_2026-07-16_agentic-flow__dbt-core_24c484",
+  "generated_at": "2026-07-16T04:34:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.515,
+  "headline": "High: shared write-capable agent plus dbt can create unsafe downstream actions and data-handling mismatches; prompt-injection and leakage are lower-confidence due to limited pairwise evidence.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP, stdin/stdout, shell, and subprocesses, so it can ingest untrusted content; agent_b (dbt-core) consumes warehouse-facing inputs and can be driven by upstream artifacts. No shared channel is explicitly documented, so this is inferred and uncertainty pushes severity up from low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF agent_a forwards raw model output into an MCP tool or stdin pipeline that agent_b later parses as instructions",
+        "IF a shared workspace or message queue is introduced between agent_a and agent_b"
+      ],
+      "mitigations": [
+        "Disable automatic parsing of agent_a outputs as commands",
+        "Add a strict allowlist for MCP tool arguments",
+        "Insert a human review step before dbt execution",
+        "Separate the agents onto distinct workspaces",
+        "requires-engineering: add provenance tags to all inter-agent messages"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches code, repository metadata, task prompts, and performance metrics, while agent_b touches data warehouse data. Both have allowlisted network egress, so if they share a workspace or credentials, sensitive material can flow from A into B or vice versa. The exact bridge is undocumented, so medium is the higher safe choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and agent_b share a filesystem, repo checkout, or credential store",
+        "IF either agent uploads file contents or query artifacts to its backend by default"
+      ],
+      "mitigations": [
+        "Keep separate service accounts and credentials",
+        "Mount separate workspaces for each agent",
+        "Redact prompts and repository metadata before handoff",
+        "Review outbound allowlists for both agents",
+        "requires-engineering: enforce per-agent data-loss-prevention policies"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can execute shell, install packages, modify git state, and spawn subprocesses; agent_b is a dbt-core workflow that commonly operates on shared warehouse resources. Overlap on mutable resources is plausible, but the profiles do not prove a shared directory or locking failure, so uncertainty keeps this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same git repository or working directory",
+        "IF dbt runs against artifacts that agent_a mutates concurrently"
+      ],
+      "mitigations": [
+        "Run the agents in separate checkouts",
+        "Serialize writes to git and build artifacts",
+        "Use file locks around shared outputs",
+        "Limit agent_a to read-only access during dbt runs",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a can generate or transform task artifacts, and agent_b can act on warehouse-facing inputs; if B treats A's output as authoritative, mistakes can cascade into incorrect models or production data changes. Because no verification or provenance controls are documented, the safer severity is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a-produced SQL, manifests, or prompts without validation",
+        "IF agent_a is allowed to alter dbt inputs that feed production runs"
+      ],
+      "mitigations": [
+        "Require schema validation on all handoffs",
+        "Add a diff review before dbt execution",
+        "Block direct promotion from agent_a output to production",
+        "Log and compare expected vs actual warehouse changes",
+        "requires-engineering: add signed artifacts and provenance checks"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles repository metadata and task prompts, while agent_b handles data warehouse data; the profiles do not show a residency or regulated-data mismatch. Because no compliance controls are documented for either agent, only a small documented-gap risk remains, so low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into the shared warehouse path without a DPA or retention policy",
+        "IF agent_a is used to process data subject to residency rules"
+      ],
+      "mitigations": [
+        "Classify data before handoff",
+        "Confirm retention settings for warehouse outputs",
+        "Avoid placing regulated data in agent_a prompts",
+        "Document the data-processing boundary",
+        "requires-engineering: add residency and retention enforcement"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:f7fa37a39c5443a60bcf72065bf3f8e5dd493098630cabbddceb612fd3e4a269",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
