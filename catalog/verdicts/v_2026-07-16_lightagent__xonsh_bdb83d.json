@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-16_lightagent__xonsh_bdb83d",
+  "generated_at": "2026-07-16T03:06:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.62,
+  "headline": "High risk of prompt-injection and data leakage via LightAgent\u2019s MCP/browser/network surfaces into xonsh\u2019s writable shell/filesystem context.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "LightAgent can use MCP, browsers, and broad network egress, so it may ingest untrusted web or tool content. xonsh executes shell commands and Python expressions and can read/write the filesystem, making it a plausible downstream parser of attacker-controlled text. The pair lacks documented provenance isolation, so injected instructions can cross the boundary.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent forwards web or MCP content into xonsh stdin/stdout or files without provenance tags, injection is plausible.",
+        "IF xonsh evaluates LightAgent-produced text as shell/Python input, attacker instructions can execute."
+      ],
+      "mitigations": [
+        "Disable direct text handoff; require structured JSON between agents.",
+        "Add a provenance prefix to every LightAgent output before xonsh reads it.",
+        "Run xonsh with a read-only workspace for shared inputs.",
+        "Block browser-sourced content from reaching shell execution paths.",
+        "requires-engineering: add content-sanitization and allowlist parsing at the orchestrator boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "LightAgent touches conversations, long-term memory, tool results, and secrets, while xonsh reads and writes filesystem contents and environment variables. Both have broad network egress, so sensitive data can move from LightAgent into xonsh outputs or external destinations. The shared data classes and writable filesystem make leakage plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent stores secrets or memory in files that xonsh can read, leakage can occur.",
+        "IF xonsh forwards shared files or environment variables to remote services, sensitive data can exfiltrate."
+      ],
+      "mitigations": [
+        "Keep secrets out of shared directories.",
+        "Mount a separate workspace for xonsh with least-privilege file access.",
+        "Rotate any API keys used by LightAgent after shared runs.",
+        "Disable network egress for xonsh during shared tasks.",
+        "requires-engineering: enforce per-agent storage isolation and DLP scanning."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "LightAgent supports multiple instances and MCP-driven tool use, while xonsh can spawn subprocesses and write the filesystem but does not support multiple instances. There is overlap on mutable local resources, yet xonsh lacks git modification and the profiles do not show a shared lock manager. This creates conflict risk, but not the highest-write collision class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory concurrently, file clobbering is possible.",
+        "IF LightAgent issues MCP actions while xonsh edits the same workspace, race conditions can corrupt state."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Serialize writes with a simple file lock.",
+        "Make one agent read-only for shared artifacts.",
+        "Avoid concurrent runs on the same repo or notebook.",
+        "requires-engineering: add orchestrator-level locking for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LightAgent can generate tool results and provenance metadata, and xonsh can execute shell commands and manipulate files. If xonsh treats LightAgent output as authoritative, errors can cascade into incorrect commands or file changes. The pair has action-taking authority, but the profiles do not prove fully automated commit/email-style downstream actions, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes LightAgent output without verification, mistaken facts can become shell actions.",
+        "IF LightAgent emits malformed tool results, xonsh may propagate them into files or commands."
+      ],
+      "mitigations": [
+        "Require human review before xonsh executes LightAgent-derived commands.",
+        "Compare LightAgent outputs against source files before acting.",
+        "Log and diff every generated command.",
+        "Use a dry-run mode for shared workflows.",
+        "requires-engineering: add schema validation for inter-agent handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent handles long-term memory, conversations, and secrets, while xonsh handles filesystem contents and environment variables. The profiles do not show explicit residency or certification mismatches, so there is no proven breach. However, shared handling of sensitive data with different storage surfaces creates a compliance gap risk, especially for retention and subject-rights workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in shared files, retention and deletion obligations may diverge.",
+        "IF LightAgent memory is copied into xonsh-managed files, subject-rights handling can become inconsistent."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workspaces.",
+        "Document which agent stores which data class.",
+        "Set short retention on shared artifacts.",
+        "Purge temporary files after each run.",
+        "requires-engineering: map data flows to residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
