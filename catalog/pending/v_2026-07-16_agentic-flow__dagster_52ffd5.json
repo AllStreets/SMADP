@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "dagster"
+  ],
+  "verdict_id": "v_2026-07-16_agentic-flow__dagster_52ffd5",
+  "generated_at": "2026-07-16T02:55:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.365,
+  "headline": "High-risk write-capable agent paired with a read-only orchestrator creates medium prompt-injection and cascading-error exposure, while direct data leakage and capability conflict are limited by B's no-write/no-network defaults.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "agent_a can use MCP, stdin/stdout, shell, and subprocesses, so it can emit content that agent_b may consume if orchestrated together. agent_b has no clipboard/files/MCP surfaces, which lowers direct bridging risk, but the pair still has a plausible instruction-smuggling path through shared task outputs or logs. Uncertainty about the exact orchestration raises severity above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a output as instructions or prompts, injection risk is active.",
+        "IF the two agents are connected through a shared stdout/log channel, the pathway exists."
+      ],
+      "mitigations": [
+        "Disable free-form instruction parsing on agent_b inputs.",
+        "Add a strict output schema between agents.",
+        "Strip code fences and imperative verbs before forwarding text.",
+        "Route agent_a output through a human review step for prompt-like content.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "agent_a touches code, repository metadata, and task prompts, but agent_b has no filesystem read, no network egress, and no declared data classes. That makes direct exfiltration from B unlikely and limits the pairwise leakage blast radius. The main residual risk is accidental disclosure through copied text, not autonomous transfer.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF sensitive repository content is manually copied into agent_b prompts, leakage can occur.",
+        "IF agent_b is later given filesystem or network access, the risk increases."
+      ],
+      "mitigations": [
+        "Avoid pasting secrets or prompts into agent_b.",
+        "Keep agent_b isolated from shared workspaces.",
+        "Redact repository metadata before handoff.",
+        "Confirm agent_b remains network-disabled.",
+        "requires-engineering: add DLP scanning on inter-agent text."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can modify git state and write via shell/subprocesses, while agent_b is read-only and non-networked. That reduces direct write-write contention, but if both are pointed at the same repository, agent_a can still race with agent_b's reads and produce inconsistent state. The lack of locking details makes the safer choice medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git checkout, state races are possible.",
+        "IF agent_a writes while agent_b reads stale artifacts, conflicts can surface."
+      ],
+      "mitigations": [
+        "Assign separate working directories.",
+        "Freeze git writes while agent_b is reading.",
+        "Use a single-writer policy for the repository.",
+        "Check for dirty-tree status before each handoff.",
+        "requires-engineering: add file locks or transactional workspace coordination."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a can generate analysis or build outputs, and agent_b is a data-orchestration tool that may consume upstream artifacts. Even without explicit action authority in the profile, the pair can form a pipeline where agent_b trusts agent_a's output too much. Because verification behavior is undocumented, uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.onexus.runnable"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a output as an authoritative upstream artifact, errors can cascade.",
+        "IF agent_a emits malformed metadata or facts, downstream orchestration may propagate them."
+      ],
+      "mitigations": [
+        "Require validation of agent_a outputs before ingestion.",
+        "Add checksum or schema checks on handoff files.",
+        "Keep agent_b from auto-executing agent_a-produced commands.",
+        "Log and compare outputs against source data.",
+        "requires-engineering: implement explicit verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No residency, retention, or regulated-data mismatch is documented for agent_b, while agent_a only lists code, repository metadata, learning patterns, performance metrics, and task prompts. Because neither profile shows PHI, EU PII, or special compliance scopes, the compliance pathway is weak and mostly hypothetical. The other agent is not cited beyond its lack of regulated-data handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is introduced into agent_a or agent_b, compliance review is needed.",
+        "IF deployment policy requires residency or retention guarantees, verify both agents meet them."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the pair.",
+        "Document retention settings for both agents.",
+        "Confirm deployment region before use.",
+        "Review logs for sensitive fields.",
+        "requires-engineering: add policy enforcement for data-class routing."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:89912b1aad28b8729e1a4a72ba94eeb03a9a7658c8f425ea104650d59557971b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
