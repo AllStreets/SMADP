@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "oh-my-openagent",
+    "pdf-js"
+  ],
+  "verdict_id": "v_2026-07-16_oh-my-openagent__pdf-js_441512",
+  "generated_at": "2026-07-16T00:59:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.455,
+  "headline": "Medium-risk pair: shared browser/file workflows can create prompt-injection, leakage, and cascading-error paths; no direct evidence of a tighter coupling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A can run browsers, spawn subprocesses, and use runtime-injected MCPs/hooks; Agent B processes PDF files in a browser-based worker. That creates a plausible path where A passes untrusted content into B or vice versa through files/browser content. No direct shared channel is documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Agent A writes browser-derived content into a PDF or shared file that Agent B opens",
+        "IF Agent B treats file contents as instructions rather than inert document text"
+      ],
+      "mitigations": [
+        "Disable automatic opening of untrusted PDFs in Agent B",
+        "Require manual review before Agent A hands content to Agent B",
+        "Use separate directories for A and B inputs",
+        "Strip instructions from extracted text before passing between agents",
+        "requires-engineering: add provenance tagging on all cross-agent file handoffs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Agent A touches project code, session history, and provider authentication data and has broad network egress; Agent B handles PDF files locally with no egress. If they share a workspace, A can expose sensitive local data into B's document-processing flow. The pairwise leakage path is plausible but not directly documented, so medium fits better than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Agent A and Agent B share the same filesystem workspace",
+        "IF sensitive files from Agent A are opened or indexed by Agent B"
+      ],
+      "mitigations": [
+        "Keep A and B on separate workspaces",
+        "Remove secrets from any files B can read",
+        "Disable network egress for A during shared-document workflows",
+        "Use per-agent service accounts and credentials",
+        "requires-engineering: enforce filesystem ACL isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Agent A has broad network egress and subprocess/browser execution; Agent B can run browsers and supports multiple instances. They do not both advertise unrestricted filesystem writes, so the high-severity write-lock conflict is not proven. Still, overlapping browser/process activity can contend for shared resources if co-located, making medium the cautious choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are launched against the same browser profile or temp directory",
+        "IF Agent A spawns subprocesses that modify files Agent B is reading"
+      ],
+      "mitigations": [
+        "Assign distinct temp directories per agent",
+        "Run only one browser-using agent per profile",
+        "Serialize file writes with a simple operator checklist",
+        "Close shared browser sessions before switching agents",
+        "requires-engineering: add locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Agent A can generate or transform content from code, docs, and web sources; Agent B processes PDFs and may render extracted text. If B consumes A's output without verification, errors or hallucinations can cascade into downstream document outputs. The profiles do not show explicit verification gates, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Agent B uses Agent A's generated text as source material",
+        "IF no human or automated verification step checks A's claims before B renders them"
+      ],
+      "mitigations": [
+        "Require source citations before B accepts A output",
+        "Compare A output against original PDFs manually",
+        "Use a short validation checklist for every handoff",
+        "Reject uncited factual claims from A",
+        "requires-engineering: add automated provenance and verification gates"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Agent A handles provider authentication data and session history, while Agent B only touches PDF documents. The profiles do not show a residency, certification, or retention mismatch between them, so a compliance breach is not established. I cite both because the risk depends on how A's sensitive data is paired with B's document flow, but the evidence is weak.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from Agent A is placed into PDFs processed by Agent B",
+        "IF retention or residency policies differ for those PDFs"
+      ],
+      "mitigations": [
+        "Avoid placing regulated data into shared PDFs",
+        "Review retention settings before processing sensitive documents",
+        "Use separate storage locations for regulated and non-regulated files",
+        "Document the data class allowed for each agent",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4342866023687878e086e8fb20baf62b49e43ac19ff0633ea5bcea7ba6a6c283",
+    "profile_b_hash": "sha256:1e9e0acfec5fb2563830c22f72803a5b63869e22361b17cd8f61df2d27a8ff7d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
