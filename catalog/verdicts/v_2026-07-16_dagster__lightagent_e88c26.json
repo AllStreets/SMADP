@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dagster",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-16_dagster__lightagent_e88c26",
+  "generated_at": "2026-07-16T05:50:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High-risk data leakage and cascading error: LightAgent\u2019s broad egress/MCP can expose sensitive workflow state, while Dagster lacks runtime I/O to counterbalance it.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent can use MCP and stdin/stdout, so it may ingest external content that could be shaped as instructions; Dagster has no clipboard, filesystem, or network surfaces, so the bridge is one-way through LightAgent. The pair lacks documented provenance filtering, making prompt-style payloads plausible, but not a shared channel by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.clipboard"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent is connected to an MCP server that forwards untrusted text into prompts, injection becomes reachable.",
+        "IF Dagster output is manually copied into LightAgent prompts, instruction hijacking is possible."
+      ],
+      "mitigations": [
+        "Disable MCP tools for untrusted sources during the session.",
+        "Add a fixed delimiter and instruction prefix before any pasted Dagster output.",
+        "Review LightAgent prompts for raw-text parsing before enabling automation.",
+        "Use a separate workspace for generated text and prompts.",
+        "requires-engineering: add provenance tagging and instruction/content separation in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and provenance metadata, and it has broad network egress; Dagster is open-source but its profile shows no filesystem or network surfaces, so the main risk is LightAgent exporting sensitive workflow state once Dagster-derived content enters it. That creates a realistic exfiltration path in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Dagster outputs are fed into LightAgent prompts or memory, those contents can be transmitted off-host.",
+        "IF LightAgent is configured with external APIs, its context window may leave the local environment."
+      ],
+      "mitigations": [
+        "Avoid sending Dagster artifacts containing secrets into LightAgent.",
+        "Turn off or restrict LightAgent network egress for the session.",
+        "Clear LightAgent long-term memory before processing sensitive workflows.",
+        "Use redacted sample data instead of production data.",
+        "requires-engineering: enforce data-loss-prevention filters on tool results and memory writes."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Dagster cannot write files or modify git state, while LightAgent supports subprocesses, browsers, MCP, and multiple instances. There is no direct write-write conflict shown, but LightAgent can act on shared mutable resources that Dagster cannot coordinate with, so overlapping control of external resources is plausible and can cause contention.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same external API or MCP-backed resource, concurrent actions can conflict.",
+        "IF LightAgent spawns parallel instances against the same workflow state, race conditions become possible."
+      ],
+      "mitigations": [
+        "Serialize access to shared resources with a simple run lock.",
+        "Assign separate API keys or accounts per agent.",
+        "Disable parallel LightAgent instances for shared jobs.",
+        "Use read-only mode for Dagster when LightAgent is active.",
+        "requires-engineering: add optimistic concurrency checks around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "LightAgent can consume tool results and workflow state, and Dagster can produce pipeline outputs that may be treated as authoritative by downstream automation. Because LightAgent has browser/subprocess/MCP authority, an incorrect Dagster output can cascade into real actions unless explicitly verified, which is a dangerous default interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.category"
+        }
+      ],
+      "conditions": [
+        "IF Dagster-generated values are passed into LightAgent without validation, LightAgent may act on them.",
+        "IF LightAgent is allowed to execute browser or MCP actions from Dagster outputs, errors can propagate downstream."
+      ],
+      "mitigations": [
+        "Insert a human review step before LightAgent acts on Dagster outputs.",
+        "Require schema validation on all Dagster-to-LightAgent handoffs.",
+        "Mark Dagster outputs as untrusted in prompts.",
+        "Disable action-taking tools for the first run.",
+        "requires-engineering: add automated verification against source-of-truth systems before execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "LightAgent explicitly handles user conversations, long-term memory, tool calls, and results, which can create retention and residency obligations; Dagster\u2019s profile does not show comparable data handling, so the mismatch is mainly on the LightAgent side. The pair can therefore create compliance gaps if regulated data is routed through LightAgent without matching controls.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed into LightAgent memory or logs, retention and deletion obligations apply.",
+        "IF LightAgent is deployed in a region or vendor boundary that differs from the data source, residency issues can arise."
+      ],
+      "mitigations": [
+        "Do not route regulated data through LightAgent memory.",
+        "Review retention settings before processing sensitive cases.",
+        "Purge logs after each sensitive session.",
+        "Use synthetic data for testing compliance-sensitive flows.",
+        "requires-engineering: implement policy-based retention and deletion controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "GOVERN-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:3c1b5f0315f8346f24af5b723a9afa20de61f6c9229b1806664c87f77e9a7e8d",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
