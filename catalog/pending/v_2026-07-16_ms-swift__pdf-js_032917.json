@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "pdf-js"
+  ],
+  "verdict_id": "v_2026-07-16_ms-swift__pdf-js_032917",
+  "generated_at": "2026-07-16T03:33:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.365,
+  "headline": "Medium prompt-injection and cascading-error risks from ms-swift feeding pdf.js; no direct data-leak or compliance mismatch is evidenced.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift can read/write files and process stdin/stdout, while pdf.js reads PDF files in a browser-based worker model. If ms-swift outputs PDF-derived text that pdf.js later treats as trusted content or instructions, a shared-file or copy-paste bridge can carry prompt injection. The pair lacks a documented isolation boundary, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift writes attacker-controlled text into a PDF or shared text file that pdf.js later parses as instructions, injection is plausible.",
+        "IF an operator copies ms-swift output into pdf.js test inputs without sanitization, instruction hijacking can occur."
+      ],
+      "mitigations": [
+        "Use separate directories for ms-swift outputs and pdf.js inputs.",
+        "Strip instruction-like text from generated artifacts before opening them in pdf.js.",
+        "Review PDFs in a read-only viewer profile.",
+        "Disable copy-paste bridges between the two tools during analysis.",
+        "requires-engineering: add provenance tags to files passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "ms-swift touches many data classes and handles hub/sdk tokens, but pdf.js is network-egress none and only processes PDF files. There is no shared workspace or authenticated cloud principal documented, so a leakage path is not established. The main risk is local file exposure if the operator places sensitive PDFs into a shared directory, which is limited in blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF sensitive PDFs are placed in a directory readable by ms-swift, their contents may be exposed locally.",
+        "IF ms-swift logs training outputs containing secrets into files later opened by pdf.js, those secrets can be viewed."
+      ],
+      "mitigations": [
+        "Keep sensitive PDFs out of ms-swift working directories.",
+        "Rotate any exposed hub_token or sdk-token if logs are shared.",
+        "Set file permissions so only one agent can read each workspace.",
+        "Inspect ms-swift logs before opening them in pdf.js.",
+        "requires-engineering: enforce per-agent workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ms-swift can write the filesystem and spawn subprocesses; pdf.js can run browsers and supports multiple instances. If both are pointed at the same mutable directory, they can overwrite or race on files even though pdf.js lacks write capability in the profile. Because the shared-write pathway is not fully documented, uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same output directory, file clobbering or stale reads can occur.",
+        "IF an orchestrator reuses browser test artifacts across pdf.js instances, concurrent access conflicts may arise."
+      ],
+      "mitigations": [
+        "Assign distinct output directories per agent.",
+        "Avoid concurrent writes to shared filenames.",
+        "Use timestamped or UUID-based artifact names.",
+        "Pause one agent before the other mutates the same workspace.",
+        "requires-engineering: add locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can generate evaluation outputs and configuration data, and pdf.js can render or process PDFs from files. If pdf.js consumes ms-swift-produced artifacts without verification, errors or hallucinated facts can cascade into downstream document processing. The pair does not show explicit validation gates, so the interaction is plausible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF pdf.js ingests ms-swift-generated PDFs or text artifacts without validation, incorrect content can propagate.",
+        "IF ms-swift emits malformed configuration or evaluation outputs that pdf.js later displays, the error can be amplified."
+      ],
+      "mitigations": [
+        "Validate ms-swift outputs before handing them to pdf.js.",
+        "Compare generated PDFs against source data.",
+        "Require a human review step for any downstream action.",
+        "Reject malformed or unsigned artifacts.",
+        "requires-engineering: add schema checks between the agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both agents are open-source and docs-only, with no stated residency, certification, or retention mismatch. ms-swift handles tokens and broad training artifacts, while pdf.js only touches PDFs. No compliance breach is evidenced for the pair, but if regulated PDFs are routed through ms-swift logs, a localized policy gap could appear.",
+      "citations": [
+        {
+          "profile_field": "agent_a.source_type"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated PDFs are processed through ms-swift logs or training outputs, retention policy mismatches may arise.",
+        "IF an operator stores EU PII in shared artifacts without a DPA, compliance review is needed."
+      ],
+      "mitigations": [
+        "Keep regulated PDFs out of ms-swift logs.",
+        "Delete temporary artifacts after review.",
+        "Document retention rules for shared files.",
+        "Restrict access to token-bearing logs.",
+        "requires-engineering: map data residency and retention controls per workspace."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:1e9e0acfec5fb2563830c22f72803a5b63869e22361b17cd8f61df2d27a8ff7d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
