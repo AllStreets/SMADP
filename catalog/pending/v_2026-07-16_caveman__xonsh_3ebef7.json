@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "caveman",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-16_caveman__xonsh_3ebef7",
+  "generated_at": "2026-07-16T04:23:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.515,
+  "headline": "High-risk filesystem/network interaction: xonsh can write and egress broadly while caveman uses MCP and shared files, creating prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "caveman uses MCP and reads/writes project files like CLAUDE.md, while xonsh can read/write the filesystem and run shell commands. That creates a plausible content-to-instruction bridge if caveman ingests xonsh-produced files or outputs. The pair lacks direct provenance controls in the profiles, so the interaction is inferred rather than proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF caveman reads xonsh-written files as instructions or prompts, injection is possible.",
+        "IF both agents share a writable workspace without provenance tagging, malicious content can cross the boundary."
+      ],
+      "mitigations": [
+        "Separate their working directories.",
+        "Disable automatic ingestion of shared files into caveman prompts.",
+        "Add a manual review step for any xonsh-generated text before caveman consumes it.",
+        "Use read-only mounts for caveman where possible.",
+        "requires-engineering: add provenance labels to shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch filesystem content, and xonsh has broad network egress while caveman handles session logs, memory files, and project notes. If sensitive files are present in a shared workspace, xonsh can transmit them outward. caveman itself has no network egress, but the pair still exposes data through xonsh's outbound path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF sensitive project notes or memory files are present in a shared filesystem, xonsh can read them.",
+        "IF xonsh sends those contents over the network, leakage occurs."
+      ],
+      "mitigations": [
+        "Keep sensitive files out of any shared directory.",
+        "Run xonsh with network egress blocked for sensitive sessions.",
+        "Store caveman memory files in a separate private path.",
+        "Review outbound commands before execution.",
+        "requires-engineering: enforce per-directory network policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "caveman supports multiple instances and uses files, while xonsh can write the filesystem and spawn subprocesses. If both operate on the same directory, concurrent writes can overwrite each other's artifacts even though xonsh does not modify git state. The conflict is real but narrower than the high-severity git-lock case.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same files or directories, last-writer-wins corruption can occur.",
+        "IF caveman runs multiple instances against one workspace, collisions become more likely."
+      ],
+      "mitigations": [
+        "Assign separate worktrees or directories.",
+        "Serialize writes with a simple lock file.",
+        "Use append-only logs for shared notes.",
+        "Check for file diffs before saving.",
+        "requires-engineering: add transactional workspace locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "caveman is a content-writing agent that can produce project notes and CLAUDE.md content, and xonsh can execute shell commands and subprocesses. If xonsh treats caveman output as authoritative, a bad instruction can become an executed command or scripted action. That downstream authority makes the blast radius potentially irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes commands copied from caveman output without verification, cascading error occurs.",
+        "IF caveman writes operational instructions into shared files, xonsh may act on them."
+      ],
+      "mitigations": [
+        "Require human approval before executing generated commands.",
+        "Mark caveman output as untrusted by default.",
+        "Use a dry-run mode for xonsh when consuming agent output.",
+        "Keep operational commands out of shared notes.",
+        "requires-engineering: add policy gates for command execution."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No residency, certification, or retention mismatch is documented in either profile, and both are open-source with no secrets handled. The only compliance concern is generic logging of session data and filesystem contents, which is not enough to establish a concrete breach pathway. The other agent is not separately implicated beyond shared file handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into shared files, retention and logging policies must be checked separately.",
+        "IF deployment policy requires residency guarantees, neither profile documents them."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared workspaces.",
+        "Confirm retention settings for session logs.",
+        "Document where files are stored and processed.",
+        "Use separate environments for regulated workloads.",
+        "requires-engineering: add explicit residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:10a2d1358745d49114841835adca711e0264cdfff09aece9b48273cdc2a4b985",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
