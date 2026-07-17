@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-17_kestra__slim_df21af",
+  "generated_at": "2026-07-17T01:07:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.575,
+  "headline": "High-risk shared filesystem and broad egress create prompt-injection, leakage, and cascading-action exposure between Kestra and Slim.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra reads/writes workflow files and logs, and Slim parses Dockerfiles, filesystem artifacts, and interactive CLI input. A shared workspace or copied artifacts could let attacker-controlled content from one agent influence the other, but no direct shared channel is documented. The pairwise pathway is plausible, not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or copied artifacts without sanitization, injection becomes reachable.",
+        "IF either agent treats file contents as instructions, attacker-controlled text can steer tool use."
+      ],
+      "mitigations": [
+        "Separate working directories per agent.",
+        "Strip or escape instruction-like text before handoff.",
+        "Review any file-based prompts before execution.",
+        "Disable automatic ingestion of untrusted artifacts.",
+        "requires-engineering: add provenance tags to shared files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Kestra touches logs, inputs, variables, artifacts, database data, cloud storage data, messages, and notifications, while Slim handles filesystem artifacts, environment variables, certificate private keys, and registry credentials. If they share a workspace or credentials store, sensitive material can flow between them. No isolation boundary is documented, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same workspace, secrets in files may be exposed across the pair.",
+        "IF Slim is run on images containing private keys or registry credentials, Kestra can surface them via logs or artifacts."
+      ],
+      "mitigations": [
+        "Use separate directories and mounts.",
+        "Redact secrets from logs before sharing outputs.",
+        "Restrict access to credential files.",
+        "Rotate any credentials processed by Slim.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have broad filesystem write, shell execution, subprocess spawning, and network egress. Kestra can also request root/docker.sock, while Slim requests SYS_ADMIN and privileged mode. In a shared host or directory, concurrent writes and privileged container operations can collide and cause destructive state changes; the overlap is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem path, write races can corrupt outputs.",
+        "IF both are granted their requested elevated privileges on one host, container and host state can be modified concurrently."
+      ],
+      "mitigations": [
+        "Run each agent in its own container or VM.",
+        "Assign disjoint output directories.",
+        "Disable elevated privileges unless required.",
+        "Serialize any shared writes with a lock.",
+        "requires-engineering: add orchestrator-level resource locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Kestra produces workflow definitions, logs, artifacts, and notifications; Slim is an interactive CLI that can act on container images and registry APIs. If Slim consumes Kestra-generated outputs without verification, a bad workflow or malformed artifact can cascade into incorrect image changes or registry actions. The chain is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Slim is fed Kestra-generated artifacts as authoritative inputs, errors can propagate downstream.",
+        "IF Kestra notifications are used as execution triggers, a mistaken workflow can cause repeated actions."
+      ],
+      "mitigations": [
+        "Insert a manual review step between agents.",
+        "Validate schemas before passing outputs onward.",
+        "Require checksums for transferred artifacts.",
+        "Limit Slim to dry-run mode where possible.",
+        "requires-engineering: add policy gates before any registry or Docker action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra handles messages, notifications, cloud storage data, and database data; Slim handles certificate private keys, registry credentials, and vulnerability data. If regulated or secret-bearing data is processed in the same workflow, retention and residency obligations can diverge. No specific certification mismatch is documented, so medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both tools, retention and access controls must match.",
+        "IF registry credentials or private keys are stored in shared logs, compliance obligations may be breached."
+      ],
+      "mitigations": [
+        "Classify data before routing it.",
+        "Keep secrets out of shared logs.",
+        "Set short retention on workflow artifacts.",
+        "Confirm residency for any cloud-stored outputs.",
+        "requires-engineering: document and enforce data-handling policy per agent."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
