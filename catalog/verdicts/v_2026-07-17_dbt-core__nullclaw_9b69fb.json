@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-07-17_dbt-core__nullclaw_9b69fb",
+  "generated_at": "2026-07-17T03:14:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High risk of cascading errors and capability conflict; prompt-injection and leakage are lower but non-zero due to shared file/network surfaces.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "dbt-core can read warehouse data and nullclaw can read/write workspace files, run browsers, use MCP, and ingest webhooks/WS. That creates a plausible bridge where content from dbt outputs or files can be treated as instructions by nullclaw. The pair lacks explicit provenance controls, so the interaction is possible in default-like workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core outputs are copied into nullclaw workspace files or webhook payloads",
+        "IF nullclaw parses file or MCP content as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of dbt artifacts into nullclaw",
+        "Require provenance tags on all imported files",
+        "Route dbt outputs through a read-only staging directory",
+        "Turn off MCP endpoints for untrusted content",
+        "requires-engineering: add content-sanitization and instruction/data separation"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and has allowlisted egress, while nullclaw handles secrets, workspace files, audit logs, and broad network egress. If the pair shares a workspace or passes artifacts between them, sensitive warehouse data can flow into nullclaw\u2019s broader exfiltration surface. The profiles do not show a hard isolation boundary between their file and network paths.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF dbt artifacts containing warehouse data are placed in nullclaw's workspace",
+        "IF nullclaw forwards workspace files or logs to external services"
+      ],
+      "mitigations": [
+        "Keep dbt outputs in a separate read-only directory",
+        "Block nullclaw access to dbt artifact paths",
+        "Redact secrets before any handoff",
+        "Restrict nullclaw egress to approved destinations",
+        "requires-engineering: enforce per-agent filesystem and network isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "dbt-core can call data-warehouse APIs, and nullclaw can write the filesystem, modify git state, execute shells, and use broad network egress. If both operate on the same repo or project directory, concurrent writes and git mutations can overwrite each other or corrupt state. The profiles show no locking or coordination primitive, so the conflict is dangerous by default in shared workspaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same git working tree",
+        "IF dbt-core and nullclaw write artifacts or commit state concurrently"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Pause one agent before the other writes",
+        "Use a git lock or serialized commit queue",
+        "Make dbt outputs read-only to nullclaw",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "dbt-core can generate warehouse-derived outputs, and nullclaw can act on files, webhooks, browsers, and shell commands. If nullclaw treats dbt output as authoritative, a bad model or malformed artifact can cascade into downstream actions or commits. No verification step is documented between them, so the pair can amplify errors into operational changes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw consumes dbt-generated artifacts without validation",
+        "IF nullclaw uses those artifacts to trigger shell, webhook, or git actions"
+      ],
+      "mitigations": [
+        "Require human review before acting on dbt outputs",
+        "Validate schemas before nullclaw consumes artifacts",
+        "Disable auto-commit from dbt-derived files",
+        "Log and diff all downstream actions",
+        "requires-engineering: add typed contracts between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while nullclaw handles audit logs, workspace files, and multiple secret classes. If warehouse data includes regulated records, the pair can create retention and residency mismatches because nullclaw\u2019s broad egress and logging surfaces are not shown to match dbt\u2019s data-governance constraints. The profiles do not document aligned compliance controls.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from the warehouse is processed through nullclaw logs or workspace files",
+        "IF retention or residency requirements differ between the warehouse and nullclaw storage"
+      ],
+      "mitigations": [
+        "Exclude regulated datasets from the pair",
+        "Minimize logging of warehouse-derived content",
+        "Set explicit retention limits on nullclaw artifacts",
+        "Review residency for any external egress",
+        "requires-engineering: align compliance policies across both systems"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
