@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-07-17_ctx__kestra_d74a05",
+  "generated_at": "2026-07-17T03:53:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High: ctx can feed untrusted context into Kestra workflows, creating default-path prompt-injection and cascading-action risk; filesystem and execution overlap also raise leakage and conflict concerns.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "ctx observes Claude Code events and touches MCP servers, filesystem, and audit/runtime logs, so it can ingest content that may later be treated as instructions. Kestra runs declarative workflows with stdin/stdout and broad I/O surfaces, so if ctx output is bridged into Kestra tasks, raw content can be reinterpreted as workflow input. The pair lacks documented provenance controls, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF ctx output is copied into Kestra task definitions or variables without sanitization, injection is possible.",
+        "IF Kestra tasks parse ctx-generated text as commands or YAML, attacker-controlled content can steer execution."
+      ],
+      "mitigations": [
+        "Add a strict text-to-data boundary between ctx and Kestra.",
+        "Reject any ctx output containing workflow syntax before import.",
+        "Use allowlisted fields only for handoff.",
+        "Review one sample handoff for instruction-like tokens.",
+        "requires-engineering: add provenance tagging and parser hardening."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches filesystem, MCP servers, and audit/runtime logs, while Kestra reads and writes filesystem data and handles database, cloud storage, messages, and notifications. A shared workspace or copied artifacts could expose sensitive runtime data from ctx to Kestra outputs or external channels. Because both profiles document file and data surfaces but not isolation between them, the leakage path is plausible in default deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same workspace or artifact directory, file contents can flow from ctx to Kestra.",
+        "IF Kestra sends imported data to Slack, email, or cloud services, ctx-originated secrets may leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces for each agent.",
+        "Disable notification tasks for imported ctx artifacts.",
+        "Scan shared files for secrets before handoff.",
+        "Restrict Kestra connectors to a test project.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx supports multiple instances and filesystem access, while Kestra has write_filesystem, execute_shell, spawn_subprocesses, and broad network egress. If both operate on the same directory or mutable workflow state, concurrent writes and shell-driven mutations can race and corrupt files or jobs. The profiles show overlapping write surfaces and no locking mechanism, so the conflict is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF ctx and Kestra share a writable directory, concurrent modification races can occur.",
+        "IF Kestra shells out while ctx updates the same files, state corruption or lost updates can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint directories to each agent.",
+        "Serialize writes with a lock file.",
+        "Run a dry-run on a copy of the workspace.",
+        "Disable shell tasks for shared paths.",
+        "requires-engineering: add transactional state management."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is a context-management agent that observes tool events, and Kestra is an orchestration system that can trigger downstream actions like email, Slack, cloud, and SSH. If Kestra consumes ctx-produced summaries or facts without verification, a mistaken or manipulated ctx output can cascade into real-world actions. Because the pair includes an action-taking orchestrator and no validation gate is documented, the blast radius is high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.tags"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses ctx output as workflow input without a validation step, errors can propagate.",
+        "IF a Kestra workflow triggers notifications or infrastructure actions from ctx-derived facts, downstream harm can occur."
+      ],
+      "mitigations": [
+        "Insert a human approval step before action tasks.",
+        "Validate ctx outputs against schema and source data.",
+        "Limit initial workflows to read-only actions.",
+        "Log and diff ctx inputs versus Kestra actions.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs and harness records, while Kestra handles logs, inputs, variables, artifacts, database data, cloud storage data, messages, and notifications. That creates a plausible retention and residency mismatch if the same regulated data class flows through both systems. The profiles do not document matching compliance controls, so the safer choice is medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through both agents, retention policies may diverge.",
+        "IF Kestra notifications or cloud connectors carry the same data class as ctx logs, residency or deletion obligations may be violated."
+      ],
+      "mitigations": [
+        "Avoid regulated data in shared workflows.",
+        "Set short log retention in Kestra.",
+        "Redact sensitive fields before handoff.",
+        "Review connector destinations for residency.",
+        "requires-engineering: align retention and deletion controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
