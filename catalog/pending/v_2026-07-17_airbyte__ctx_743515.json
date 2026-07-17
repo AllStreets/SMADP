@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "airbyte",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-07-17_airbyte__ctx_743515",
+  "generated_at": "2026-07-17T00:23:56Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.455,
+  "headline": "High: ctx can observe Claude Code events and use MCP/filesystem while Airbyte has broad network egress, creating default-path data leakage and cascading-error risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse and Stop events and uses MCP/stdio, so it can ingest outputs from another agent-like workflow; Airbyte exposes an API and broad network egress, but no direct shared channel is documented. The interaction is plausible via shared files or MCP, so uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Airbyte outputs are written into a filesystem or MCP channel that ctx reads, then prompt injection becomes reachable.",
+        "IF ctx parses Claude Code event payloads as instructions, then attacker-controlled content can steer downstream actions."
+      ],
+      "mitigations": [
+        "Restrict ctx to a read-only, provenance-tagged input directory.",
+        "Disable any automatic parsing of Airbyte-generated text as instructions.",
+        "Add a manual review step before ctx acts on external content.",
+        "requires-engineering: add provenance labels to all inter-agent messages.",
+        "requires-engineering: isolate the agents into separate workspaces."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Airbyte touches business data and has broad network egress, while ctx touches audit/runtime logs, graph data, and filesystem/MCP surfaces. A shared workspace or log path could leak business data into ctx outputs or external APIs. The pairwise path is not directly documented, so medium is the safest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents share a workspace or log directory, then business data can flow from Airbyte into ctx.",
+        "IF ctx forwards observed content to GitHub, GitHub Actions, or Claude Code APIs, then leaked data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories.",
+        "Redact business data before ctx ingests any Airbyte output.",
+        "Turn off automatic upload of logs or traces.",
+        "Limit ctx to non-sensitive test data only.",
+        "requires-engineering: enforce per-agent storage and network egress policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Airbyte has API access and broad network egress; ctx can install packages, run browsers, and supports multiple instances with filesystem access. Overlapping mutable surfaces create a realistic conflict path if both write to shared files or shared external resources. No locking or coordination is documented, so the conflict risk is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem path, then last-writer-wins conflicts can occur.",
+        "IF both agents mutate the same external API-backed resource without locks, then state divergence is possible."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Serialize writes to shared resources.",
+        "Use per-agent credentials for external APIs.",
+        "Check for file existence before overwriting.",
+        "requires-engineering: add advisory locking around shared mutable state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code events and can act as a harness, so it may treat upstream outputs as authoritative. Airbyte produces data-engineering outputs that could be consumed downstream without verification. Because no explicit verification barrier is documented, a bad Airbyte output can cascade into ctx-driven actions, but the blast radius is not clearly irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx consumes Airbyte-produced artifacts without validation, then erroneous transformations can propagate.",
+        "IF ctx triggers follow-on actions from observed events, then a single bad upstream output can cascade."
+      ],
+      "mitigations": [
+        "Add schema validation before ctx consumes Airbyte outputs.",
+        "Require human approval for downstream actions.",
+        "Log and compare expected versus actual output shapes.",
+        "Quarantine new Airbyte connectors before promotion.",
+        "requires-engineering: implement automated verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Airbyte is documented as handling business data, while ctx touches audit/runtime logs and graph data; the profiles do not show a residency or regulated-data mismatch such as PHI or EU PII. Because the relevant compliance classes are not specified, only a small documented-gap risk is supported, and the other agent is cited because its logging surfaces can retain the same data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is routed through ctx logs, then retention or residency policy mismatches may arise.",
+        "IF Airbyte ingests data subject to stricter handling than ctx's logs, then compliance gaps become material."
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through ctx.",
+        "Set short log-retention windows.",
+        "Review data residency for any shared storage.",
+        "Mask identifiers before export.",
+        "requires-engineering: document and enforce per-data-class retention policies."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:f3ef6f7b8cfe71ba75a1cf21a2c85cc456a48d3dc8bb9186dc103f1050a525f8",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
