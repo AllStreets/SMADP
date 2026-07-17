@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-17_kotaemon__xonsh_fd3e77",
+  "generated_at": "2026-07-17T03:31:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.56,
+  "headline": "High risk of prompt-injection and cascading errors: kotaemon can ingest untrusted documents while xonsh can execute shell actions from its outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, PDFs, HTML, and chat transcripts, so attacker-controlled content can enter its outputs; xonsh consumes shell commands and stdin/stdout, creating a plausible bridge if those outputs are copied or piped into it. No shared MCP or clipboard is documented, so this is not high, but the interaction exists in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon output is copied into xonsh as shell text",
+        "IF a document ingested by kotaemon contains instruction-like content",
+        "IF xonsh is used to execute commands derived from assistant output"
+      ],
+      "mitigations": [
+        "Use a strict copy/paste boundary and never paste raw model output into xonsh",
+        "Add a human review step before any shell execution",
+        "Strip instructions from ingested documents before indexing",
+        "Run xonsh in a separate terminal profile with no auto-paste",
+        "requires-engineering: add provenance labels to kotaemon outputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "kotaemon handles API keys and broad document classes, while xonsh can read filesystem contents and environment variables and has broad network egress. If they share a workspace or environment, sensitive material touched by kotaemon can be exposed through xonsh commands or outbound requests. The profiles do not prove a shared workspace, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents run in the same filesystem tree",
+        "IF xonsh receives the same environment variables as kotaemon",
+        "IF files under ./ktem_app_data are readable from xonsh"
+      ],
+      "mitigations": [
+        "Store secrets outside any shared workspace",
+        "Restrict xonsh to a minimal environment",
+        "Separate the agents into different OS users",
+        "Audit shared directories for API keys",
+        "requires-engineering: enforce per-agent filesystem isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "kotaemon supports multiple instances and writes to ./ktem_app_data, while xonsh can write the filesystem and spawn subprocesses. If both operate on the same directory, concurrent writes can collide even though xonsh does not modify git state. The overlap is real but not proven to be default-shared, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory",
+        "IF kotaemon instances are run concurrently against one data store",
+        "IF xonsh scripts mutate files under ./ktem_app_data"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize writes with a lock file",
+        "Run only one kotaemon instance per workspace",
+        "Keep xonsh read-only for shared paths",
+        "requires-engineering: add transactional locking around shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "kotaemon produces document-derived answers and citations, and xonsh can execute shell commands or scripts based on those outputs. That makes a direct path from generated text to downstream action-taking, with irreversible effects if commands are run unverified. The pair is dangerous by default when outputs are trusted as authoritative.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes commands derived from kotaemon output",
+        "IF kotaemon output is treated as authoritative without verification",
+        "IF downstream scripts perform file or network actions"
+      ],
+      "mitigations": [
+        "Require manual verification before execution",
+        "Log and diff every command before running it",
+        "Use a dry-run mode for shell actions",
+        "Limit xonsh to non-destructive commands",
+        "requires-engineering: add policy gates for command execution"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon explicitly handles API keys and customer-support documents, while xonsh can expose filesystem contents and environment variables. If regulated or secret-bearing data is processed in a shared environment, retention and residency controls can diverge, creating a compliance gap. The profiles do not show a specific jurisdiction mismatch, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is indexed in kotaemon",
+        "IF xonsh logs command history containing sensitive paths or values",
+        "IF the deployment requires residency or retention controls not enforced by both agents"
+      ],
+      "mitigations": [
+        "Disable shell history for sensitive sessions",
+        "Keep regulated data out of shared workspaces",
+        "Set short retention on logs and transcripts",
+        "Review data-processing notices for both tools",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
