@@ -1,0 +1,192 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ecc",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-07-17_ecc__pipecat_9b1d64",
+  "generated_at": "2026-07-17T02:25:13Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.56,
+  "headline": "High risk of prompt/data leakage and cascading errors from ECC\u2019s filesystem/MCP tooling into pipecat\u2019s shared-bus, multi-service voice pipeline.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ECC can read/write the filesystem, use MCP, and parse session/skill files; pipecat commonly moves text through a shared bus and supports many transports/services. That creates a plausible instruction-smuggling path if ECC writes attacker-controlled content that pipecat later consumes. The interaction is inferred from documented surfaces, not directly reproduced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF ECC writes untrusted content into shared files or MCP payloads that pipecat later reads as instructions",
+        "IF pipecat routes text from the shared bus into downstream prompt templates without provenance checks"
+      ],
+      "mitigations": [
+        "Separate the agents onto distinct workspaces and buses",
+        "Disable MCP bridges between the two agents",
+        "Add provenance tags to all cross-agent text",
+        "Require manual review before pipecat consumes ECC-generated text",
+        "requires-engineering: enforce content-type validation at the handoff"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ECC touches session summaries, skills, git history, and security findings, while pipecat handles text, audio, video, and analytics over a shared bus. If they share a workspace or bus, sensitive ECC artifacts can flow into pipecat outputs or third-party STT/LLM/TTS services. The profiles do not prove a shared OS workspace, so this is inferred and kept below high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or bus",
+        "IF pipecat forwards shared text/audio context to external STT/LLM/TTS providers"
+      ],
+      "mitigations": [
+        "Keep ECC and pipecat on separate principals and directories",
+        "Remove secrets from any shared transcript or session file",
+        "Turn off external providers in pipecat for sensitive runs",
+        "Review outbound API destinations before execution",
+        "requires-engineering: add redaction before any provider call"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ECC has unrestricted filesystem write, git-state modification, and network egress; pipecat has allowlisted egress and a shared-bus concurrency model. Overlap on mutable resources is plausible if they operate in the same repo or shared state, creating write races and conflicting side effects. Because no locking is documented, uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same repository or config directory",
+        "IF pipecat instances share the same bus or mutable state without locks"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Avoid concurrent git writes",
+        "Serialize access with a simple run order",
+        "Use distinct API credentials per agent",
+        "requires-engineering: add file and bus locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ECC can generate and modify code, docs, and security findings; pipecat can ingest text/audio and route it through many downstream services. If pipecat treats ECC output as authoritative, a bad instruction or hallucinated fact can cascade into external calls, generated responses, or operational actions. The default multi-service pipeline makes the blast radius potentially broad and irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF pipecat uses ECC output as prompt, transcript, or tool input without verification",
+        "IF downstream services act on that output automatically"
+      ],
+      "mitigations": [
+        "Insert a human approval step before downstream actions",
+        "Compare ECC output against source data before use",
+        "Limit pipecat to read-only demo mode",
+        "Log and diff all handoffs between agents",
+        "requires-engineering: add schema validation and confidence gating"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ECC handles session data, hooks, git history, and security findings, while pipecat can process audio, video, images, text, and analytics. If regulated content such as PII or recordings flows from ECC into pipecat\u2019s external services, retention and residency obligations may diverge. The profiles do not specify a DPA or residency guarantee, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present in ECC session files or security findings",
+        "IF pipecat sends that data to third-party STT/LLM/TTS or analytics services"
+      ],
+      "mitigations": [
+        "Classify data before handoff",
+        "Block PHI/PII from shared transcripts",
+        "Use only local providers for regulated runs",
+        "Set short retention on both sides",
+        "requires-engineering: document residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0297dec71eb04aade46409d7c9ca933d5292409253842beae6fcdbd121454931",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
