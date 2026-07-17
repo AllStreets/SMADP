@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-17_dbt-core__lightagent_e2fedd",
+  "generated_at": "2026-07-17T01:24:17Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.67,
+  "composite_score": 0.56,
+  "headline": "High risk of cascading errors and data leakage: LightAgent\u2019s broad network/MCP/tooling can amplify dbt-core outputs into unsafe downstream actions.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent exposes MCP, stdin/stdout, browsers, and subprocesses, so it can ingest external content and tool payloads; dbt-core can emit model/output text that may be reused as instructions. No shared filesystem is documented, so the pathway is inferred rather than proven, but the interaction exists in default-style agent workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent consumes dbt-core output via MCP/stdin without provenance checks, injection is possible.",
+        "IF dbt-core-generated text is forwarded into LightAgent prompts or tool calls, attacker-controlled content can steer behavior."
+      ],
+      "mitigations": [
+        "Add a provenance tag to dbt outputs before forwarding.",
+        "Strip instructions from dbt-rendered text before ingestion.",
+        "Require a human review step for any dbt text passed to LightAgent.",
+        "Disable MCP routes that accept free-form text where possible.",
+        "requires-engineering: add content-type separation between data and instructions."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data and has allowlisted egress; LightAgent handles conversations, memory, trace data, tool results, and broad network egress. Even without a documented shared workspace, forwarding warehouse-derived outputs into LightAgent can expose sensitive data to a broader agent context and external APIs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core outputs warehouse data into LightAgent prompts or tool inputs, that data enters LightAgent memory/trace surfaces.",
+        "IF LightAgent sends those inputs to external APIs, leakage extends beyond the original warehouse boundary."
+      ],
+      "mitigations": [
+        "Minimize fields passed from dbt-core to LightAgent.",
+        "Mask identifiers before handoff.",
+        "Turn off nonessential logging in LightAgent.",
+        "Restrict LightAgent egress to approved endpoints only.",
+        "requires-engineering: enforce data-loss-prevention filters on the handoff."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "dbt-core can call data-warehouse APIs, while LightAgent can spawn subprocesses, use MCP, and run multiple instances. That creates overlapping mutable control over downstream resources if both are pointed at the same warehouse or workflow state. No locking or coordination is documented, so conflict risk is plausible in default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same mutable warehouse objects, concurrent writes can race.",
+        "IF LightAgent launches parallel tool calls against dbt-managed resources, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Serialize writes through one orchestrator.",
+        "Assign separate service accounts per agent.",
+        "Use per-run locks on shared resources.",
+        "Pause parallel LightAgent instances during dbt runs.",
+        "requires-engineering: add optimistic concurrency checks on shared mutable targets."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "dbt-core can produce warehouse-derived outputs that LightAgent may treat as tool inputs or conversational context. Because LightAgent has browsers, subprocesses, MCP, and broad egress, a mistaken dbt artifact can cascade into external actions or further tool calls without a verification gate. This is dangerous by default in agentic workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent treats dbt output as authoritative, downstream actions can be wrong at scale.",
+        "IF LightAgent uses dbt-generated facts to drive browser or subprocess actions, errors can propagate externally."
+      ],
+      "mitigations": [
+        "Require explicit verification before any action based on dbt output.",
+        "Insert a checksum or schema validation step.",
+        "Limit LightAgent to read-only review mode for dbt artifacts.",
+        "Log and review all tool calls triggered by dbt-derived content.",
+        "requires-engineering: add a policy gate that blocks action-taking on unverified dbt outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while LightAgent handles conversations, memory, trace data, and tool results with broad egress. If warehouse data includes regulated or residency-bound content, forwarding it into LightAgent can create retention and jurisdiction mismatches. The profiles do not document a DPA or residency control, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF warehouse data includes regulated personal data, LightAgent retention/logging may conflict with policy.",
+        "IF EU-resident data is forwarded to LightAgent without a DPA or residency control, compliance risk increases."
+      ],
+      "mitigations": [
+        "Classify data before passing it to LightAgent.",
+        "Exclude regulated fields from dbt exports.",
+        "Disable or shorten LightAgent retention where configurable.",
+        "Review vendor residency and DPA terms before deployment.",
+        "requires-engineering: route regulated data through a compliant processing boundary."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
