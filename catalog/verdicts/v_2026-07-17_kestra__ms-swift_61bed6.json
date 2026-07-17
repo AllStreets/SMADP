@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "ms-swift"
+  ],
+  "verdict_id": "v_2026-07-17_kestra__ms-swift_61bed6",
+  "generated_at": "2026-07-17T06:04:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High-risk default write/egress overlap and workflow chaining can leak data or cascade errors; prompt-injection risk is lower but present via shared files/stdin.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files and use stdin/stdout, so content from kestra can be passed into ms-swift as trusted text or config. Kestra\u2019s declarative workflows and ms-swift\u2019s CLI/Python workflow make file-mediated instruction smuggling plausible. No direct shared channel is documented, so this is inferred rather than proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF kestra writes workflow text or logs into a file that ms-swift later parses as instructions or config",
+        "IF the operator pipes stdout from one agent directly into the other without sanitization"
+      ],
+      "mitigations": [
+        "Use separate directories for each agent's files",
+        "Insert a manual review step before piping outputs between agents",
+        "Rename and segregate workflow/config files from free-form text",
+        "Disable stdin piping between agents unless explicitly needed",
+        "requires-engineering: add provenance tags to files passed between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra has broad network egress and touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications; ms-swift handles datasets, checkpoints, outputs, and secrets like hub_token/sdk-token. If they share a workspace or pass files, sensitive data can flow from one into the other and then out via Kestra\u2019s APIs or ms-swift\u2019s model/hub interfaces. The pairwise leakage path is plausible in default operator setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF both agents are run on the same host with overlapping file access",
+        "IF kestra workflows ingest files that contain ms-swift checkpoints, adapters, or tokens",
+        "IF ms-swift is configured to upload datasets or outputs through its listed APIs"
+      ],
+      "mitigations": [
+        "Place each agent in a separate filesystem namespace",
+        "Keep secrets out of shared directories and logs",
+        "Review any file handoff before execution",
+        "Restrict ms-swift to non-sensitive datasets",
+        "requires-engineering: enforce per-agent egress allowlists and DLP scanning"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell, spawn subprocesses, read and write the filesystem, and use network egress. Kestra also requests root and docker.sock, while ms-swift can install packages. On a shared host, concurrent writes and environment changes can collide, and Kestra\u2019s elevated privileges make the conflict blast radius larger than a simple local race.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.install_packages"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory",
+        "IF kestra runs with root or docker.sock access while ms-swift installs packages or rewrites configs",
+        "IF the orchestrator does not serialize filesystem mutations"
+      ],
+      "mitigations": [
+        "Assign disjoint working directories",
+        "Run only one writer at a time",
+        "Avoid granting kestra root or docker.sock unless required",
+        "Pin ms-swift package versions before execution",
+        "requires-engineering: add file locks around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra produces workflow outputs, logs, artifacts, and notifications that ms-swift can consume as datasets, configuration, or evaluation inputs. Because ms-swift can act on CLI/Python inputs without a documented verification gate, a bad Kestra output can propagate into downstream model runs or reports. The pairwise chain is therefore a default-path cascade, not just a theoretical one.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift consumes Kestra-generated artifacts, logs, or notifications as training/eval input",
+        "IF no human verification step exists between Kestra output and ms-swift execution"
+      ],
+      "mitigations": [
+        "Add a manual approval step between agents",
+        "Validate Kestra outputs before handing them to ms-swift",
+        "Use schema checks on files exchanged between agents",
+        "Limit ms-swift to read-only evaluation runs for first pass",
+        "requires-engineering: implement typed contracts for inter-agent handoffs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra explicitly touches database data, cloud storage data, messages, and notifications, while ms-swift handles datasets, checkpoints, training outputs, and secrets. The profiles do not state residency or retention controls, so a compliance mismatch is plausible if regulated data is routed through both. Because no specific jurisdiction or certification gap is documented, this stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as customer messages or database records is routed through both agents",
+        "IF retention or deletion policies differ between Kestra artifacts and ms-swift outputs"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared workflows",
+        "Document retention for each agent's outputs",
+        "Separate sensitive and non-sensitive pipelines",
+        "Review where secrets are stored and logged",
+        "requires-engineering: align residency and retention controls"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:8b55891618aa6e5b0a45bb24d6296352f5f263e479fb39dbf604041793a159aa",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
