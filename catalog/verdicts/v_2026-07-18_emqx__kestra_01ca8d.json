@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "emqx",
+    "kestra"
+  ],
+  "verdict_id": "v_2026-07-18_emqx__kestra_01ca8d",
+  "generated_at": "2026-07-18T04:32:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High risk of cascading errors and capability conflict: Kestra can act on EMQX-fed data, while both expose broad network egress and Kestra has filesystem/write and shell privileges.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has broad network egress and HTTP API exposure, while B can read/write files and run workflows from stdin/stdout and files. If EMQX-delivered content is later ingested by Kestra as workflow input or file content, attacker-controlled payloads could influence execution. The shared bridge is inferred, not directly documented, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Kestra ingests EMQX-originated payloads as workflow definitions or file inputs",
+        "IF any shared filesystem or message bridge is configured between EMQX and Kestra"
+      ],
+      "mitigations": [
+        "Restrict Kestra inputs to allowlisted schemas",
+        "Disable automatic parsing of EMQX payloads as instructions",
+        "Separate EMQX and Kestra onto isolated workspaces",
+        "Add a manual review step before workflow execution",
+        "requires-engineering: add provenance tagging between broker messages and workflow inputs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches IoT data and has broad egress; B touches logs, inputs, artifacts, database and cloud-storage data, and can write files plus make HTTP requests. A plausible leakage path exists if EMQX data is forwarded into Kestra jobs or logs, and Kestra then transmits or stores it. The pairwise flow is not directly documented, so medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF IoT data from EMQX is passed into Kestra workflows",
+        "IF Kestra logs or artifacts retain that data",
+        "IF any downstream HTTP task exports those artifacts off-host"
+      ],
+      "mitigations": [
+        "Mask sensitive fields before handing data to Kestra",
+        "Turn off verbose logging for workflow inputs",
+        "Store EMQX and Kestra data in separate locations",
+        "Review outbound HTTP tasks for sensitive payloads",
+        "requires-engineering: enforce data-loss-prevention filters on workflow inputs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A has broad network egress and B has execute_shell, spawn_subprocesses, read/write filesystem, and broad egress. Kestra also supports multiple instances, so concurrent writes to shared files or mutable resources can collide. Because both agents can mutate external systems and B explicitly writes files, the overlap is dangerous by default and can cause irreversible state corruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same filesystem, bucket, queue, or API credentials",
+        "IF Kestra runs multiple instances against shared mutable resources",
+        "IF EMQX-triggered jobs and Kestra tasks write to the same path or resource"
+      ],
+      "mitigations": [
+        "Assign separate service accounts and credentials",
+        "Use distinct output directories or buckets",
+        "Serialize writes with a lock or queue",
+        "Disable concurrent writes for shared targets",
+        "requires-engineering: add optimistic concurrency checks on mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "A can emit IoT data over HTTP APIs and B can execute shell/subprocesses and send email, Slack, PagerDuty, and cloud actions. If Kestra treats EMQX output as authoritative, it can turn upstream data into downstream actions without verification, creating a classic cascade from data to irreversible operations. The profiles support this pathway even though the exact integration is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra uses EMQX output as a trigger or task input",
+        "IF downstream tasks send notifications or execute shell commands based on that input",
+        "IF no validation step is inserted between broker output and workflow action"
+      ],
+      "mitigations": [
+        "Require schema validation before task execution",
+        "Add a human approval gate for destructive tasks",
+        "Log and compare EMQX payloads against expected ranges",
+        "Disable auto-remediation on first-pass inputs",
+        "requires-engineering: implement signed, verified event contracts"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A touches IoT data and B touches logs, artifacts, database data, cloud storage data, and notifications. Both have broad network egress, so regulated IoT or personal data could be replicated into Kestra-managed stores and outbound services with different retention or residency rules. No specific certification mismatch is documented, so this remains medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT data is routed from EMQX into Kestra storage or notifications",
+        "IF Kestra retention exceeds the source system's retention policy",
+        "IF outbound cloud or messaging tasks move data across residency boundaries"
+      ],
+      "mitigations": [
+        "Classify IoT payloads before orchestration",
+        "Set short retention on Kestra logs and artifacts",
+        "Restrict outbound destinations to approved regions",
+        "Redact personal fields before notifications",
+        "requires-engineering: add policy checks for residency and retention"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d8cb137a68ad9e483463ca2ec80ebbb627d8da133031d75f1628ffaf87147125",
+    "profile_b_hash": "sha256:d0114b51adbd3f50d08178f70697b763dc9f2120a2e1a84e16166c9df2cb7170",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
