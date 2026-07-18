@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dexter",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-18_dexter__xonsh_55eb25",
+  "generated_at": "2026-07-18T00:07:42Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.59,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible; compliance risk is elevated by financial data handling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "dexter can write to .dexter/scratchpad/ and uses autonomous execution with broad network egress; xonsh reads/writes the filesystem and consumes stdin/stdout. That creates a plausible content bridge where dexter-produced files or outputs can be treated as instructions by xonsh. The pathway is not proven, but it exists in default-like usage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF dexter writes attacker-controlled text into .dexter/scratchpad/ and xonsh reads it as shell input, injection is possible.",
+        "IF xonsh is used to execute or parse dexter output without sanitization, instruction hijacking can occur."
+      ],
+      "mitigations": [
+        "Use a separate directory for dexter scratch files and xonsh inputs.",
+        "Add a manual review step before xonsh executes any dexter-generated text.",
+        "Restrict xonsh to read-only mode for dexter outputs where possible.",
+        "Prefix all dexter outputs with a non-executable wrapper format.",
+        "requires-engineering: add provenance tagging between dexter outputs and xonsh inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "dexter touches financial and market data and has broad network egress to multiple APIs; xonsh can read the filesystem and environment variables and also has broad egress. If they share a workspace, sensitive files or secrets can flow from dexter into xonsh and then out through network calls. The pair therefore has a realistic exfiltration path in default usage.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF dexter stores financial data in the shared filesystem, xonsh can read it.",
+        "IF xonsh is given access to the same workspace and makes outbound requests, copied data can leave the environment."
+      ],
+      "mitigations": [
+        "Separate dexter and xonsh workspaces.",
+        "Block outbound network for xonsh except to approved endpoints.",
+        "Store secrets outside any shared directory.",
+        "Review filesystem contents before passing them from dexter to xonsh.",
+        "requires-engineering: enforce per-agent network and filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "dexter supports multiple instances and autonomous execution, while xonsh can execute shell commands, spawn subprocesses, and write the filesystem. Even though xonsh does not modify git state, both agents can write shared files and compete over the same workspace. The conflict is plausible in default setups and can corrupt outputs or overwrite state.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, concurrent writes can overwrite each other.",
+        "IF dexter runs multiple instances while xonsh edits shared files, race conditions can occur."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Serialize writes with a simple lock file.",
+        "Avoid running multiple dexter instances against the same workspace.",
+        "Have xonsh write to temp files first, then rename atomically.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "dexter is autonomous and can emit research outputs that xonsh can consume as shell commands or scripts. xonsh has execution authority, so if it treats dexter output as authoritative without verification, errors can cascade into incorrect actions. The pair is not documented as integrated, so uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes dexter-generated commands without validation, incorrect actions can propagate.",
+        "IF dexter outputs unverified facts that xonsh uses in scripts, downstream errors can multiply."
+      ],
+      "mitigations": [
+        "Require human review of dexter outputs before execution.",
+        "Use a validation script to check commands before xonsh runs them.",
+        "Limit xonsh to dry-run mode for dexter-derived actions.",
+        "Log and diff dexter outputs before consumption.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dexter handles financial data and market data, while xonsh can read filesystem contents and environment variables and has broad network egress. That combination creates a compliance exposure if regulated financial records or secrets are moved into xonsh logs, outputs, or external APIs. No residency or certification mismatch is documented, so the risk is medium, not high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated financial data is placed in a shared workspace, xonsh may process it outside intended controls.",
+        "IF secrets from dexter are exposed to xonsh and then sent to external services, policy violations can occur."
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared directories.",
+        "Mask secrets before passing data between agents.",
+        "Disable external API calls in xonsh for regulated workloads.",
+        "Review retention settings for both agents.",
+        "requires-engineering: document and enforce data-handling boundaries."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a24778497619fe3b6de61480821327763d8916bb6e4d4d263898598c1ca23b22",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
