@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "whisper",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-18_whisper__xonsh_e13ea8",
+  "generated_at": "2026-07-18T05:16:51Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.78,
+  "composite_score": 0.53,
+  "headline": "High: xonsh can read/write shared files while whisper can ingest audio files, creating default-path prompt, leakage, and cascading-error risks if paired on the same workspace.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Whisper can process audio files, and xonsh can read/write the filesystem and run shell commands. If xonsh passes Whisper-generated transcripts or other file content back into shell workflows, attacker-controlled content can be treated as instructions. The pair lacks a documented provenance barrier, so the interaction is plausible in default file-based workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF xonsh reads Whisper output from a shared file and executes or parses it as commands",
+        "IF audio content is transcribed into text that contains shell metacharacters or instructions"
+      ],
+      "mitigations": [
+        "Write Whisper output to a dedicated review-only directory",
+        "Require manual inspection before xonsh consumes any transcript",
+        "Prefix transcripts with a non-executable header and metadata",
+        "Use separate working directories for audio inputs and shell automation",
+        "requires-engineering: add provenance tagging between transcription and shell execution"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Whisper touches audio files, while xonsh reads and writes filesystem contents and environment variables. In a shared workspace, audio or transcript files can be exposed to xonsh and then copied into broader shell outputs or logs. The pair is open-source and docs-only, so the exact leakage path is inferred, but the shared filesystem makes it plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory tree",
+        "IF Whisper outputs transcripts containing sensitive audio content that xonsh later reads or prints"
+      ],
+      "mitigations": [
+        "Store audio and transcripts in separate restricted folders",
+        "Disable shell history for commands handling transcripts",
+        "Review xonsh scripts before they echo file contents",
+        "Rotate or redact logs that may capture transcript text",
+        "requires-engineering: enforce workspace ACLs between the agents"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Whisper has no write or shell capability, but xonsh can execute shell commands, spawn subprocesses, read and write files, and use broad network egress. If both are pointed at the same directory, xonsh can overwrite or race on files Whisper depends on. Because xonsh has unrestricted mutable access and no locking is documented, the safer choice is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF xonsh writes into the same directory where Whisper reads audio or writes transcripts",
+        "IF xonsh subprocesses modify files while Whisper is processing them"
+      ],
+      "mitigations": [
+        "Use separate input and output directories",
+        "Make Whisper inputs read-only during processing",
+        "Serialize file access with a simple lock file",
+        "Avoid letting xonsh rewrite transcript artifacts in place",
+        "requires-engineering: add atomic handoff and locking around shared files"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Whisper produces transcripts or text from audio, and xonsh can act on file contents and shell commands. If xonsh treats Whisper output as authoritative, transcription errors can cascade into incorrect commands, reports, or file edits. The pair has no built-in verification link in the profiles, so the default risk is a medium cascading-error pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes Whisper transcripts without a human verification step",
+        "IF downstream shell commands are generated from transcription text"
+      ],
+      "mitigations": [
+        "Require human review of transcripts before execution",
+        "Mark Whisper output as untrusted input in xonsh workflows",
+        "Compare critical fields against the original audio manually",
+        "Use a checksum or timestamp to track transcript revisions",
+        "requires-engineering: add validation rules before any command generation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Whisper touches audio and speech data, while xonsh touches filesystem contents, source code, configuration, and environment variables. No residency, certification, or retention mismatch is documented in either profile, so only a low compliance concern remains: sensitive audio-derived text could be stored in general-purpose shell artifacts. The other agent is cited because the risk arises from the pair's combined data handling.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF audio transcripts are stored alongside source code or configuration files",
+        "IF retention rules for shell artifacts differ from rules for audio data"
+      ],
+      "mitigations": [
+        "Keep transcripts out of code repositories",
+        "Set a short retention window for transcript artifacts",
+        "Label audio-derived files with a sensitivity tag",
+        "Review shell logs for accidental transcript capture",
+        "requires-engineering: align retention and deletion policies across both workflows"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:0914c800eb1345a23d5e7827cd2cf18624edd7e9cb6969cb920ee2e081fcc962",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
