@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "marketingskills"
+  ],
+  "verdict_id": "v_2026-07-18_kotaemon__marketingskills_9d5e2e",
+  "generated_at": "2026-07-18T02:25:54Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.425,
+  "headline": "Medium pairwise risks: shared file/workspace and output-chaining create leakage, conflict, and cascading-error exposure; no direct injection channel is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "No direct shared channel is documented, but both agents can exchange content through files and generated outputs: agent_a writes to ./ktem_app_data and agent_b reads/writes skill files. That makes manual copy-paste or file-mediated prompt injection plausible, though not default and the blast radius is limited. Uncertainty keeps this above none.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF operator copies agent_a output into agent_b skill files or prompts, injection becomes possible.",
+        "IF both agents are pointed at the same shared workspace, file-mediated injection is enabled."
+      ],
+      "mitigations": [
+        "Keep agent_a and agent_b in separate directories.",
+        "Disable copy-paste of raw model output into agent_b prompts.",
+        "Add a human review step before any file from agent_a is reused by agent_b.",
+        "Use read-only mounts for agent_a outputs where possible.",
+        "requires-engineering: add provenance tags to files passed between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches API keys and broad document classes, while agent_b has filesystem read/write and network egress to allowlisted services. If they share a workspace or if agent_b ingests agent_a artifacts, sensitive content can flow from A into B and then out via B's APIs. This is not proven by a shared mount, so medium is appropriate rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a artifacts containing API keys or transcripts are placed in a directory agent_b can read, leakage is enabled.",
+        "IF agent_b forwards shared files to its allowlisted network destinations, exfiltration risk increases."
+      ],
+      "mitigations": [
+        "Store agent_a secrets in a separate vault, not in shared files.",
+        "Mount agent_a output directories read-only for agent_b.",
+        "Block agent_b from reading agent_a working directories.",
+        "Review outbound destinations allowed for agent_b.",
+        "requires-engineering: enforce per-agent workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents support multiple instances, and agent_b can write the filesystem while agent_a also uses files under ./ktem_app_data. Without documented locking or isolation, concurrent writes to overlapping paths can corrupt shared state or overwrite artifacts. The overlap is inferred from profiles, so medium fits better than low because write conflict is plausible in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are launched against the same writable directory, write conflicts are possible.",
+        "IF agent_b edits files under a path also used by agent_a, last-writer-wins corruption can occur."
+      ],
+      "mitigations": [
+        "Assign distinct working directories to each agent.",
+        "Run only one writer per shared path.",
+        "Make shared files read-only for one side.",
+        "Check for lockfiles before writes.",
+        "requires-engineering: add transactional locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_b's sandboxing says skills 'reference each other and build on shared context,' which suggests it may treat upstream outputs as authoritative. agent_a is a RAG/chatbot that produces documents, citations, and transcripts that could be consumed downstream. That creates a plausible chain where A's errors propagate into B's outputs without verification, but no direct action-taking authority is shown.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF agent_b consumes agent_a-generated text as shared context without verification, errors can cascade.",
+        "IF agent_a outputs are reused as source material for marketing content, hallucinations can be amplified."
+      ],
+      "mitigations": [
+        "Require source verification before agent_b reuses agent_a output.",
+        "Mark agent_a outputs as untrusted by default.",
+        "Add a checklist for factual claims before publication.",
+        "Limit agent_b to summarizing, not asserting, agent_a content.",
+        "requires-engineering: add citation validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "No explicit residency, certification, or retention mismatch is documented. However, agent_a handles API keys and chat transcripts, while agent_b stores skill files and has filesystem/network access, so compliance gaps are possible if sensitive data is copied into B's workspace. Because the profiles do not show a concrete mismatch, this stays low rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from agent_a is copied into agent_b skill files, retention and access controls may diverge.",
+        "IF agent_b's allowlisted services are outside the operator's data-processing policy, compliance issues arise."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in agent_b files.",
+        "Document retention rules for both agents.",
+        "Review whether agent_b destinations are approved for the data class.",
+        "Separate secret-bearing content from marketing context.",
+        "requires-engineering: align retention and deletion workflows across both agents."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:88ea749df8650d80f95f68c3ec882b340bb09f92d2d6e15a4740b40c8e2bf7c0",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
