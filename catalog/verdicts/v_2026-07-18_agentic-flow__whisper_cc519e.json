@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-07-18_agentic-flow__whisper_cc519e",
+  "generated_at": "2026-07-18T05:44:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.335,
+  "headline": "Highest risk is capability conflict: agentic-flow can write/modify state and use MCP, while whisper is read-only and non-networked, so prompt-injection and leakage are limited but workflow coupling remains.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "agent_a can use MCP and stdin/stdout, so it could pass attacker-controlled text into downstream workflows; agent_b has no clipboard, MCP, or stdin/stdout ingestion surface, making direct hijack unlikely. The pair lacks a documented shared channel, so this is limited to unusual manual bridging or orchestrator wiring.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF an operator pipes agent_a output into agent_b prompts or transcripts, injection becomes plausible.",
+        "IF a shared MCP server or message queue is added between them, attacker-controlled content can bridge the pair."
+      ],
+      "mitigations": [
+        "Disable automatic piping between agent_a and agent_b outputs.",
+        "Require human review before any text from agent_a is reused as instructions.",
+        "Keep agent_b isolated from MCP and stdin/stdout bridges.",
+        "Add a fixed prompt delimiter and instruction/content separation rule.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "agent_a touches code, repository metadata, and task prompts, while agent_b only touches audio/speech and has no filesystem read, network egress, or API calls. There is no shared workspace or upload path in the profiles, so leakage from agent_a into agent_b is not evidenced beyond manual transfer.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is given secrets or sensitive repository content and an operator manually copies it into agent_b inputs, leakage can occur.",
+        "IF a shared filesystem is introduced, agent_b could receive files that originated in agent_a."
+      ],
+      "mitigations": [
+        "Do not pass secrets from agent_a into agent_b.",
+        "Store agent_a outputs in a separate workspace from audio inputs.",
+        "Redact repository metadata before any cross-agent transfer.",
+        "Verify agent_b remains offline and file-read disabled.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a can execute shell, modify git state, install packages, and use MCP; agent_b cannot write files, modify git, or spawn subprocesses. The overlap is asymmetric, but if both are scheduled on the same mutable workspace, agent_a can race with external state changes even though agent_b itself cannot write, so the interaction exists in non-default orchestration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF agent_a and another writer share the same git checkout, state conflicts can occur.",
+        "IF the orchestrator gives agent_a and agent_b the same mutable directory, agent_a can overwrite artifacts produced for agent_b."
+      ],
+      "mitigations": [
+        "Run agent_a in a separate working directory.",
+        "Keep agent_b read-only with no shared checkout.",
+        "Serialize any git or filesystem writes.",
+        "Use per-agent temp directories.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "agent_a is a workflow agent that can emit analysis and route/build commands, while agent_b is a speech model with no action-taking authority. If agent_b consumes agent_a outputs as authoritative transcripts or labels, errors can cascade into downstream decisions, but the blast radius is bounded because agent_b cannot itself execute external actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF agent_b is used to transcribe or summarize agent_a outputs without verification, mistakes can propagate.",
+        "IF agent_a's generated text is treated as ground truth by a downstream workflow, cascading error becomes likely."
+      ],
+      "mitigations": [
+        "Require a verification step before reusing agent_a outputs.",
+        "Do not treat agent_a text as authoritative facts.",
+        "Keep agent_b outputs labeled as model-generated.",
+        "Sample-check a few outputs before automation.",
+        "requires-engineering: add confidence and provenance checks to the pipeline."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "agent_a handles code, repository metadata, and task prompts, while agent_b handles audio/speech and has no network egress or filesystem read. No residency, certification, or retention mismatch is documented in the profiles, so compliance risk is limited to any future policy mismatch introduced by the operator rather than the pair itself.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is manually moved from agent_a into agent_b, policy review is required.",
+        "IF the operator assigns different retention rules to the same data class across the two agents, compliance mismatch can arise."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data across the pair.",
+        "Document retention rules for each agent.",
+        "Keep agent_b offline and scope-limited.",
+        "Review data-class handling before deployment.",
+        "requires-engineering: map residency and retention controls per agent."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
