@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "authelia",
+    "oh-my-openagent"
+  ],
+  "verdict_id": "v_2026-07-18_authelia__oh-my-openagent_ed7f9c",
+  "generated_at": "2026-07-18T03:32:11Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.635,
+  "headline": "High: shared filesystem and broad egress create prompt-injection, leakage, and cascading-action risks; Authelia\u2019s OAuth/ForwardAuth can amplify misuse by oh-my-openagent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "oh-my-openagent explicitly uses runtime-injected MCPs/hooks and reads workspace files, so it can ingest attacker-controlled content; Authelia can expose auth-related outputs via ForwardAuth/OIDC flows. A shared filesystem or copied config between them would let malicious text influence agent behavior, though no direct bridge is documented, so I choose medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or config directory, injected text can cross from one into the other.",
+        "IF oh-my-openagent parses AGENTS.md/README.md as instructions, malicious content can steer tool use."
+      ],
+      "mitigations": [
+        "Separate workspaces and config directories per agent.",
+        "Disable automatic ingestion of shared markdown files where possible.",
+        "Require provenance labels on any file passed between agents.",
+        "Review MCP/hook inputs before enabling them.",
+        "requires-engineering: add content-sanitization or instruction-separation guards."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "oh-my-openagent touches project code, session history, and provider auth data, while Authelia handles OIDC/OAuth and broad network egress. If they share a workspace or credentials cache, sensitive auth material can flow into outputs or third-party calls. The pairwise leakage path is plausible in default docs, but not directly evidenced, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same credential cache or session directory, provider auth data may be exposed.",
+        "IF oh-my-openagent uploads context to external APIs, project code and session history can leave the local boundary."
+      ],
+      "mitigations": [
+        "Store auth secrets in a separate, access-restricted profile.",
+        "Exclude credential and session directories from shared mounts.",
+        "Turn off external API calls for sensitive tasks.",
+        "Rotate any credentials used during joint runs.",
+        "requires-engineering: enforce per-agent data-loss-prevention policies."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Authelia has broad network egress and OAuth/OIDC/ForwardAuth surfaces; oh-my-openagent has broad egress, subprocesses, browsers, and multiple-instance support. Even without explicit filesystem write fields, both can mutate shared external resources and race through runtime-injected MCPs, making conflicting actions dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are granted the same OAuth client or API token, they can overwrite each other's state.",
+        "IF both operate on the same external service without locking, concurrent writes can conflict."
+      ],
+      "mitigations": [
+        "Use distinct credentials per agent.",
+        "Serialize writes through one orchestrator.",
+        "Restrict one agent to read-only mode.",
+        "Disable multi-instance execution for shared targets.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "oh-my-openagent can act through team_send_message/team_task_create and other tool surfaces, while Authelia can produce auth decisions or forwarded responses. If oh-my-openagent treats Authelia output as authoritative, a mistaken auth or policy result can cascade into downstream actions. The action-taking authority makes the blast radius high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF oh-my-openagent consumes Authelia output without verification, incorrect auth conclusions can be operationalized.",
+        "IF team_send_message or team_task_create is enabled, bad upstream facts can trigger external actions."
+      ],
+      "mitigations": [
+        "Add a human review step before any outward action.",
+        "Require schema validation on Authelia outputs.",
+        "Limit oh-my-openagent to drafting only.",
+        "Log and diff all upstream-to-downstream transformations.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Authelia is an authentication layer with broad network egress, while oh-my-openagent explicitly handles provider auth prompts, session history, project code, and telemetry. That creates a plausible compliance mismatch around retention and credential handling, but no residency or certification conflict is documented, so medium is the highest supportable level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF provider auth prompts or session history are retained centrally, retention policy mismatch can occur.",
+        "IF project code is sent to external services, data-handling obligations may differ from local-only expectations."
+      ],
+      "mitigations": [
+        "Minimize retained session history.",
+        "Disable telemetry for regulated projects.",
+        "Separate auth logs from code-processing logs.",
+        "Review data-processing notices for both tools.",
+        "requires-engineering: align retention and residency controls across the pair."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:faa75582b5196a2f15393833407082625d8f4f896377973ed73eb6e33d3b454f",
+    "profile_b_hash": "sha256:60ccecb0f0520945d926d4197239896db22533fcab3cbaa21d5a4e5716ad417a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
