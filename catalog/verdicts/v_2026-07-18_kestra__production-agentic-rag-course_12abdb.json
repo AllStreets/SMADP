@@ -1,0 +1,173 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kestra",
+    "production-agentic-rag-course"
+  ],
+  "verdict_id": "v_2026-07-18_kestra__production-agentic-rag-course_12abdb",
+  "generated_at": "2026-07-18T01:47:12Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.725,
+  "headline": "High risk of data leakage and cascading errors: Kestra can move files, logs, and notifications into a LangGraph RAG course that handles secrets and external APIs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Kestra can read/write files, stdout/stderr, and notifications, while the course agent consumes notebooks, API outputs, and stdin/stdout in a local development environment. That creates a plausible content-to-instructions bridge if one agent passes untrusted text to the other. No direct shared channel is documented, so I do not escalate further.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Kestra writes attacker-controlled text into files or notifications that the course agent later parses as instructions, injection is possible.",
+        "IF the course agent treats file or notebook content as trusted prompts, the bridge becomes exploitable."
+      ],
+      "mitigations": [
+        "Separate the agents into distinct workspaces.",
+        "Strip instructions from any file or message payload before passing between agents.",
+        "Require explicit allowlists for prompt-bearing fields.",
+        "Review any notebook or workflow step that ingests generated text.",
+        "requires-engineering: add provenance tags to all inter-agent messages."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Kestra touches logs, inputs, artifacts, database data, cloud storage data, messages, and notifications, and the course agent handles configuration secrets plus API-backed RAG data. If they share a workspace or file path, Kestra can surface sensitive material into outputs or notifications. The pairwise leakage path is credible even without a documented shared filesystem, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same workspace or mounted volume, sensitive files can flow from the course agent into Kestra logs or notifications.",
+        "IF Kestra is configured to emit artifacts or notifications containing file contents, secrets may be exposed."
+      ],
+      "mitigations": [
+        "Move secrets to a separate vault from shared files.",
+        "Disable verbose logging for both agents.",
+        "Mount only the minimum required directories.",
+        "Redact secrets before any notification step.",
+        "requires-engineering: enforce per-agent filesystem isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents can execute shell commands, spawn subprocesses, read and write the filesystem, and use local development tooling. Kestra also requests root and docker.sock, while the course agent runs via docker compose. Concurrent writes to shared files, containers, or compose state can collide and cause destructive overwrites or broken environments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory or Docker context, write conflicts can corrupt workflows or compose state.",
+        "IF either agent uses the other's files as mutable state, race conditions become likely."
+      ],
+      "mitigations": [
+        "Run each agent in a separate directory.",
+        "Avoid sharing Docker contexts or sockets.",
+        "Serialize writes with a lock file.",
+        "Use read-only mounts where possible.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Kestra is an automation/orchestration system, and the course agent exposes agentic ask/stream endpoints plus a LangGraph subagent model. If Kestra feeds outputs into the course agent without verification, the second agent can act on incorrect or hallucinated content and propagate it into downstream tasks. That is a default-dangerous cascade because both sides can automate actions.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Kestra-generated text is used as input to the course agent's ask or agentic-ask endpoints, unverified errors can cascade.",
+        "IF the course agent forwards retrieved facts into downstream actions, the error can become operational."
+      ],
+      "mitigations": [
+        "Insert a human review step between agents.",
+        "Require source citations before downstream action.",
+        "Compare outputs against original inputs.",
+        "Disable automatic action execution on first-pass results.",
+        "requires-engineering: add verification gates between orchestration and RAG outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Kestra explicitly touches cloud storage data, database data, logs, and notifications, while the course agent handles configuration secrets and external API keys. If regulated or sensitive data is routed through both, retention and residency obligations can diverge. No specific jurisdiction or certification mismatch is documented, so this stays medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed by both agents under different retention policies, compliance gaps can arise.",
+        "IF the course agent sends secrets or paper data to third-party APIs, policy obligations may differ from Kestra's logs and notifications."
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents.",
+        "Disable retention of sensitive logs.",
+        "Confirm API usage terms for secret-bearing requests.",
+        "Keep regulated data out of notifications.",
+        "requires-engineering: align retention and residency controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:248d48f410eba2bfa72130f018b870c739113ac80b1c9f7469f63cb12a3d19d1",
+    "profile_b_hash": "sha256:2cdcfdb84c4aac3d192dcefc4ecede217c388e6fa1b6683bdf1821ff803767ba",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
