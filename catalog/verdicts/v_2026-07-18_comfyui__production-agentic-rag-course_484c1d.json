@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "comfyui",
+    "production-agentic-rag-course"
+  ],
+  "verdict_id": "v_2026-07-18_comfyui__production-agentic-rag-course_484c1d",
+  "generated_at": "2026-07-18T00:35:19Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.395,
+  "headline": "High: B can read/write local files and run shell commands, while A is offline and file-isolated, creating a one-way data and action risk if outputs are bridged.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "A has no filesystem read/write, stdin/stdout, clipboard, or MCP surfaces, so direct injection into A is blocked. B can read/write files and use stdin/stdout, so only an unusual manual or file bridge could carry attacker-controlled content into A. The pathway is limited and not default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF an operator manually copies B-generated text into A's prompt or workflow files, injection becomes possible.",
+        "IF a shared file bridge is added between A and B, B-authored content can reach A."
+      ],
+      "mitigations": [
+        "Keep A and B on separate workspaces.",
+        "Disable manual copy-paste between agents during runs.",
+        "Use a read-only export format for any B output fed to A.",
+        "Add a human review step before any B output is reused.",
+        "requires-engineering: add provenance tagging on bridged artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A is offline and does not read files, but B can read/write the filesystem and handles configuration secrets. If A outputs are bridged into B's workspace, B can ingest them and potentially expose sensitive model assets or secrets in its outputs or API calls. The interaction is not default, but B's local-dev surface makes leakage plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF A outputs are saved into a directory that B reads, B can ingest them.",
+        "IF B is run with real secrets instead of placeholders, those secrets may be exposed through logs or outputs."
+      ],
+      "mitigations": [
+        "Use separate directories for A and B.",
+        "Replace real secrets with placeholders in B.",
+        "Mount B's workspace read-only when possible.",
+        "Review B logs before sharing outputs.",
+        "requires-engineering: isolate secret-bearing services from agent outputs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "A cannot write files, modify git, or spawn subprocesses, so it cannot contend for mutable resources with B. B can write the filesystem and run shell commands, but without A write access or shared mutable state, the overlap is mostly read-side and low risk. Uncertainty does not justify escalation.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF A is given filesystem write access outside its current profile, write conflicts could emerge.",
+        "IF both agents are pointed at the same mutable directory, B can overwrite A-produced artifacts."
+      ],
+      "mitigations": [
+        "Keep A read-only.",
+        "Run B in a separate working directory.",
+        "Avoid shared git repositories during paired runs.",
+        "Snapshot outputs before B processes them.",
+        "requires-engineering: add locking for any shared mutable resource."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A can generate image/workflow outputs, and B is a content-writing agent with API and stdin/stdout surfaces that may treat upstream text as input. There is no documented verification barrier between them, so if A's outputs are forwarded to B, B may propagate errors or hallucinated metadata into downstream writing. The pairwise pathway is plausible but not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF A's generated content is passed to B without verification, B may reuse it as authoritative.",
+        "IF B is tasked to summarize or publish A outputs, any A error can cascade downstream."
+      ],
+      "mitigations": [
+        "Require source checks before B uses A output.",
+        "Ask B to cite provenance for any claims derived from A.",
+        "Insert a human review gate between A and B.",
+        "Limit B to formatting rather than factual transformation.",
+        "requires-engineering: add automated validation of A-to-B handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "B explicitly handles configuration secrets and requests Airflow credentials, while A is an offline image-generation tool with no secret handling. The main compliance issue is B's local-development environment and secret-bearing workflow, which can create retention or access-control mismatches if paired with A outputs in shared storage. A is not the compliance driver here, so it is cited only to show the contrast.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF B is run with production secrets in a shared workspace, retention and access controls may be violated.",
+        "IF A outputs are stored alongside B's secret-bearing artifacts, compliance boundaries blur."
+      ],
+      "mitigations": [
+        "Use non-production secrets in B.",
+        "Store A outputs separately from B artifacts.",
+        "Rotate any exposed credentials after the run.",
+        "Review retention settings for B logs.",
+        "requires-engineering: enforce secret segregation and retention policy controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.7.4",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:66a79dea79050734c48cf0b721cbf43d2f5fd338ffc0ade48ff148dd69ef28e3",
+    "profile_b_hash": "sha256:2cdcfdb84c4aac3d192dcefc4ecede217c388e6fa1b6683bdf1821ff803767ba",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
