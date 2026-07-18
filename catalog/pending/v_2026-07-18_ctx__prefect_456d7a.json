@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "prefect"
+  ],
+  "verdict_id": "v_2026-07-18_ctx__prefect_456d7a",
+  "generated_at": "2026-07-18T02:14:53Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Medium prompt-injection and data-leakage risk: ctx can observe Claude Code events/files while Prefect has broad network egress, creating an unverified but plausible cross-agent trust and exfiltration path.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse and Stop events and has filesystem access, so it can ingest content from another agent\u2019s outputs by default. Prefect is an orchestration system with broad network egress, so if its outputs are routed into ctx\u2019s watched workspace, attacker-controlled text could be treated as instructions. The interaction is inferred, not directly documented, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Prefect writes attacker-controlled text into a file or workflow artifact that ctx watches, THEN ctx may parse it as instructions.",
+        "IF Claude Code emits raw tool output into the shared workspace, THEN ctx can ingest it without provenance checks."
+      ],
+      "mitigations": [
+        "Restrict ctx to a dedicated read-only workspace.",
+        "Disable automatic ingestion of Prefect-generated artifacts into ctx.",
+        "Add provenance tags to files before ctx reads them.",
+        "Use separate OS users or containers for the two agents.",
+        "requires-engineering: add content-sanitization and allowlist parsing for ctx inputs."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs, graph data, and MCP servers, and Prefect has broad network egress. If they share a workspace, sensitive operational data from ctx can flow into Prefect workflows and then out over the network. The profiles do not prove a shared filesystem, but ctx\u2019s filesystem surface plus Prefect\u2019s egress makes leakage plausible enough to rate medium under uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx stores logs or graph data in a workspace that Prefect can read, THEN Prefect can transmit those contents externally.",
+        "IF Prefect workflows ingest ctx artifacts by path or glob, THEN data classes touched by ctx may leave the local boundary."
+      ],
+      "mitigations": [
+        "Move ctx logs to a private directory.",
+        "Block Prefect from reading ctx workspaces.",
+        "Redact sensitive fields before workflow handoff.",
+        "Review outbound destinations for Prefect runs.",
+        "requires-engineering: enforce per-agent storage isolation and egress policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "ctx can write to the filesystem and supports multiple instances, while Prefect has broad network egress but no write-capability overlap is documented. The pair does not show shared mutable resources or locking conflicts, so only a limited coordination risk exists if both touch the same files. Because the shared-write pathway is not established, low is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are configured to write the same directory, THEN file clobbering or race conditions can occur.",
+        "IF Prefect tasks mutate artifacts that ctx also edits, THEN last-writer-wins conflicts may corrupt state."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Serialize writes with a lock file.",
+        "Make one agent read-only for shared artifacts.",
+        "Use timestamped filenames to avoid collisions.",
+        "requires-engineering: add orchestrator-level locking for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code events and can surface derived context, while Prefect is an orchestrator that can act on workflow metadata. If Prefect consumes ctx output as authoritative, a mistaken or manipulated ctx summary can cascade into downstream workflow actions. The profiles suggest an interaction path but not a verified verification step, so medium fits the default-risk rubric.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Prefect uses ctx-generated summaries as workflow inputs without validation, THEN downstream actions may be based on incorrect facts.",
+        "IF ctx emits incomplete or stale runtime logs, THEN Prefect may propagate those errors into orchestration decisions."
+      ],
+      "mitigations": [
+        "Require human review before Prefect acts on ctx output.",
+        "Add schema validation to ctx-produced artifacts.",
+        "Compare ctx summaries against source logs before execution.",
+        "Limit Prefect actions to non-destructive steps.",
+        "requires-engineering: implement confidence scoring and rejection thresholds for ctx-to-Prefect handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only and touch operational metadata rather than regulated data classes; no residency, certification, or retention mismatch is documented. ctx handles audit/runtime logs, while Prefect handles workflow metadata, so the main compliance concern is limited logging overlap rather than a clear breach. Because the other agent is not implicated in a specific regulated-data transfer, low is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.evidence_level"
+        },
+        {
+          "profile_field": "agent_b.evidence_level"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is added to ctx logs or Prefect workflow metadata, THEN retention and residency controls must be re-evaluated.",
+        "IF either agent is deployed under a jurisdiction-specific policy, THEN logging defaults may need adjustment."
+      ],
+      "mitigations": [
+        "Classify data before it enters either agent.",
+        "Disable verbose logging for sensitive workflows.",
+        "Set explicit retention windows for logs and metadata.",
+        "Review deployment region settings.",
+        "requires-engineering: add policy enforcement for residency and retention."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:4bcd3fe1db524c4b7fe6c4f45c75a2a980cd840413fef464a7616750d8a3f437",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
