@@ -1,0 +1,176 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "great-expectations",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-19_great-expectations__lightagent_df3b72",
+  "generated_at": "2026-07-19T00:39:47Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk data leakage and cascading error: LightAgent\u2019s broad egress/MCP can expose Great Expectations outputs and secrets if paired without isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Great Expectations reads and writes validation results and documentation, while LightAgent can use MCP and browser/tooling paths that may ingest external content. The pair has no documented shared channel, but if Great Expectations outputs are copied into LightAgent or exposed via shared files/MCP, prompt injection becomes plausible. Uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations outputs are placed in a shared file or MCP message consumed by LightAgent, injection is possible.",
+        "IF LightAgent treats copied validation text as instructions, attacker-controlled content can steer tool use."
+      ],
+      "mitigations": [
+        "Keep Great Expectations outputs in a read-only folder.",
+        "Disable MCP ingestion of untrusted text in LightAgent.",
+        "Strip instructions from validation artifacts before handoff.",
+        "Use a provenance tag for all copied outputs.",
+        "requires-engineering: add content-sanitization at the MCP boundary."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Great Expectations touches data sources, validation results, and documentation, while LightAgent has broad network egress, browser execution, MCP, and handles API keys. If Great Expectations artifacts contain sensitive data, LightAgent can transmit them off-host by default. That creates a realistic exfiltration path with irreversible blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Great Expectations validation artifacts include sensitive rows or secrets, LightAgent can forward them over network egress.",
+        "IF LightAgent is pointed at the same workspace, file contents may be uploaded or relayed through tools."
+      ],
+      "mitigations": [
+        "Separate the agents onto different workspaces.",
+        "Remove secrets from validation outputs before sharing.",
+        "Disable LightAgent network egress for this workflow.",
+        "Rotate any API keys exposed in shared artifacts.",
+        "requires-engineering: enforce DLP on file-to-tool transfers."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Great Expectations can install packages and writes files; LightAgent can spawn subprocesses, use MCP, and supports multiple instances. They do not both advertise unrestricted filesystem write, so a high-severity write collision is not proven. Still, overlapping execution and file-touching surfaces create a plausible conflict in shared directories.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory, file clobbering can occur.",
+        "IF LightAgent subprocesses modify artifacts that Great Expectations also updates, state races are possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Run one agent at a time on shared artifacts.",
+        "Make shared files read-only during analysis.",
+        "Use git or filesystem locks around writes.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Great Expectations produces validation results that LightAgent can consume through MCP or file-based workflows. LightAgent\u2019s tool-calling and workflow-state handling mean it may act on those outputs without independent verification. The pair therefore supports a default cascade from validation text into downstream actions, though not necessarily irreversible ones.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent uses Great Expectations results as authoritative input, downstream actions may follow incorrect validations.",
+        "IF no verification step is inserted, a bad test result can propagate into workflow state."
+      ],
+      "mitigations": [
+        "Require a human review step before actioning results.",
+        "Add schema checks on Great Expectations outputs.",
+        "Compare results against a second validator.",
+        "Mark unverified outputs as non-authoritative.",
+        "requires-engineering: implement confidence gating in the orchestrator."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Great Expectations touches validation results and documentation, while LightAgent handles user conversations, long-term memory, trace data, and tool results with broad egress. If the shared data class includes regulated or retention-sensitive content, the pair can create a retention/residency mismatch. The profiles do not prove a specific jurisdiction breach, so medium is the highest supported level.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into LightAgent memory or traces, retention obligations may be violated.",
+        "IF Great Expectations artifacts are retained longer than policy allows, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in shared artifacts.",
+        "Set explicit retention limits for LightAgent traces.",
+        "Delete validation outputs after review.",
+        "Document the data-class handling boundary.",
+        "requires-engineering: align retention and residency controls across both systems."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-2.1"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:976a11f35080ca9d89338092212c8a346bfdcb222fb57c91656113659de40983",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

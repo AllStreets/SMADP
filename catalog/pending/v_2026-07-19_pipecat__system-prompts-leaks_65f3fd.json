@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "system-prompts-leaks"
+  ],
+  "verdict_id": "v_2026-07-19_pipecat__system-prompts-leaks_65f3fd",
+  "generated_at": "2026-07-19T00:39:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High: Pipecat\u2019s shared-bus, multi-instance design can amplify prompt injection and cascading errors when paired with a prompt-leak corpus, while its allowlisted egress creates leakage/compliance exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "agent_a explicitly uses a shared bus with shared state across instances, so attacker-controlled content can traverse the pair\u2019s communication path. agent_b is a prompt-leak corpus, which is exactly the kind of content that can be treated as instructions if ingested. The interaction is not directly documented, so uncertainty pushes severity upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF agent_b content is fed into agent_a via the shared bus or copied into agent_a inputs",
+        "IF agent_a parses external text as instructions without provenance checks"
+      ],
+      "mitigations": [
+        "Disable shared-bus bridging between instances for this pair",
+        "Add provenance tags to all agent_b-derived text before agent_a sees it",
+        "Strip instruction-like markup from agent_b outputs",
+        "requires-engineering: enforce a trusted/untrusted content boundary in the orchestrator"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a touches text, conversation state, audio, video, images, and analytics, and has allowlisted network egress; agent_b has no network egress and no declared data classes. The pair can still leak sensitive conversation content if agent_a forwards shared-state material to external services, but the evidence does not show uncontrolled exfiltration by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF agent_a forwards shared-bus conversation state to any allowlisted third-party API",
+        "IF agent_b-derived prompts contain secrets and are copied into agent_a context"
+      ],
+      "mitigations": [
+        "Remove secrets from shared conversation state before handoff",
+        "Restrict agent_a egress to a single vetted backend",
+        "Turn off analytics/telemetry for this pair",
+        "requires-engineering: add content-class filtering on the shared bus"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a supports multiple instances with shared bus state, while agent_b has no declared concurrency model. That creates a plausible write-conflict path on shared mutable state, but not the high-severity same-directory filesystem/git collision described by the rubric. Uncertainty remains because agent_b\u2019s write surfaces are undocumented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same shared-bus keys",
+        "IF the orchestrator lacks locking or last-writer-wins protection"
+      ],
+      "mitigations": [
+        "Assign disjoint state namespaces per agent",
+        "Serialize writes through one coordinator",
+        "Add optimistic concurrency checks on shared state",
+        "requires-engineering: introduce locking around shared mutable resources"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "agent_a produces conversational and multimodal outputs that agent_b-like prompt repositories can be treated as authoritative inputs for downstream prompting. Because agent_b is a prompt-leak corpus, any unverified reuse of its contents can cascade into incorrect or unsafe actions. The pair lacks evidence of a verification step, so the safer higher severity applies.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF agent_b content is used as a prompt template or policy source for agent_a",
+        "IF downstream automation trusts agent_a outputs without human verification"
+      ],
+      "mitigations": [
+        "Require human review before acting on agent_a outputs",
+        "Mark agent_b content as non-authoritative reference only",
+        "Add a verification step that checks claims against a trusted source",
+        "requires-engineering: gate downstream actions behind policy validation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a can process audio, video, images, text, and conversation state and may send them to third-party APIs via allowlisted egress; agent_b is source-available documentation with no declared data handling. The main compliance risk is residency/retention mismatch for user conversation data flowing through agent_a, not a direct violation from agent_b, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present in agent_a conversation state",
+        "IF any allowlisted backend stores or processes that data outside the required jurisdiction"
+      ],
+      "mitigations": [
+        "Route regulated data only to approved backends",
+        "Disable retention-heavy telemetry for regulated sessions",
+        "Add a data-class policy banner before processing",
+        "requires-engineering: document residency and retention for each allowlisted service"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "GOVERN-1.2",
+      "MEASURE-2.7",
+      "MANAGE-3.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:c5fa4f9e2c4fb5dc16349c224228e1ad285a547b20258347ab56a330cfd0e63e",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
