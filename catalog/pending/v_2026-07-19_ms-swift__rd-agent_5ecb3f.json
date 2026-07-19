@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "rd-agent"
+  ],
+  "verdict_id": "v_2026-07-19_ms-swift__rd-agent_5ecb3f",
+  "generated_at": "2026-07-19T04:13:48Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.47,
+  "headline": "Medium risk: shared file-based workflows and API-backed outputs create leakage, conflict, and cascading-error pathways; no direct prompt-injection bridge is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Neither profile documents a direct automated ingestion channel from the other, so prompt injection is not default. However, both expose file and stdout/stderr style I/O, and A can read/write local files while B can use browsers and APIs, so manual or file-mediated instruction smuggling is plausible. The pairwise bridge is inferred, not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF operators copy A-generated text into B prompts or browser inputs, injected instructions can be executed.",
+        "IF a shared workspace is used for handoff, file content can be treated as instructions by either agent."
+      ],
+      "mitigations": [
+        "Use a strict human review step before copying outputs between agents.",
+        "Prefix all handoff files with a non-executable data schema.",
+        "Separate workspaces per agent.",
+        "Disable browser-driven ingestion of raw text where possible.",
+        "requires-engineering: add provenance tags to all inter-agent artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A handles hub tokens, SDK tokens, and local files including logs and training outputs; B handles API keys and logs and sends requests to third-party APIs. There is no documented shared filesystem, but if operators place both in one workspace, sensitive material from A can be exposed to B's broader networked inference path. This is an inferred default-risk pathway, not directly observed.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF A and B share a workspace containing secrets or logs, B can read them from files.",
+        "IF B is configured with prompts that include A's file contents, those contents may be transmitted to external APIs."
+      ],
+      "mitigations": [
+        "Keep secrets out of any shared directory.",
+        "Mount separate read-only workspaces per agent.",
+        "Rotate any token that appears in logs.",
+        "Restrict B prompts to redacted summaries.",
+        "requires-engineering: enforce per-agent secret isolation in the orchestrator."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "A can execute shell commands, install packages, read/write the filesystem, and spawn subprocesses; B can run browsers and has broad network egress. Their write surfaces do not explicitly overlap on the same directory, but if orchestrated together they can contend over shared files, logs, or external resources. Uncertainty about shared-state handling pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable directory, file clobbering can occur.",
+        "IF both agents write to the same external service account or API quota, contention can occur."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Serialize writes through a single coordinator.",
+        "Use per-agent API credentials.",
+        "Lock shared artifacts before mutation.",
+        "requires-engineering: add optimistic-concurrency checks for shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A can generate logs, configuration, and training outputs that B may consume as research inputs; B also uses browser/API workflows that can act on upstream content. No verification step is documented between them, so A's output can become B's authoritative input. The blast radius is multiple work products rather than immediate irreversible harm.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF B ingests A-produced files without validation, errors can propagate into downstream reports or actions.",
+        "IF A emits malformed configuration or logs, B may treat them as factual research inputs."
+      ],
+      "mitigations": [
+        "Require source validation before B consumes A outputs.",
+        "Add checksum or schema checks on handoff files.",
+        "Keep A outputs in a staging folder.",
+        "Have B cite original sources, not A summaries.",
+        "requires-engineering: implement automated verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A touches hub tokens, datasets, checkpoints, and training outputs; B touches financial reports, competition datasets, and logs, and uses cloud APIs. The profiles do not state residency or certification mismatches, so compliance risk is inferred from mixed sensitive data classes and external API use rather than a documented violation. Uncertainty keeps this at medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF EU personal data or regulated data is placed into B's API-backed workflows, residency or retention issues can arise.",
+        "IF A stores secrets or checkpoints in a shared log path, retention controls may diverge from policy."
+      ],
+      "mitigations": [
+        "Classify data before handing it to either agent.",
+        "Block regulated data from API-backed prompts.",
+        "Set short log retention on shared artifacts.",
+        "Review vendor DPAs before production use.",
+        "requires-engineering: enforce residency-aware routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2",
+      "GOVERN-1.6"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:dcac0f32242d47240abbde7e5d1b193e371ea4745fcd98e94481d0e716682f97",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
