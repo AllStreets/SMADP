@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "agentic-flow",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-19_agentic-flow__slim_3951c6",
+  "generated_at": "2026-07-19T00:50:39Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.575,
+  "headline": "High: shared filesystem and shell/network capabilities create prompt-injection, data-leakage, and cascading-action risks; B\u2019s privileged container tooling amplifies impact.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Agent A can use MCP and stdin/stdout, while agent B reads and writes files and processes container artifacts. That creates a plausible content-to-instruction bridge if A\u2019s outputs are placed in shared files or piped into B. No direct shared channel is documented, so I do not escalate to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF A\u2019s output is copied into a file that B parses as instructions, injection is possible.",
+        "IF the orchestrator routes A\u2019s stdout into B\u2019s stdin without sanitization, B can be steered by attacker-controlled text."
+      ],
+      "mitigations": [
+        "Use a strict schema for A\u2192B handoff messages.",
+        "Strip markdown/code fences before B parses A output.",
+        "Disable file-based handoff between the agents.",
+        "Add provenance tags to every A-generated artifact.",
+        "requires-engineering: enforce a non-executable message queue between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "A touches task prompts, repository metadata, and code; B touches filesystem artifacts, environment variables, certificate private keys, and registry credentials. If they share a workspace or files, B can expose A\u2019s sensitive inputs or A can surface B\u2019s secrets. The profiles do not prove isolation, so the shared-workspace pathway remains plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF A and B operate on the same workspace directory, B can read A\u2019s prompts and metadata.",
+        "IF B is pointed at a directory containing secrets, its file access can expose private keys or registry credentials."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Mount secrets read-only and only into the minimum needed process.",
+        "Redact prompts before writing them to disk.",
+        "Audit shared directories for credentials before launch.",
+        "requires-engineering: enforce per-agent filesystem namespaces."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "A can execute shell, install packages, modify git state, and spawn subprocesses; B can execute shell, write files, and spawn subprocesses. If both target the same directory, concurrent writes and git mutations can corrupt state or overwrite each other. A\u2019s multiple-instance support and B\u2019s single-target session model do not provide locking, so the conflict is dangerous by default when co-located.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are launched against the same git checkout, concurrent edits can race.",
+        "IF B writes artifacts into a directory A also mutates, files can be overwritten or corrupted."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize git operations with a lock file.",
+        "Run only one writer per repository at a time.",
+        "Snapshot the workspace before concurrent runs.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A can generate analysis and metrics via MCP/stdout, and B is an interactive CLI that can act on filesystem and container artifacts. If B consumes A\u2019s output as authoritative without verification, mistakes can cascade into incorrect image changes or analysis decisions. The profiles do not show a built-in verification step, so the risk is real but not maximally severe.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF B ingests A-generated reports without cross-checking, false facts can propagate.",
+        "IF A\u2019s metrics or explanations are used as the sole basis for B\u2019s actions, downstream errors can compound."
+      ],
+      "mitigations": [
+        "Require human review before B acts on A output.",
+        "Cross-check A claims against source files.",
+        "Keep A outputs advisory, not authoritative.",
+        "Log provenance for every A\u2192B handoff.",
+        "requires-engineering: add automated validation of A-produced artifacts."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A handles task prompts and repository metadata; B handles certificate private keys, environment variables, and registry credentials. If they share a workspace or logs, the pair can create retention and secret-handling mismatches even without a named regulatory regime. Only B is directly implicated in secret custody, so A is cited for the shared-data pathway rather than a specific residency rule.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF logs or artifacts from both agents are retained together, secret material may persist longer than intended.",
+        "IF B processes regulated credentials in a workspace also used by A, compliance controls can diverge."
+      ],
+      "mitigations": [
+        "Separate retention policies by agent.",
+        "Exclude secrets from shared logs.",
+        "Tag regulated artifacts at creation time.",
+        "Review data-class handling before deployment.",
+        "requires-engineering: implement policy-based retention enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5",
+      "A.6",
+      "A.8"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4d19056de58fcdc5814540fc05f8711bdf5f71699b689392e136efa5d555e446",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
