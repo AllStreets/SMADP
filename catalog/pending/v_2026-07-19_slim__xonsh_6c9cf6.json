@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "slim",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-19_slim__xonsh_6c9cf6",
+  "generated_at": "2026-07-19T00:17:51Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.53,
+  "headline": "Medium pairwise risk: shared filesystem and broad egress create prompt-injection, leakage, and cascading-error pathways; no direct evidence of stronger isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write the filesystem and exchange data through files or stdout/stderr, so one agent can ingest the other's output as trusted content. slim's interactive CLI/command execution and xonsh's shell/Python execution make file-based instruction smuggling plausible even without MCP or clipboard bridges.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF either agent writes attacker-controlled text into a file that the other later parses as commands or instructions, injection is possible.",
+        "IF the orchestrator passes stdout/stderr from one agent into the other's prompt or shell input, the pathway becomes direct."
+      ],
+      "mitigations": [
+        "Separate working directories for each agent.",
+        "Treat all file and stdout content as untrusted input.",
+        "Add a manual review step before one agent consumes the other's artifacts.",
+        "Disable automatic piping between agents.",
+        "requires-engineering: add provenance tags to shared artifacts."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents touch environment variables, filesystem artifacts, and secrets-adjacent data classes, and both have broad network egress. That creates a default pathway for one agent to read sensitive files and the other to transmit them outward, even though no shared OAuth principal or explicit shared workspace is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or image tree, either can read the other's sensitive artifacts.",
+        "IF either agent is allowed to send arbitrary HTTP or registry requests, locally read secrets can leave the environment."
+      ],
+      "mitigations": [
+        "Use separate least-privilege workspaces.",
+        "Mount secret-containing paths read-only or not at all.",
+        "Block outbound network except to approved endpoints.",
+        "Redact environment variables before either agent runs.",
+        "requires-engineering: enforce per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write, shell execution, subprocess spawning, and broad network egress. In a shared directory, concurrent edits or destructive commands can overwrite each other's outputs or mutate shared state without locks. No orchestrator locking is documented, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same writable directory, write-write conflicts can occur.",
+        "IF either agent performs shell commands that rename, delete, or rewrite shared files, the other agent's work can be corrupted."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize write phases with a simple lock file.",
+        "Run one agent at a time for mutable tasks.",
+        "Snapshot the workspace before each agent starts.",
+        "requires-engineering: add transactional writes or merge conflict handling."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "slim can emit container-analysis outputs and xonsh can execute shell/Python expressions, so A's artifacts can become B's inputs with little verification. That makes mistaken assumptions or malformed outputs propagate into later commands, though no direct autonomous action chain is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes slim's stdout or generated files as authoritative input, errors can cascade.",
+        "IF either agent auto-runs commands derived from the other's analysis, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Require explicit human approval before executing derived commands.",
+        "Insert a validation step between agents.",
+        "Compare outputs against a second source before acting.",
+        "Log and diff intermediate artifacts.",
+        "requires-engineering: add schema validation for exchanged outputs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are open-source and do not document residency, certification, or retention mismatches, so no concrete compliance breach is evidenced. The only notable issue is that slim handles registry credentials and certificate private keys while xonsh can access filesystem contents, which warrants caution but not a documented mismatch.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.source_type"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets such as certificate private keys are placed in a shared workspace, compliance review is required.",
+        "IF deployment policy forbids shell tools from touching credential material, the pair violates local policy."
+      ],
+      "mitigations": [
+        "Keep regulated secrets out of shared directories.",
+        "Restrict xonsh to non-sensitive workspaces.",
+        "Review retention settings for generated artifacts.",
+        "Document which data classes each agent may touch.",
+        "requires-engineering: add policy enforcement for secret-bearing paths."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:60d4985eae117b8b5ca24e75a44577239cd849ba476d10078590aa66e82765f8",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
