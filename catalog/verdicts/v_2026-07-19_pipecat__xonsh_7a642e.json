@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-19_pipecat__xonsh_7a642e",
+  "generated_at": "2026-07-19T00:28:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.68,
+  "headline": "High: shared-bus Pipecat can feed raw outputs into xonsh shell execution, creating prompt-injection, leakage, and cascading-action risk by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "high",
+      "rationale": "Pipecat exposes a shared bus/session scope and stdin/stdout, so its outputs can be bridged into xonsh inputs. Xonsh executes shell commands and Python expressions, making raw content a plausible instruction channel. This is a pairwise interaction risk; both agents contribute to the bridge.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat outputs are copied or streamed into xonsh without sanitization, injection is possible.",
+        "IF xonsh evaluates Pipecat text as shell/Python input, attacker-controlled content can steer execution."
+      ],
+      "mitigations": [
+        "Insert a human review step before any Pipecat text reaches xonsh.",
+        "Wrap the bridge in a strict allowlist parser for commands only.",
+        "Disable automatic piping between the shared bus and shell input.",
+        "Log and diff all transferred messages before execution.",
+        "requires-engineering: add provenance tags and reject untrusted instruction-like tokens."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Pipecat touches audio, video, images, text, conversation state, and analytics, while xonsh reads and writes the filesystem and environment variables. With Pipecat network egress allowlisted and xonsh broad egress, shared workspace or copied artifacts can leak sensitive content to external services. The pairwise pathway is credible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat artifacts are stored in a workspace readable by xonsh, leakage can occur.",
+        "IF xonsh forwards files or environment-derived secrets to network tools, sensitive data can exit the boundary."
+      ],
+      "mitigations": [
+        "Move shared artifacts to a separate restricted directory.",
+        "Unset secrets from xonsh environment before running shared jobs.",
+        "Review outbound destinations for both agents and block unknown hosts.",
+        "Keep Pipecat conversation state out of the filesystem.",
+        "requires-engineering: enforce per-agent storage isolation and egress policy."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Pipecat supports multiple instances on a shared bus, while xonsh can write the filesystem and spawn subprocesses. They do not both advertise unrestricted git or the same mutable resource, so the conflict is narrower than high, but overlapping writes and concurrent subprocess activity can still race on shared files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write the same directory, file clobbering or partial writes can occur.",
+        "IF Pipecat instances share bus state while xonsh mutates files concurrently, races are possible."
+      ],
+      "mitigations": [
+        "Assign separate working directories per agent.",
+        "Serialize writes with a simple lock file.",
+        "Avoid concurrent edits to the same config or notebook.",
+        "Check timestamps before overwriting shared files.",
+        "requires-engineering: add transactional coordination for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Pipecat can emit conversation state and generated text, and xonsh can execute shell commands and subprocesses. If xonsh treats Pipecat output as authoritative, a mistaken or malicious upstream response can cascade into real actions. The interaction is direct and dangerous because xonsh has execution authority.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes Pipecat output without verification, downstream commands may be wrong or harmful.",
+        "IF Pipecat is used to generate operational instructions, xonsh can execute them immediately."
+      ],
+      "mitigations": [
+        "Require explicit confirmation before executing any Pipecat-derived command.",
+        "Separate generation and execution into different sessions.",
+        "Add a validation step that checks commands against policy.",
+        "Record the exact upstream text before execution.",
+        "requires-engineering: implement typed command objects instead of free-form text."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Pipecat processes audio, video, images, text, and conversation state, while xonsh handles filesystem contents and environment variables. The profiles do not show residency or certification mismatches, so this is not a direct regulatory breach claim. However, shared handling of sensitive data classes with different storage/egress behaviors creates a plausible compliance gap.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through both agents, retention and logging must be aligned.",
+        "IF either agent stores conversation or filesystem data longer than policy allows, compliance drift occurs."
+      ],
+      "mitigations": [
+        "Classify data before routing it through either agent.",
+        "Disable retention of conversation state where possible.",
+        "Review logging settings for both agents.",
+        "Keep regulated data out of shared workspaces.",
+        "requires-engineering: document residency and retention controls per agent."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
