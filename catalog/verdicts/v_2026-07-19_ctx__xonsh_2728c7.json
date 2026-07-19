@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-19_ctx__xonsh_2728c7",
+  "generated_at": "2026-07-19T03:13:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.515,
+  "headline": "High-risk shared filesystem and shell/network overlap create default data leakage and cascading-error pathways between ctx and xonsh.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and touches filesystem/MCP surfaces, while xonsh reads and writes the filesystem and processes stdin/stdout. That creates a plausible content-to-instruction bridge if ctx outputs are stored where xonsh consumes them. The pair lacks a documented provenance barrier, so the interaction is possible in default-like setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF ctx writes agent outputs into a shared file that xonsh later reads as commands or config",
+        "IF xonsh is used to execute text produced by ctx without provenance checks"
+      ],
+      "mitigations": [
+        "Separate ctx output and xonsh command files into different directories",
+        "Add a manual review step before xonsh executes any ctx-generated text",
+        "Prefix ctx artifacts with a non-executable extension",
+        "requires-engineering: add provenance tagging between ctx and xonsh"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs, graph data, and MCP servers, and xonsh has broad filesystem read/write plus environment-variable access. A shared workspace can expose ctx-managed data to xonsh, and xonsh can then exfiltrate it via broad network egress. This is a realistic leakage path even though neither profile proves a specific secret class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx stores logs, graph data, or MCP artifacts in a directory readable by xonsh",
+        "IF xonsh is allowed to send filesystem contents over the network"
+      ],
+      "mitigations": [
+        "Place ctx artifacts in a directory unreadable by xonsh",
+        "Disable network egress for xonsh during shared-workspace runs",
+        "Rotate or redact runtime logs before xonsh access",
+        "requires-engineering: enforce per-agent filesystem ACLs"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ctx supports multiple instances and writes to filesystem/MCP-related surfaces, while xonsh can execute shell commands, spawn subprocesses, and write the filesystem. Even though xonsh does not modify git state, both agents can contend for the same files or directories without an explicit lock in the profiles, so write conflicts are plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same working directory",
+        "IF ctx and xonsh write overlapping files without external locking"
+      ],
+      "mitigations": [
+        "Assign separate working directories per agent",
+        "Serialize writes with a simple lock file",
+        "Run one agent at a time for shared paths",
+        "requires-engineering: add orchestrator-level resource locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "ctx is a context-management agent that observes tool events, and xonsh can execute shell commands and spawn subprocesses. If xonsh consumes ctx-produced summaries or instructions as authoritative, a mistaken ctx output can cascade into real actions. The profiles do not show a verification gate, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF xonsh executes commands derived from ctx output without human review",
+        "IF ctx summaries are treated as authoritative inputs to xonsh automation"
+      ],
+      "mitigations": [
+        "Require human approval before xonsh executes ctx-derived commands",
+        "Have xonsh validate ctx outputs against source files",
+        "Limit ctx to advisory-only output formats",
+        "requires-engineering: add schema validation for ctx-to-xonsh handoff"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Both profiles are docs-only and do not specify regulated-data handling, residency, or retention mismatches. The only concrete compliance-relevant surface is that ctx touches audit/runtime logs while xonsh accesses filesystem contents and environment variables, but no specific regulated class or jurisdictional mismatch is documented. The other agent is cited because the risk would require their interaction.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is stored in ctx logs and then accessed by xonsh",
+        "IF a deployment imposes retention or residency rules not reflected in either profile"
+      ],
+      "mitigations": [
+        "Keep regulated data out of shared logs",
+        "Review retention settings before shared runs",
+        "Restrict xonsh access to non-regulated directories"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
