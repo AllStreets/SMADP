@@ -1,0 +1,181 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "xonsh"
+  ],
+  "verdict_id": "v_2026-07-19_ms-swift__xonsh_b3c941",
+  "generated_at": "2026-07-19T04:47:05Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.53,
+  "headline": "Medium prompt-injection and data-leakage risk from shared filesystem and shell-based handoff; no direct evidence of stronger pairwise coupling.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift can read/write files and process stdin/stdout, while xonsh also reads/writes the filesystem and runs shell commands. That creates a plausible default handoff path where attacker-controlled file content from one agent can be treated as instructions by the other. No shared clipboard/MCP is documented, so I do not escalate further.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange prompts or outputs through shared files or stdin/stdout, injected instructions can cross from one to the other.",
+        "IF either agent parses the other's file content as trusted instructions, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Prefix all inter-agent file handoffs with a fixed schema and reject free-form instructions.",
+        "Add a manual review step before one agent consumes the other's output.",
+        "Disable automatic ingestion of generated logs or notebooks.",
+        "requires-engineering: add provenance tags to every handoff artifact."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write filesystem contents, and ms-swift explicitly touches datasets, models, checkpoints, logs, and secrets like hub_token/sdk-token. xonsh has broad network egress and can call APIs, so shared workspace data could be exposed beyond the local boundary. The pairwise leakage path is plausible in default use, though not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace, files touched by ms-swift can be read by xonsh.",
+        "IF xonsh forwards workspace contents to external APIs or commands, those contents can leave the local environment."
+      ],
+      "mitigations": [
+        "Place each agent in a separate workspace.",
+        "Store secrets outside any shared directory.",
+        "Restrict xonsh network access for shared runs.",
+        "Review and redact logs before handoff.",
+        "requires-engineering: enforce per-agent filesystem ACLs."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "Both agents have unrestricted filesystem write and shell/subprocess execution, and neither profile states locking or multi-instance support. If they touch the same directory, concurrent edits to files, configs, or generated outputs can overwrite each other and corrupt state. Because the profiles do not show coordination primitives, uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, file clobbering or inconsistent outputs can occur.",
+        "IF either agent mutates shared configs or generated artifacts without locks, race conditions can corrupt state."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer at a time.",
+        "Use lockfiles around shared artifacts.",
+        "Snapshot the workspace before each run.",
+        "requires-engineering: add transactional writes or orchestration locks."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can emit training outputs, logs, and evaluation artifacts, and xonsh can execute shell commands and Python expressions. If xonsh treats ms-swift output as authoritative, errors or hallucinated facts can cascade into downstream commands or notebooks. The reverse direction is also possible through file-based handoff, but there is no direct evidence of automated trust.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF xonsh consumes ms-swift-generated text without verification, incorrect outputs can be operationalized.",
+        "IF ms-swift ingests xonsh-produced files as training or evaluation inputs, upstream mistakes can propagate."
+      ],
+      "mitigations": [
+        "Require human review before execution of generated commands.",
+        "Validate outputs against a schema before reuse.",
+        "Separate analysis and action steps.",
+        "Keep a provenance log for generated artifacts.",
+        "requires-engineering: add automated consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "ms-swift explicitly handles hub_token and sdk-token, while xonsh handles filesystem contents and environment variables. The main compliance concern is local secret handling and retention in shared files or logs, not a documented residency or certification mismatch. Because only ms-swift is clearly secret-bearing, xonsh is cited only as the local sink for those files.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF secrets are written into shared logs or notebooks, retention and access controls may be violated.",
+        "IF the workspace is subject to a stricter retention policy than the agents' logs, compliance gaps can arise."
+      ],
+      "mitigations": [
+        "Do not store secrets in shared files.",
+        "Rotate any exposed tokens immediately.",
+        "Purge logs after each run.",
+        "Restrict access to the workspace directory.",
+        "requires-engineering: implement secret redaction at write time."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:7caa29313b440462e07484743550b93ba21e8302736e604cc8aa1f2e1c05aa71",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
