@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "lightagent",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-07-19_lightagent__whisper_41ad0c",
+  "generated_at": "2026-07-19T02:29:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.58,
+  "composite_score": 0.38,
+  "headline": "Highest risk is prompt-injection and data-leakage via LightAgent\u2019s broad network/MCP/browser surfaces; Whisper is local-only and read-limited, reducing direct conflict but not eliminating unsafe handoff paths.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "LightAgent can use MCP, browsers, and broad network egress, so it may ingest untrusted content and pass it onward. Whisper has no MCP, browser, or filesystem write surface, so it is not a direct injector, but if LightAgent forwards its outputs into Whisper workflows, prompt-like content could still be misinterpreted. The pathway exists, but not by default from Whisper alone.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent ingests web or MCP content and forwards it into downstream text-processing prompts",
+        "IF an operator manually copies LightAgent output into a Whisper-adjacent workflow"
+      ],
+      "mitigations": [
+        "Restrict LightAgent to trusted MCP servers only",
+        "Disable browser-driven ingestion for untrusted pages",
+        "Insert a human review step before forwarding outputs",
+        "Use provenance tags on all LightAgent-generated text",
+        "requires-engineering: add content-sanitization between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "LightAgent touches user conversations, long-term memory, tool results, and provenance metadata, and it has broad network egress. Whisper is local-only with no network egress and only audio-file inputs, so it is less likely to exfiltrate directly. The pair still creates a leakage path if sensitive LightAgent state is routed into Whisper inputs or if LightAgent sends those data classes to third parties.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent forwards conversations, memory, or tool results to external APIs",
+        "IF audio files fed to Whisper contain sensitive content derived from LightAgent state"
+      ],
+      "mitigations": [
+        "Limit LightAgent egress to approved endpoints",
+        "Avoid passing sensitive text into audio conversion pipelines",
+        "Redact secrets before any cross-agent transfer",
+        "Log and review outbound requests from LightAgent",
+        "requires-engineering: enforce data-class filtering at the orchestrator"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "LightAgent supports multiple instances and can spawn subprocesses, while Whisper cannot write the filesystem, modify git state, or use MCP. That makes direct write-write conflict unlikely. The main overlap is read/processing of user-provided content, so contention is limited unless an external orchestrator gives Whisper additional mutable access not shown in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF an external wrapper grants Whisper write access not present in its profile",
+        "IF both agents are pointed at the same mutable workspace by an orchestrator"
+      ],
+      "mitigations": [
+        "Keep Whisper in read-only mode",
+        "Separate working directories per agent",
+        "Avoid shared git worktrees",
+        "Serialize any shared preprocessing steps",
+        "requires-engineering: add lock coordination in the orchestrator"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "LightAgent can produce tool results and workflow state that downstream systems may treat as authoritative. Whisper is a transformer model with command-line usage and no built-in verification layer, so if its outputs are chained into LightAgent or vice versa, errors can propagate without checks. The pair is not inherently dangerous, but the default handoff path can amplify mistakes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent consumes Whisper transcripts as authoritative text",
+        "IF Whisper outputs are used to trigger LightAgent tool calls without validation"
+      ],
+      "mitigations": [
+        "Require explicit confidence thresholds before acting on outputs",
+        "Add a verification step between agents",
+        "Display source provenance alongside transcripts",
+        "Sample-check a subset of handoffs manually",
+        "requires-engineering: implement structured-output validation"
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "LightAgent handles user conversations, long-term memory, and tool results, which can create retention and residency obligations. Whisper touches only audio and speech and has no network egress or OAuth scopes, so the compliance mismatch is narrower than for a cloud pair. The main risk is policy mismatch on stored transcripts or audio artifacts, not a direct residency breach from Whisper itself.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF audio or transcript artifacts are retained under different policies than LightAgent memory",
+        "IF regulated content is routed from LightAgent into Whisper processing"
+      ],
+      "mitigations": [
+        "Align retention settings for transcripts and memory",
+        "Delete temporary audio artifacts after processing",
+        "Document which data classes each agent may store",
+        "Review whether secrets are ever embedded in audio or transcripts",
+        "requires-engineering: add policy enforcement for regulated data"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:4fb0720fd9cc1748dad32c8a80f933efc396edadf7d033fe13b7ed404ba8d089",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
