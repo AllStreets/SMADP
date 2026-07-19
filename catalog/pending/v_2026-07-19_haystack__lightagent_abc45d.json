@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "haystack",
+    "lightagent"
+  ],
+  "verdict_id": "v_2026-07-19_haystack__lightagent_abc45d",
+  "generated_at": "2026-07-19T00:56:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High: shared MCP and broad egress create default-path prompt-injection, leakage, and cascading-action risks between Haystack and LightAgent.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Haystack exposes REST APIs and MCP servers, and LightAgent uses MCP over stdio/SSE with runtime hooks that can observe or replace lifecycle payloads. That creates a plausible default bridge where LightAgent content can be treated as instructions by Haystack or vice versa. The pair is documented only at the profile level, so uncertainty remains.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Haystack ingests MCP payloads from LightAgent without provenance checks",
+        "IF LightAgent forwards untrusted content into MCP/stdin payloads that Haystack parses as instructions"
+      ],
+      "mitigations": [
+        "Add provenance tags to all MCP messages",
+        "Disable automatic instruction-following on imported content",
+        "Require explicit allowlists for tool-call arguments",
+        "Log and review cross-agent payloads for prompt-like text",
+        "requires-engineering: isolate the agents behind separate MCP namespaces"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Haystack has broad network egress and uses MCP; LightAgent handles user conversations, long-term memory, tool results, provenance metadata, and secrets such as api_key and tot_api_key. If they share a workspace or MCP channel, LightAgent data can flow into Haystack and then out over broad egress, creating a realistic exfiltration path in default-like deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF the two agents share an MCP server, filesystem, or message queue",
+        "IF Haystack is configured to send retrieved context to external APIs"
+      ],
+      "mitigations": [
+        "Remove secrets from shared contexts",
+        "Restrict Haystack egress to approved domains",
+        "Separate workspaces and credentials per agent",
+        "Redact tool results before passing them onward",
+        "requires-engineering: enforce per-agent data-loss-prevention filters"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress and MCP access, and LightAgent can spawn subprocesses while supporting multiple instances. Even without explicit filesystem write claims, overlapping mutable control surfaces make coordination bugs and resource contention plausible. Because write scope is not documented, uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same external API credentials",
+        "IF both agents mutate the same workflow state or shared MCP resources"
+      ],
+      "mitigations": [
+        "Use separate API keys per agent",
+        "Serialize access to shared resources",
+        "Pin each agent to distinct network allowlists",
+        "Disable subprocess spawning where unnecessary",
+        "requires-engineering: add locking around shared mutable state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Haystack is a search/RAG system that can surface retrieved facts, and LightAgent is a tool-calling agent with runtime hooks that can act on lifecycle payloads. That makes a default pathway where Haystack output becomes LightAgent input and then drives tool actions without strong verification. The downstream action authority in LightAgent raises the blast radius to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF LightAgent consumes Haystack outputs as authoritative context",
+        "IF LightAgent executes tool calls based on retrieved text without verification"
+      ],
+      "mitigations": [
+        "Insert a human review step before tool execution",
+        "Require citations for every retrieved claim",
+        "Reject uncited or low-confidence outputs",
+        "Limit LightAgent actions to read-only tools",
+        "requires-engineering: add schema validation between retrieval and action"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Haystack touches anonymous usage statistics, while LightAgent touches user conversations, long-term memory, trace data, tool calls, tool results, errors, workflow state, provenance metadata, and secrets. The profiles do not show a residency or certification mismatch, but they do show materially different retention-sensitive data classes, so a compliance gap is plausible in shared deployments.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF both agents store the same user data class under different retention policies",
+        "IF LightAgent logs secrets or conversations into Haystack-managed telemetry"
+      ],
+      "mitigations": [
+        "Classify data by sensitivity before routing",
+        "Align retention settings across both agents",
+        "Disable secret logging in traces",
+        "Publish a shared deletion/export procedure",
+        "requires-engineering: document residency and DPA boundaries"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:39a712547c3e10c933938244688af26e6669963233b9a8dee5ee66d84559a6bf",
+    "profile_b_hash": "sha256:5f4a2a56a6d603c873beaac81b30c967ed7ec117f6c31e56601d64c636dc1b45",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
