@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "emqx",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-07-20_emqx__nullclaw_c928b5",
+  "generated_at": "2026-07-20T05:15:43Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High risk of data leakage and capability conflict: nullclaw\u2019s broad filesystem/network/tooling can collide with emqx\u2019s networked IoT broker role.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has broad network egress and HTTP API handling; B can read/write files, use MCP, and run browsers/subprocesses. If B ingests A-produced content from shared files or web channels, instruction-like payloads could be treated as trusted. No direct shared channel is documented, so this is inferred from the pair\u2019s documented surfaces.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        }
+      ],
+      "conditions": [
+        "IF B reads A-generated content from a shared workspace or webhook and parses it as instructions, injection is plausible.",
+        "IF an MCP or browser bridge is configured between them, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Disable any shared workspace or webhook bridge between the agents.",
+        "Require explicit provenance tags on all A outputs before B consumes them.",
+        "Add a manual review step for any text B treats as instructions.",
+        "Restrict B\u2019s browser/MCP inputs to allowlisted domains only.",
+        "requires-engineering: add content-sanitization and provenance enforcement in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "A touches IoT data and has broad network egress; B handles secrets, workspace files, audit logs, and broad network egress with filesystem access. If they share files or a workspace, B can expose sensitive material externally, and A can move IoT data off-host. The pair\u2019s default docs suggest a realistic exfiltration path, so the safer higher severity is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF A and B share any filesystem or workspace, sensitive IoT data can be copied into B\u2019s secret-bearing context.",
+        "IF B sends workspace files or logs to external services, secrets handled by B may leak.",
+        "IF A forwards IoT payloads over its broad egress, data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate A and B onto distinct workspaces.",
+        "Remove secrets from B before any cross-agent handoff.",
+        "Block outbound network for B except explicit allowlists.",
+        "Review B logs for secret-bearing fields before enabling sharing.",
+        "requires-engineering: enforce per-agent storage and egress isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "B can write the filesystem, modify git state, and spawn subprocesses; A has broad network egress and HTTP API access. If both operate on the same repo or directory, concurrent writes and state changes can overwrite each other or corrupt git history. The profiles do not show locking or isolation, so the conflict is a default-dangerous pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or git repository, write conflicts are possible.",
+        "IF B runs package installs or subprocesses while A is active on the same workspace, state drift can occur.",
+        "IF the orchestrator does not provide locking, concurrent mutation can corrupt shared state."
+      ],
+      "mitigations": [
+        "Assign separate directories or repos to each agent.",
+        "Pause one agent before the other mutates shared state.",
+        "Disable git writes for B unless explicitly needed.",
+        "Add a lock file or mutex around shared resources.",
+        "requires-engineering: implement orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "B has many action-taking surfaces and can delegate, schedule, and use webhooks; A can emit networked outputs from IoT contexts. If B treats A\u2019s outputs as authoritative, errors can cascade into downstream actions or incorrect CRM/workflow updates. The interaction is plausible but not directly documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A outputs without verification, A\u2019s mistakes can propagate into actions.",
+        "IF B schedules or delegates based on A-produced facts, downstream errors can multiply.",
+        "IF A\u2019s network-fed data is stale or malformed, B may render or act on it."
+      ],
+      "mitigations": [
+        "Require B to verify A outputs against a second source.",
+        "Mark A outputs as untrusted by default.",
+        "Disable auto-scheduling from A-derived content.",
+        "Log and review any B action triggered by A.",
+        "requires-engineering: add schema validation and confidence gating between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A touches IoT data and B handles audit logs, workspace files, and multiple secret classes. If regulated or sensitive IoT data flows into B\u2019s broader storage and logging surfaces, retention and residency controls may diverge. No specific jurisdiction is documented, so this is a policy-mismatch risk rather than a proven breach.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT data is routed into B\u2019s workspace or logs, retention obligations may differ.",
+        "IF B stores A-derived data in ~/.nullclaw/workspace, deletion/export handling may diverge.",
+        "IF the deployment has residency or DPA constraints, cross-agent transfer can violate them."
+      ],
+      "mitigations": [
+        "Classify IoT data before any transfer to B.",
+        "Exclude regulated data from B logs and workspace files.",
+        "Set short retention on B artifacts containing A data.",
+        "Review residency and DPA requirements before enabling sharing.",
+        "requires-engineering: implement policy-based data routing and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.3"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d8cb137a68ad9e483463ca2ec80ebbb627d8da133031d75f1628ffaf87147125",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

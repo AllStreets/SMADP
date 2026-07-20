@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "memmachine",
+    "opik"
+  ],
+  "verdict_id": "v_2026-07-20_memmachine__opik_513007",
+  "generated_at": "2026-07-20T05:15:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.38,
+  "headline": "Highest risk is prompt-injection via shared MCP/API pathways; data leakage and cascading errors are medium due to MemMachine\u2019s stored user context and Opik\u2019s broad egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "MemMachine exposes an MCP Server and REST/Python SDK, so its outputs can be bridged into another agent. Opik has a REST API and broad network egress, making a shared or chained workflow plausible. No direct provenance or isolation is documented, so the interaction is inferred and uncertainty pushes above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF the two agents exchange messages through MCP, clipboard, or a shared workspace without provenance tags, prompt injection is possible.",
+        "IF Opik parses MemMachine output as instructions rather than data, attacker-controlled text can steer downstream behavior."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of MemMachine outputs into Opik.",
+        "Add a provenance prefix/suffix to all inter-agent messages.",
+        "Require a human review step before any tool call triggered by the other agent.",
+        "Restrict shared channels to read-only exports.",
+        "requires-engineering: implement content-sanitization and instruction/data separation at the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "MemMachine explicitly touches long-term user facts and conversational context, while Opik has broad network egress. If MemMachine content is forwarded into Opik logs or traces, sensitive context can leave the local boundary. The profiles do not show a shared workspace, so this is not high, but the leakage path exists in common default observability setups.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine prompts or memory are sent into Opik traces, those user facts become externally visible.",
+        "IF Opik is configured to capture request/response bodies by default, conversational context can be retained off-box."
+      ],
+      "mitigations": [
+        "Redact prompts before sending them to Opik.",
+        "Turn off body/content logging in Opik.",
+        "Separate sensitive MemMachine sessions from observability pipelines.",
+        "Review retention settings for both systems.",
+        "requires-engineering: add field-level DLP on the bridge."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Both agents have network-facing APIs, but neither profile shows unrestricted filesystem write, git mutation, or overlapping OAuth scopes. The main overlap is read/write through external APIs, which can conflict only if an orchestrator routes both to the same mutable resource. That makes the conflict plausible but not default-dangerous.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.oauth_scopes"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.oauth_scopes"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same external API resource without locking, last-write-wins conflicts can occur.",
+        "IF an orchestrator retries writes from both agents concurrently, state divergence is possible."
+      ],
+      "mitigations": [
+        "Assign separate resources or namespaces.",
+        "Serialize writes through one coordinator.",
+        "Disable concurrent retries on shared objects.",
+        "Use optimistic concurrency tokens where available.",
+        "requires-engineering: add locking around shared mutable resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "MemMachine can generate context-rich outputs from stored user facts, and Opik is an evaluation/observability system that may render or act on those outputs. If Opik treats MemMachine output as authoritative without verification, errors can cascade into reports or automated actions. The profiles do not prove automation, so medium is the highest supported severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Opik ingests MemMachine-generated claims without a verification step, incorrect facts can propagate.",
+        "IF downstream workflows auto-act on evaluated outputs, a single bad MemMachine response can affect multiple work products."
+      ],
+      "mitigations": [
+        "Require source citations before Opik accepts MemMachine claims.",
+        "Add a verification gate for factual outputs.",
+        "Limit automation to read-only evaluation mode.",
+        "Flag low-confidence MemMachine outputs for review.",
+        "requires-engineering: implement cross-agent consistency checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "MemMachine touches long-term user facts and conversational context, which can create retention and subject-rights obligations. Opik\u2019s profile does not show regulated data classes or residency constraints, so there is no documented mismatch like PHI or EU PII. The compliance risk is therefore limited to policy alignment gaps rather than a clear breach pathway.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.vendor.type"
+        },
+        {
+          "profile_field": "agent_b.vendor.type"
+        }
+      ],
+      "conditions": [
+        "IF MemMachine memory is retained longer than the operator\u2019s policy, retention mismatch occurs.",
+        "IF Opik logs conversational context without deletion/export support, subject-rights handling may diverge."
+      ],
+      "mitigations": [
+        "Document retention periods for both systems.",
+        "Exclude sensitive memory from Opik logs.",
+        "Provide a deletion workflow for stored context.",
+        "Review data-processing notices before deployment.",
+        "requires-engineering: align retention and deletion APIs."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:64d1ebe840f7bb6123ea438844723e33ea75fdd4061cee2f0d5b8b0d71bd6758",
+    "profile_b_hash": "sha256:d6352f9078e6be4218cf488808f5ce32c4aff3fc7ae361c0c89c9800d150857d",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
