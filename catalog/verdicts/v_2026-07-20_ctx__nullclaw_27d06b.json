@@ -1,0 +1,192 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-07-20_ctx__nullclaw_27d06b",
+  "generated_at": "2026-07-20T01:26:33Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.74,
+  "composite_score": 0.665,
+  "headline": "High-risk write and network overlap: nullclaw can modify shared files and egress broadly while ctx reads/writes filesystem and hooks Claude Code events.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and touches filesystem/MCP servers, while nullclaw can read/write workspace files and use stdin/stdout, web, and MCP. A shared file or message bridge could let attacker-controlled content from nullclaw influence ctx, though no direct shared channel is explicitly documented. Uncertainty keeps this at medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF ctx consumes nullclaw-written files or MCP messages as instructions, injection becomes active.",
+        "IF both agents are connected through the same workspace or webhook channel, attacker-controlled content can cross the boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces for the two agents.",
+        "Disable automatic parsing of peer-generated files as instructions.",
+        "Add provenance tags to all inter-agent messages.",
+        "Review any MCP bridge before enabling it.",
+        "requires-engineering: enforce content-type and trust boundaries in the orchestrator."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "nullclaw touches API keys, private keys, bearer tokens, and workspace files, and has broad network egress. ctx touches audit/runtime logs, harness records, graph data, and filesystem. If they share a workspace or account, sensitive data can flow from ctx into nullclaw and then out over the network by default, creating an exfiltration path with irreversible impact.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF ctx and nullclaw share a filesystem or account context, sensitive files can be read by nullclaw.",
+        "IF nullclaw forwards workspace contents to external APIs, logs, or webhooks, leakage becomes externalized."
+      ],
+      "mitigations": [
+        "Place each agent in a separate OS user or container.",
+        "Remove secrets from any shared workspace before running either agent.",
+        "Disable outbound network access for nullclaw during joint runs.",
+        "Rotate any credentials present in shared directories.",
+        "requires-engineering: add per-agent data-loss-prevention filters."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "ctx can write filesystem and install packages; nullclaw can execute shell, modify git state, write filesystem, spawn subprocesses, and use MCP. Both support multiple instances, so concurrent writes to the same repo or workspace can race and corrupt state. The overlap is broad and dangerous by default when they operate on shared mutable resources.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, git repo, or package environment, write conflicts can occur.",
+        "IF either agent runs package installation while the other edits the same workspace, state corruption is plausible."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Serialize package installs and git operations.",
+        "Use file locks around shared mutable paths.",
+        "Snapshot the workspace before concurrent runs.",
+        "requires-engineering: add orchestrator-level locking for git and filesystem writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code events and nullclaw can act on files, shell, and webhooks. That makes it plausible for nullclaw to treat ctx-produced artifacts as authoritative inputs, but the profiles do not show an explicit automation chain that commits or emails based on ctx output. The pathway exists in default toolchains, yet the downstream harm is not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw consumes ctx-generated logs or notes without verification, errors can cascade.",
+        "IF ctx writes summaries that nullclaw then uses for shell or webhook actions, mistaken actions can propagate."
+      ],
+      "mitigations": [
+        "Require human review before nullclaw acts on ctx output.",
+        "Add checksum or schema validation to exchanged artifacts.",
+        "Mark ctx outputs as advisory, not authoritative.",
+        "Limit nullclaw automation to dry-run mode for joint tasks.",
+        "requires-engineering: implement verification gates between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs and harness records, while nullclaw touches conversation history, memory, workspace files, and audit logs. The profiles show different data-handling surfaces and retention-sensitive classes, but no explicit residency or certification mismatch. Because compliance gaps are plausible but not proven, medium is the safest choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF shared data includes regulated records, differing logging or retention behavior can create a policy mismatch.",
+        "IF either agent stores conversation history or audit logs longer than the other, deletion/export obligations may diverge."
+      ],
+      "mitigations": [
+        "Inventory regulated data before joint use.",
+        "Keep regulated records out of shared workspaces.",
+        "Align retention settings across both agents.",
+        "Review logging paths for secrets and PII.",
+        "requires-engineering: document residency and retention controls per agent."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}

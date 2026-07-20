@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "langchain4j",
+    "nullclaw"
+  ],
+  "verdict_id": "v_2026-07-20_langchain4j__nullclaw_e77d14",
+  "generated_at": "2026-07-20T01:26:22Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.665,
+  "headline": "High-risk overlap: nullclaw can read/write broad workspace and use MCP/network, while langchain4j is a docs-only library with no runtime isolation details.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "nullclaw can ingest files, web content, MCP, and browser outputs, so attacker-controlled text could reach its instruction parser. langchain4j is a library with no documented isolation or provenance controls, so if it is used to process nullclaw outputs, prompt injection is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.use_mcp"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw forwards web, file, or MCP content into langchain4j prompts without sanitization",
+        "IF langchain4j is used as the downstream parser for nullclaw-generated text"
+      ],
+      "mitigations": [
+        "Add a strict allowlist prompt wrapper for all nullclaw-to-langchain4j inputs",
+        "Strip instructions, tool directives, and markdown links before passing text",
+        "Disable MCP ingestion for untrusted sources",
+        "Review one sample end-to-end prompt path for injection markers",
+        "requires-engineering: add provenance tags and parser-side trust boundaries"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "nullclaw explicitly touches secrets, workspace files, logs, and conversation history, and it has broad network egress. langchain4j has no documented data-handling limits here, so if it is used in the same workflow, sensitive material can be exposed beyond the local workspace. The pairwise path is plausible in default deployments and the blast radius includes secrets.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF nullclaw processes any listed secret class in its workspace or memory",
+        "IF langchain4j is invoked on those same artifacts and sends them to an external model or service"
+      ],
+      "mitigations": [
+        "Remove secrets from the shared workspace before any model call",
+        "Use redaction on API keys, tokens, and private keys",
+        "Constrain nullclaw to a non-secret test workspace",
+        "Verify outbound destinations for every model request",
+        "requires-engineering: enforce per-field secret classification and blocking"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "nullclaw can write the filesystem, modify git state, and spawn subprocesses; langchain4j is a library that may be embedded in the same process or workflow. If both operate on the same repo or workspace, concurrent writes and git mutations can race and corrupt state. The profiles do not show locking, so uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or git repository",
+        "IF nullclaw and langchain4j issue writes without an external lock"
+      ],
+      "mitigations": [
+        "Pause one agent before the other edits shared files",
+        "Use separate working directories",
+        "Check git status before and after each write",
+        "Serialize file writes with a simple lock file",
+        "requires-engineering: add orchestrator-level concurrency control"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "nullclaw can act on browser, shell, and webhook outputs, so if langchain4j-produced text is treated as authoritative, downstream mistakes can cascade into actions. The profiles do not prove direct automation between them, but the interaction is plausible and verification is not documented, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF langchain4j output is fed into nullclaw without a verification step",
+        "IF nullclaw uses that output to draft or execute browser, shell, or webhook actions"
+      ],
+      "mitigations": [
+        "Insert a human review step before any action-taking",
+        "Require citations or source links for factual claims",
+        "Compare outputs against a second source for critical tasks",
+        "Limit nullclaw to read-only mode for the first run",
+        "requires-engineering: add schema validation for downstream actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "nullclaw handles audit logs, workspace files, and multiple secret classes, while langchain4j is an open-source library with no residency or retention controls shown here. If the pair is used on regulated data, the mismatch is about where data may flow and how long it is retained. The evidence is indirect, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as secrets, logs, or customer records is processed through nullclaw",
+        "IF langchain4j is deployed in an environment with different retention or residency rules"
+      ],
+      "mitigations": [
+        "Avoid regulated data in the shared workflow",
+        "Document retention and deletion expectations before use",
+        "Keep audit logs separate from model prompts",
+        "Confirm hosting region for any external model calls",
+        "requires-engineering: implement policy-based data routing"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:1fb1c0cb269a338245110fb6b9fd4bea58988c526a926eb5d3a11cf95c690b6f",
+    "profile_b_hash": "sha256:0d0e98d1e07cc27d826c4be0db0ed7eeb646f2af02fee152ee5b31808300b3b4",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
