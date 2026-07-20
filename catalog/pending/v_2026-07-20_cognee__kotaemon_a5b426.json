@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cognee",
+    "kotaemon"
+  ],
+  "verdict_id": "v_2026-07-20_cognee__kotaemon_a5b426",
+  "generated_at": "2026-07-20T00:41:46Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.635,
+  "headline": "High-risk data leakage and cascading-error pathways exist because cognee handles personal/finance data while kotaemon broad-network uploads documents and API keys by default.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "cognee has session-memory and processes documents/data, while kotaemon ingests documents and chat transcripts through a web UI. A plausible pathway is that content from cognee is copied into kotaemon and treated as trusted instructions. The shared bridge is indirect, so this is not high, but the interaction is credible in default workflows.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF operators move cognee-generated text into kotaemon chat or document inputs without provenance labels, injection is possible.",
+        "IF kotaemon renders uploaded document text as instructions, attacker-controlled content can steer downstream actions."
+      ],
+      "mitigations": [
+        "Add a provenance banner to all imported text.",
+        "Require manual review before copying cognee outputs into kotaemon.",
+        "Strip instructions from uploaded documents.",
+        "Use separate workspaces for each agent.",
+        "requires-engineering: add content-sanitization and instruction-detection filters."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "cognee explicitly touches personal data and finance data, and kotaemon handles API keys plus broad document formats in a local app data directory. If they share a workspace or operator workflow, sensitive material can flow into kotaemon and then out through its broad network egress to third-party APIs. That creates a realistic exfiltration path with meaningful blast radius.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF cognee outputs personal data or finance data into files under kotaemon's workspace, leakage is possible.",
+        "IF kotaemon is configured to use OpenAI, AzureOpenAI, Cohere, Groq, or similar APIs, uploaded content can leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep the agents on separate filesystems.",
+        "Do not place secrets or finance data in kotaemon inputs.",
+        "Disable external API backends in kotaemon for sensitive runs.",
+        "Use redacted exports from cognee only.",
+        "requires-engineering: enforce DLP and per-dataset egress controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents support multiple instances, and kotaemon writes to ./ktem_app_data while cognee has session-scoped memory and CLI tooling. Overlapping writes are plausible if they share a directory or operator-managed workspace, but the profiles do not prove a shared mutable path or lockless git/database access, so medium is the highest supportable severity.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory, file clobbering can occur.",
+        "IF an orchestrator launches multiple instances without locking, session state can diverge or overwrite."
+      ],
+      "mitigations": [
+        "Assign distinct output directories.",
+        "Run only one writer per workspace.",
+        "Add file locks around shared artifacts.",
+        "Check for concurrent launches before starting jobs.",
+        "requires-engineering: implement transactional coordination for shared state."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "cognee produces decisions, workflows, and successful implementations, while kotaemon is a RAG/chat system that can surface those outputs to users or downstream tools. If kotaemon treats cognee output as authoritative without verification, errors can cascade into incorrect support actions. The profiles show the pathway, but not an automated action chain, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF kotaemon uses cognee outputs as retrieved facts without source checking, hallucinations can propagate.",
+        "IF operators act on kotaemon answers as final decisions, downstream mistakes can multiply."
+      ],
+      "mitigations": [
+        "Require citations for every retrieved claim.",
+        "Compare outputs against source documents before action.",
+        "Flag uncited answers as provisional.",
+        "Keep a human approval step for support decisions.",
+        "requires-engineering: add verification and provenance scoring."
+      ]
+    },
+    "E_compliance": {
+      "severity": "high",
+      "rationale": "cognee touches personal data and finance data, while kotaemon handles API keys and broad document content with external API options. If EU personal data or regulated customer data is routed through kotaemon's third-party backends without a DPA or residency controls, the pair can create a compliance breach. The profiles do not show such controls, so uncertainty pushes upward.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated personal data is processed through kotaemon's external APIs, residency and processor obligations apply.",
+        "IF retention settings differ between cognee and kotaemon for the same dataset, deletion/export obligations can fail."
+      ],
+      "mitigations": [
+        "Route regulated data only to local models.",
+        "Document a DPA before using third-party APIs.",
+        "Separate retention policies by data class.",
+        "Avoid storing API keys in shared workspaces.",
+        "requires-engineering: add residency-aware policy enforcement."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:aafd2e418fd88589b7d890907dd54a74c72b2b5fdd0f27ae9a5ffe3c9d867013",
+    "profile_b_hash": "sha256:7ff175c413e209877f096b59b3144464c2e5e4a3c70c611665695c1ad614aa48",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
