@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "dbt-core",
+    "oh-my-openagent"
+  ],
+  "verdict_id": "v_2026-07-20_dbt-core__oh-my-openagent_8ea80e",
+  "generated_at": "2026-07-20T00:12:10Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.65,
+  "headline": "High-risk data leakage and cascading-error exposure: oh-my-openagent can ingest project code and send broad network traffic while dbt-core touches warehouse data and exposes API access.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "oh-my-openagent reads project code, AGENTS.md, README.md, and uses runtime-injected MCPs/hooks, so dbt-core content could be treated as instructions if placed in shared files. dbt-core itself has no shared-channel controls or provenance features documented here. The pathway exists in default workspace-style use, but not enough evidence for high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same workspace or repository checkout",
+        "IF dbt-core outputs are written into files that oh-my-openagent reads as guidance"
+      ],
+      "mitigations": [
+        "Separate the agents into different directories",
+        "Disable automatic ingestion of AGENTS.md/README.md for the support agent",
+        "Require explicit human review before treating file contents as instructions",
+        "Use read-only mounts for dbt-core outputs",
+        "requires-engineering: add provenance tags to all cross-agent file handoffs"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "dbt-core touches data warehouse data and has allowlisted network egress; oh-my-openagent touches project code, session history, and provider auth prompts, plus broad egress. If they share a workspace or credentials, sensitive warehouse or auth material can flow into the support agent's outbound requests. The blast radius includes exfiltration, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents can access the same warehouse-connected workspace",
+        "IF provider auth prompts or session history are available to the support agent",
+        "IF outbound requests from the support agent include copied context"
+      ],
+      "mitigations": [
+        "Remove shared filesystem access",
+        "Rotate any credentials exposed to the support agent",
+        "Restrict the support agent to a redacted workspace copy",
+        "Block outbound requests from contexts containing warehouse data",
+        "requires-engineering: enforce data-loss-prevention filters on agent prompts"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "dbt-core can call a data warehouse API, while oh-my-openagent can run browsers, spawn subprocesses, and use multiple instances with per-installation session scope. That creates overlapping mutable operations and possible contention on shared project files or external resources. No locking is documented, so conflict is plausible in default multi-instance use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same project checkout or generated artifacts",
+        "IF multiple oh-my-openagent instances run against the same installation",
+        "IF dbt-core jobs and browser/subprocess actions target the same mutable resource"
+      ],
+      "mitigations": [
+        "Run each agent in a separate working directory",
+        "Serialize jobs that touch the same project files",
+        "Disable multi-instance use for the support agent",
+        "Use per-agent credentials for external services",
+        "requires-engineering: add file and resource locks around shared writes"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "oh-my-openagent can ingest project code, AGENTS.md, and session history, then act through browsers, subprocesses, and team_* APIs. dbt-core produces warehouse-facing outputs that the support agent could treat as authoritative without verification. That creates a strong cascade from generated artifacts to downstream actions, with potentially irreversible operational mistakes.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF dbt-core outputs are forwarded into the support agent without validation",
+        "IF the support agent is allowed to send messages or create tasks based on those outputs",
+        "IF downstream actions affect production systems or customer communications"
+      ],
+      "mitigations": [
+        "Require human approval before any team_send_message or team_task_create action",
+        "Add a verification step that checks dbt outputs against source data",
+        "Limit the support agent to draft-only mode",
+        "Log and review all cross-agent handoffs",
+        "requires-engineering: implement schema validation for dbt-derived inputs"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "dbt-core touches data warehouse data, while oh-my-openagent touches session history, provider auth prompts, and anonymous telemetry with broad network egress. The profiles do not specify residency or certifications, but the mixed data classes and outbound telemetry create a plausible retention/residency mismatch. Uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF warehouse data includes regulated records",
+        "IF telemetry or provider auth prompts are retained outside the required jurisdiction",
+        "IF the deployment requires a specific retention or residency policy"
+      ],
+      "mitigations": [
+        "Disable telemetry where possible",
+        "Keep regulated data out of the support agent workspace",
+        "Review retention settings for both tools",
+        "Use separate environments for warehouse and support workflows",
+        "requires-engineering: document residency and retention guarantees for both agents"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:c38e6933e204242e45ad39d7f83e7c189e3af975ab4492c9a42f438f977f8f67",
+    "profile_b_hash": "sha256:60ccecb0f0520945d926d4197239896db22533fcab3cbaa21d5a4e5716ad417a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
