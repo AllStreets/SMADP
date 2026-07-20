@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "great-expectations",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-20_great-expectations__slim_8974c2",
+  "generated_at": "2026-07-20T05:49:01Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.47,
+  "headline": "High-risk filesystem and network interaction: slim can write and exfiltrate while Great Expectations reads/writes files, creating leakage and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Great Expectations reads and writes files for data sources, validation results, and documentation, while slim operates as an interactive CLI over files and stdin/stdout. There is no shared clipboard or MCP channel, so direct injection is not documented. The only plausible bridge is manual file handoff, which keeps this low rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies slim output into Great Expectations-managed files without review, injected instructions can be propagated.",
+        "IF both agents are pointed at the same untrusted workspace, file content can become a prompt-like bridge."
+      ],
+      "mitigations": [
+        "Review any file content before importing it into Great Expectations.",
+        "Keep slim and Great Expectations in separate working directories.",
+        "Use read-only mounts for inputs where possible.",
+        "Strip instruction-like text from generated artifacts before reuse.",
+        "requires-engineering: add provenance tagging for files passed between tools."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Great Expectations touches validation results and documentation, and slim can read filesystem artifacts while also handling registry credentials and certificate private keys. Because slim has broad network egress, any shared workspace could expose sensitive files to external endpoints. Great Expectations has no network egress, so the leakage path is one-way through slim.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents access the same directory containing secrets or certificates, slim can read them.",
+        "IF slim is run against a workspace with registry credentials or private keys, those artifacts may be exposed over network egress."
+      ],
+      "mitigations": [
+        "Keep secrets out of any shared workspace.",
+        "Mount sensitive directories read-only or not at all.",
+        "Run slim on sanitized copies of artifacts.",
+        "Rotate any credentials present in analyzed directories.",
+        "requires-engineering: enforce per-tool workspace isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Great Expectations writes validation results and documentation, and slim has write_filesystem plus execute_shell/spawn_subprocesses. Even though slim cannot modify git state and Great Expectations has no explicit write lock, both can mutate overlapping files if aimed at the same workspace. The concurrency model says slim has no shared state with other instances, but that does not prevent cross-tool file conflicts.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory, file overwrites or partial writes can occur.",
+        "IF Great Expectations writes validation outputs while slim rewrites artifacts, the last writer wins."
+      ],
+      "mitigations": [
+        "Assign separate output directories.",
+        "Use filesystem snapshots or copies for each run.",
+        "Serialize access to any shared workspace.",
+        "Check in-progress files before reusing them.",
+        "requires-engineering: add locking around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Great Expectations produces validation results that slim could consume as files or command output, and slim is an interactive CLI that can act on filesystem artifacts. There is no documented verification step between them, so A's outputs can become B's inputs with limited checking. That makes misvalidation or malformed artifacts propagate into downstream container analysis.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF slim consumes Great Expectations validation outputs as authoritative inputs, errors can cascade.",
+        "IF Great Expectations emits malformed documentation or results, slim may act on them without independent verification."
+      ],
+      "mitigations": [
+        "Insert a manual review step between tools.",
+        "Validate file schemas before passing outputs onward.",
+        "Use checksums for transferred artifacts.",
+        "Limit slim to read-only inspection of Great Expectations outputs.",
+        "requires-engineering: add explicit provenance and verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Great Expectations touches validation results and documentation, while slim handles certificate private keys, registry credentials, and environment variables. If regulated data or secrets are present in the same workspace, the pair can create retention and residency issues because slim has broad network egress and secret-handling exposure. The other agent is not cited for residency because no residency field is present.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated secrets or personal data are stored in the analyzed workspace, compliance obligations may be triggered.",
+        "IF slim transmits artifacts containing private keys or credentials to external services, retention and disclosure controls may be violated."
+      ],
+      "mitigations": [
+        "Exclude regulated data from the workspace.",
+        "Redact secrets before analysis.",
+        "Confirm retention settings for any external endpoints used by slim.",
+        "Document data classes allowed in each tool.",
+        "requires-engineering: implement policy-based data filtering."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5",
+      "A.8"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:976a11f35080ca9d89338092212c8a346bfdcb222fb57c91656113659de40983",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
