@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "kotaemon",
+    "ms-swift"
+  ],
+  "verdict_id": "v_2026-07-20_kotaemon__ms-swift_3dd5c3",
+  "generated_at": "2026-07-20T05:32:28Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High-risk data leakage and capability conflict: shared file-based workflows plus broad egress can expose sensitive support data and API keys.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "kotaemon ingests documents, PDFs, HTML, MHTML, XLSX, DOC/DOCX and chat transcripts, while ms-swift reads/writes files and processes stdin/stdout in CLI/Python workflows. A shared workspace or copied outputs could let attacker-controlled content in A influence B\u2019s parsing or prompts. No direct bridge is documented, so uncertainty keeps this at medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory or copied outputs are reused as inputs",
+        "IF B parses A-generated text as instructions or configuration"
+      ],
+      "mitigations": [
+        "Separate working directories for each agent",
+        "Disable automatic ingestion of A outputs into B",
+        "Add a manual review step before B consumes A-produced files",
+        "Use read-only mounts for A\u2019s export folder",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "kotaemon explicitly handles API keys and broad document classes, and ms-swift has filesystem read/write plus allowlisted network egress. If they share a workspace, B can read A\u2019s files and transmit sensitive content or secrets to external services. The pairwise path is plausible in default file-based workflows, so the blast radius includes exfiltration.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents can access the same filesystem path",
+        "IF A stores API keys or sensitive documents in its workspace",
+        "IF B sends read files to an external API or hub"
+      ],
+      "mitigations": [
+        "Store secrets outside shared directories",
+        "Use separate OS users or containers",
+        "Restrict B\u2019s network egress to required endpoints only",
+        "Rotate any keys that may have been exposed",
+        "requires-engineering: enforce per-agent workspace isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ms-swift can write files, execute shell, install packages, and spawn subprocesses; kotaemon supports multiple instances and uses a local data directory. Even without modify_git_state, overlapping writes to shared files or configs can race and corrupt outputs. The profiles do not state locking or isolation, so conflict is plausible and not blocked.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or config file",
+        "IF multiple instances of kotaemon run alongside one ms-swift session"
+      ],
+      "mitigations": [
+        "Assign distinct output directories",
+        "Run only one writer per workspace",
+        "Use file locks for shared artifacts",
+        "Snapshot outputs before handoff",
+        "requires-engineering: add orchestrator-level locking"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "kotaemon is a RAG/chat system that can generate citations and answers, and ms-swift can consume files and run CLI/Python workflows. If B treats A\u2019s generated text as authoritative, errors or hallucinations can cascade into downstream training, evaluation, or support artifacts. No verification mechanism is documented between them, so the pathway exists.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF B ingests A-generated summaries, citations, or transcripts without verification",
+        "IF A\u2019s outputs are used as training or evaluation inputs"
+      ],
+      "mitigations": [
+        "Require human review of A outputs before B uses them",
+        "Compare A outputs against source documents",
+        "Keep A outputs labeled as untrusted",
+        "Use checksum-based handoff files",
+        "requires-engineering: add validation gates before B actions"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "kotaemon handles API keys and customer-support documents, while ms-swift touches datasets, checkpoints, logs, and configuration data. Their documented data classes and retention surfaces differ, so the same support content could be retained or logged differently across the pair. No residency or certification mismatch is stated, so this is a policy-gap risk rather than a breach claim.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF the same customer-support data is processed by both agents",
+        "IF B logs or checkpoints contain data that A would otherwise keep transient"
+      ],
+      "mitigations": [
+        "Classify data before handing it to either agent",
+        "Disable or minimize logging for sensitive runs",
+        "Set explicit retention limits for outputs",
+        "Keep regulated data out of training/checkpoint paths",
+        "requires-engineering: align retention and residency policies"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:a53ce9cb1905ee649b22bd26ea4cb225658de772d62a745db8e881d79c3f9711",
+    "profile_b_hash": "sha256:8b55891618aa6e5b0a45bb24d6296352f5f263e479fb39dbf604041793a159aa",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
