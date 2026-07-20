@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "slim",
+    "taipy"
+  ],
+  "verdict_id": "v_2026-07-20_slim__taipy_6d208e",
+  "generated_at": "2026-07-20T03:40:15Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High risk of prompt-injection and cascading-error if slim\u2019s shell/file outputs are fed into taipy workflows; data leakage and compliance risks are lower but non-zero.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "slim can read/write filesystem artifacts and emits stdin/stdout plus broad network egress, so its outputs could be copied into taipy inputs or workflows. taipy has no documented isolation or provenance controls in the profile, so a shared file/workspace bridge is plausible. This is not proven by evidence, so I choose medium over low due to uncertainty.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF slim output is copied into taipy-managed files or prompts",
+        "IF both agents share a workspace or message queue",
+        "IF taipy treats imported content as instructions or configuration"
+      ],
+      "mitigations": [
+        "Separate the agents into distinct directories",
+        "Disable automatic ingestion of slim-generated files into taipy",
+        "Add a manual review step before taipy consumes slim output",
+        "Use read-only mounts for taipy inputs",
+        "requires-engineering: add provenance tagging between agents"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "slim touches certificate private keys, registry credentials, environment variables, and vulnerability data, while taipy\u2019s profile does not show any data-handling limits. If they share a workspace, taipy could read sensitive artifacts produced by slim. The pairwise leakage path is plausible but not directly documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF slim writes secrets or certs into a shared directory",
+        "IF taipy reads that directory or ingests exported artifacts",
+        "IF sensitive artifacts are not redacted before handoff"
+      ],
+      "mitigations": [
+        "Store secrets in a separate vault path",
+        "Restrict taipy to a read-only sanitized export",
+        "Rotate any credentials exposed in shared artifacts",
+        "Delete temporary files after slim finishes",
+        "requires-engineering: enforce per-agent workspace isolation"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "slim has unrestricted filesystem write, shell execution, subprocesses, and broad network egress; taipy is a data-engineering app with no concurrency controls documented. Even without explicit overlap in taipy\u2019s write surface, shared mutable resources or files can conflict. Because the profiles do not prove locking, I escalate to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory",
+        "IF taipy mutates shared job state or files",
+        "IF no external lock serializes access"
+      ],
+      "mitigations": [
+        "Assign separate output directories",
+        "Serialize writes with a simple lock file",
+        "Run one agent at a time on shared resources",
+        "Check for stale temp files before starting",
+        "requires-engineering: add transactional coordination for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "slim can generate container-analysis outputs and taipy can orchestrate data workflows, so a plausible pathway is slim output becoming taipy input without verification. The profiles do not show taipy critically validating upstream results, and no evidence bundle exists to prove safeguards. That makes a default medium-risk cascading error more likely than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        }
+      ],
+      "conditions": [
+        "IF taipy consumes slim-produced reports or artifacts",
+        "IF taipy uses those artifacts as authoritative inputs",
+        "IF no validation step checks schema or freshness"
+      ],
+      "mitigations": [
+        "Require schema validation on slim outputs",
+        "Add a checksum or signature check before taipy ingests data",
+        "Insert a human review gate for high-impact actions",
+        "Log and compare upstream assumptions before execution",
+        "requires-engineering: implement typed contracts between agents"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "slim explicitly handles registry credentials, certificate private keys, environment variables, and vulnerability data, which can create residency and retention obligations. taipy\u2019s profile gives no compliance controls or retention policy, so if the pair processes regulated data in a shared workflow, mismatch risk exists. I cite only slim because the compliance-sensitive data classes are documented there; taipy lacks such fields.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.vendor.handle"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is processed through slim-generated artifacts",
+        "IF taipy stores or logs those artifacts beyond the intended retention window",
+        "IF no DPA or residency control is configured for the workflow"
+      ],
+      "mitigations": [
+        "Avoid routing regulated data through shared artifacts",
+        "Set a short retention window for intermediate files",
+        "Redact secrets before export from slim",
+        "Confirm storage region for any taipy persistence",
+        "requires-engineering: document and enforce data-handling policy"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:60d4985eae117b8b5ca24e75a44577239cd849ba476d10078590aa66e82765f8",
+    "profile_b_hash": "sha256:4b8a1493c69ed8856d07a1e91c6476d769ee4356cf3154f405580c0c1d9e83ec",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
