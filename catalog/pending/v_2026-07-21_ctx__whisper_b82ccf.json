@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-07-21_ctx__whisper_b82ccf",
+  "generated_at": "2026-07-21T02:15:29Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.365,
+  "headline": "Highest risk is medium: ctx can ingest filesystem/MCP context while whisper is local-only, creating prompt-injection and leakage paths only if they are manually bridged.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx explicitly observes Claude Code PostToolUse/Stop events and uses MCP/stdio plus filesystem, so it can ingest external content as context. whisper has no MCP or filesystem write, so it cannot inject directly; the risk appears only if an operator bridges whisper output into ctx via files or copy-paste. That makes the pathway plausible but not default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies whisper transcripts into ctx-managed files or prompts, ctx may treat attacker-controlled text as instructions.",
+        "IF ctx is configured to parse file contents as trusted instructions, prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of untrusted text into ctx-managed context.",
+        "Review any file-to-prompt bridge before enabling it.",
+        "Use a separate staging folder for whisper outputs.",
+        "Add a manual approval step before ctx consumes transcripts.",
+        "requires-engineering: add provenance tagging for imported content."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "low",
+      "rationale": "ctx touches audit/runtime logs, graph data, and MCP servers, while whisper only handles audio/speech and has no filesystem read, network egress, or API calls. There is no documented shared workspace or outbound path from whisper, so leakage is limited to unusual manual transfer of audio/transcripts into ctx. The blast radius is small and not default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF audio transcripts are manually placed into ctx-accessible files, ctx may expose them in logs or downstream outputs.",
+        "IF ctx is pointed at sensitive project directories, those contents can be surfaced in its runtime logs."
+      ],
+      "mitigations": [
+        "Keep whisper outputs in a separate directory.",
+        "Redact sensitive audio transcripts before import.",
+        "Restrict ctx access to non-sensitive workspaces.",
+        "Rotate or truncate runtime logs after review.",
+        "requires-engineering: enforce workspace isolation between the agents."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ctx can write to filesystem and install packages, and it supports multiple instances; whisper cannot write files or modify git state and is not multi-instance. There is no direct write-write conflict, but if both are orchestrated over the same workspace, ctx can overwrite artifacts produced by whisper or vice versa through shared files. Uncertainty about the shared workspace pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same directory, ctx can overwrite or reorder artifacts created for whisper processing.",
+        "IF ctx installs packages in a shared environment, it may perturb whisper execution dependencies."
+      ],
+      "mitigations": [
+        "Run the agents in separate workspaces.",
+        "Pin dependencies before starting ctx.",
+        "Use read-only mounts for whisper inputs.",
+        "Serialize access to any shared directory.",
+        "requires-engineering: add file locks around shared artifacts."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx is a harness/context manager that observes tool events, so its outputs may be treated as authoritative operational context. whisper produces speech/audio transcriptions, and if those are fed into ctx without verification, transcription errors can cascade into incorrect downstream actions or logs. whisper does not itself act, so this is not high, but the handoff is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.onexus.tags"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF whisper transcripts are imported into ctx without human review, transcription mistakes can propagate into ctx-managed records.",
+        "IF ctx-derived summaries are used as source-of-truth, downstream automation may act on incorrect text."
+      ],
+      "mitigations": [
+        "Require human review of transcripts before import.",
+        "Mark whisper output as untrusted until verified.",
+        "Compare critical fields against the original audio.",
+        "Limit ctx to summarization, not action-taking.",
+        "requires-engineering: add verification checksums for transcript handoffs."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "ctx touches audit/runtime logs and graph data, while whisper only processes audio/speech and has no stated residency or certification mismatch. The pair does not show a direct regulated-data transfer by default, so compliance risk is limited to operator-chosen sensitive audio. Because only ctx has relevant logging behavior, it is the primary cited agent; whisper is cited for its narrow data scope.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio is imported into ctx-managed logs, retention or residency policies may be violated.",
+        "IF the operator stores transcripts in a jurisdiction-restricted workspace, compliance obligations may change."
+      ],
+      "mitigations": [
+        "Avoid placing regulated audio in ctx logs.",
+        "Set short log-retention windows.",
+        "Store transcripts in a compliant region.",
+        "Review data-class handling before import.",
+        "requires-engineering: implement policy-based redaction for logs."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
