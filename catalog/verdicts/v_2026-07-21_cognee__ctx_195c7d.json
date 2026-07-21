@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "cognee",
+    "ctx"
+  ],
+  "verdict_id": "v_2026-07-21_cognee__ctx_195c7d",
+  "generated_at": "2026-07-21T01:14:37Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.665,
+  "headline": "High risk of capability conflict and cascading errors: ctx can observe Claude Code events and use filesystem/MCP, while cognee handles sensitive support data and allowlisted egress.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and uses mcp/stdio, so it can ingest another agent\u2019s outputs through a shared control channel. cognee processes documents and workflows, which could be treated as trusted content if bridged into ctx. No direct proof of raw instruction parsing, so medium is the safer choice.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.onexus.frameworks_detected"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF cognee outputs are forwarded into ctx hooks or MCP messages, prompt injection becomes reachable.",
+        "IF ctx treats observed tool output as instructions rather than data, attacker-controlled content can steer behavior."
+      ],
+      "mitigations": [
+        "Disable automatic ingestion of cognee outputs into ctx hooks.",
+        "Add provenance tags to all cross-agent messages.",
+        "Require a human review step before ctx acts on cognee-generated text.",
+        "Restrict ctx to read-only observation for the shared channel.",
+        "requires-engineering: implement content-sanitization and instruction/data separation in the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "cognee touches personal data, finance data, support history, and documents, while ctx reads filesystem and audit/runtime logs and calls GitHub/Claude Code. That creates a plausible path for sensitive data to flow from cognee into ctx outputs or third-party services. The pair\u2019s interaction is not directly documented, so uncertainty pushes this to high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF cognee and ctx share a workspace or file path, ctx can read cognee-managed sensitive files.",
+        "IF ctx forwards observed content to GitHub, Claude Code, or logs, sensitive data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Separate workspaces for each agent.",
+        "Remove sensitive files from any shared directory.",
+        "Turn off ctx forwarding to external APIs for shared artifacts.",
+        "Review logs for accidental inclusion of personal or finance data.",
+        "requires-engineering: add per-file access controls and redaction before egress."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "high",
+      "rationale": "cognee supports multiple instances and session memory, and ctx supports multiple instances plus filesystem access. If both operate on the same directory or graph state, concurrent writes can collide and corrupt shared artifacts. Because no locking or isolation is documented between them, the overlapping write surface is dangerous by default.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.self_isolation"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same filesystem tree or graph store, write conflicts are possible.",
+        "IF no external lock is present, concurrent runs can overwrite each other\u2019s state."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Serialize writes with a simple lock file.",
+        "Disable one agent\u2019s write path during the other\u2019s run.",
+        "Snapshot shared state before execution.",
+        "requires-engineering: add transactional locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx is explicitly a harness that observes Claude Code events, so it can treat upstream outputs as operational signals. cognee produces decisions, workflows, and successful implementations, which ctx could propagate without verification if wired together. The downstream harm is plausible, but there is no direct evidence that ctx automatically executes actions from cognee output.",
+      "citations": [
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF cognee outputs are fed into ctx without a verification step, errors can cascade.",
+        "IF ctx is configured to act on observed events automatically, upstream mistakes can propagate."
+      ],
+      "mitigations": [
+        "Insert a verification step between cognee and ctx.",
+        "Mark cognee outputs as advisory only.",
+        "Require explicit approval before ctx acts on generated recommendations.",
+        "Log source provenance for every propagated fact.",
+        "requires-engineering: add confidence thresholds and schema validation before downstream action."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "cognee explicitly touches personal data and finance data, while ctx handles audit/runtime logs and GitHub/Claude Code integrations. That combination raises retention and residency mismatch risk if the same regulated data is logged or synced externally. No specific certifications are documented for either agent, so the safest supported judgment is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated support or finance data is written into ctx logs, retention obligations may be violated.",
+        "IF either agent syncs the same data class to external services without a DPA, compliance gaps emerge."
+      ],
+      "mitigations": [
+        "Exclude regulated fields from logs.",
+        "Set short retention on runtime logs.",
+        "Keep finance and personal data out of GitHub-synced paths.",
+        "Review data-flow mappings for residency constraints.",
+        "requires-engineering: document certifications, DPAs, and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:aafd2e418fd88589b7d890907dd54a74c72b2b5fdd0f27ae9a5ffe3c9d867013",
+    "profile_b_hash": "sha256:632c85e2a24699b53990b40074b14d55a6d89a9be5367f3359c6a40618300cdf",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
