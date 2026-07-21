@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "pipecat"
+  ],
+  "verdict_id": "v_2026-07-21_ctx__pipecat_71178e",
+  "generated_at": "2026-07-21T02:43:04Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.59,
+  "headline": "High risk of data leakage and cascading errors: ctx can read filesystem/MCP context while pipecat routes text/audio through third-party services and shared bus state.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code events and can read filesystem/MCP context, while pipecat processes text over a shared bus and can ingest upstream content. That creates a plausible instruction-hijack path if ctx writes attacker-controlled text into artifacts pipecat later treats as conversational input. The interaction is inferred, not directly documented, so uncertainty pushes to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF ctx writes untrusted content into files or MCP messages that pipecat later reads as prompts, injection is possible.",
+        "IF pipecat consumes shared-bus text without provenance checks, attacker instructions can propagate."
+      ],
+      "mitigations": [
+        "Add a provenance tag to every ctx-generated artifact before pipecat reads it.",
+        "Separate the shared bus from any prompt-bearing channel.",
+        "Require a human review step for any ctx output that becomes pipecat input.",
+        "Disable automatic ingestion of filesystem text into pipecat prompts.",
+        "requires-engineering: implement content-sanitization and instruction/data separation."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "ctx touches filesystem, audit/runtime logs, graph data, and MCP servers; pipecat touches text, conversation state, audio/video/images, and can call many third-party APIs by default. If they share a workspace or bus, sensitive context from ctx can flow into pipecat and then out to external STT/LLM/TTS providers. The blast radius includes exfiltration, so high is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx and pipecat share a workspace, ctx files or logs can be read into pipecat.",
+        "IF pipecat is configured with any external STT/LLM/TTS provider, shared data can leave the local boundary."
+      ],
+      "mitigations": [
+        "Keep ctx and pipecat in separate directories.",
+        "Remove sensitive files from any shared workspace.",
+        "Disable external STT/LLM/TTS providers in pipecat for sensitive runs.",
+        "Use a local-only transport for pipecat.",
+        "requires-engineering: add DLP or redaction before any outbound API call."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ctx can write to filesystem and run browsers, and pipecat supports shared-bus multi-instance operation with network egress. If both operate on the same mutable workspace or shared state, concurrent writes or state races can corrupt artifacts or session state. The profiles do not prove locking, so the conflict is plausible in default multi-instance use and merits medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or shared bus, state races can occur.",
+        "IF pipecat instances share session state while ctx mutates files, overwrites or inconsistent reads are possible."
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory.",
+        "Run only one writer at a time on shared artifacts.",
+        "Turn off shared-bus state for pipecat when ctx is active.",
+        "Use file locks around any shared mutable resource.",
+        "requires-engineering: add orchestrator-level concurrency control."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx can observe tool events and produce structured context, while pipecat can route conversation state and call downstream services. If pipecat treats ctx output as authoritative without verification, a mistaken or stale ctx summary can cascade into incorrect speech, actions, or API calls. The pathway is inferred from documented behaviors, so medium fits.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF pipecat uses ctx summaries as authoritative input, errors can propagate downstream.",
+        "IF pipecat triggers external services based on ctx-produced facts, a bad summary can cause incorrect actions."
+      ],
+      "mitigations": [
+        "Require explicit verification before pipecat acts on ctx output.",
+        "Mark ctx output as advisory, not authoritative.",
+        "Add a checksum or source link to ctx-derived facts.",
+        "Log and review any downstream action triggered by ctx content.",
+        "requires-engineering: add validation gates before external side effects."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx explicitly touches audit/runtime logs and harness records, while pipecat touches conversation state, analytics/metrics, and can send data to third-party APIs. That creates a retention and residency mismatch risk if the same regulated data class flows through both systems. No single-agent residency guarantee is documented, so medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is present in ctx logs or harness records and then enters pipecat analytics or provider calls, retention/residency rules may diverge.",
+        "IF pipecat is used with non-local providers, data may leave the intended jurisdiction."
+      ],
+      "mitigations": [
+        "Avoid placing regulated data in ctx logs.",
+        "Disable analytics/metrics in pipecat for regulated runs.",
+        "Use only providers with approved residency terms.",
+        "Document a retention policy for shared artifacts.",
+        "requires-engineering: add jurisdiction-aware routing and deletion controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:c40fdf559cb66614cff0ab48bedc85fef0744f6a731fff0f2daa4b8782920951",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
