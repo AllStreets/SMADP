@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "whisper"
+  ],
+  "verdict_id": "v_2026-07-21_pipecat__whisper_b58c2d",
+  "generated_at": "2026-07-21T00:30:58Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.425,
+  "headline": "Medium prompt-injection and data-leakage risk from Pipecat\u2019s shared bus and third-party egress; Whisper is local-only but can still be fed untrusted outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Pipecat uses a shared bus and shared state across instances, so untrusted content can traverse between components by default. Whisper itself has no clipboard/MCP/browser surface, but it can still receive Pipecat-produced text or transcripts as input. The interaction is plausible without extra tooling, though not directly documented for this pair.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat routes model or transcript text onto the shared bus and Whisper consumes that text as instructions",
+        "IF an operator manually forwards Pipecat output into Whisper-related prompts or scripts"
+      ],
+      "mitigations": [
+        "Separate the agents onto isolated buses or processes",
+        "Strip instruction-like text before passing transcripts onward",
+        "Use explicit allowlists for fields forwarded between agents",
+        "Add a human review step before any downstream action",
+        "requires-engineering: implement provenance tagging on shared messages"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Pipecat touches audio, video, images, text, and conversation state and has allowlisted network egress, so sensitive content can leave the local environment through configured providers. Whisper is local-only with no network egress, which reduces but does not eliminate leakage because it can still process shared audio files. The pair therefore has a default leakage path through Pipecat, not Whisper.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat is configured with external STT/LLM/TTS providers",
+        "IF shared audio or transcript files contain sensitive data and are passed into Pipecat"
+      ],
+      "mitigations": [
+        "Disable external providers in Pipecat for sensitive sessions",
+        "Keep audio files in a separate restricted directory",
+        "Redact sensitive spans before forwarding transcripts",
+        "Verify no shared cloud logging is enabled",
+        "requires-engineering: add per-field data classification and routing"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "low",
+      "rationale": "Pipecat supports multiple instances over a shared bus, while Whisper does not support multiple instances and has no write or network capabilities. There is little direct write-write conflict because Whisper cannot modify files or git state, but shared-bus coordination can still create contention if Pipecat instances overlap. The blast radius is limited to workflow disruption.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        }
+      ],
+      "conditions": [
+        "IF multiple Pipecat instances share the same bus namespace",
+        "IF an external orchestrator fans out the same audio job to more than one instance"
+      ],
+      "mitigations": [
+        "Assign unique bus namespaces per instance",
+        "Serialize jobs through a simple queue",
+        "Limit one active Pipecat worker per workspace",
+        "Confirm Whisper remains read-only in the pipeline",
+        "requires-engineering: add distributed locking for shared state"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Pipecat can emit transcripts or agent text that downstream components may treat as authoritative, and Whisper is a transcription model that can be used as a preprocessing step without verification. If Whisper output is fed back into Pipecat or another action-taking stage, transcription errors can cascade into wrong responses or actions. The pair lacks a built-in verification boundary in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        }
+      ],
+      "conditions": [
+        "IF Whisper transcripts are forwarded into Pipecat without a validation step",
+        "IF Pipecat uses transcript text to trigger downstream actions or responses"
+      ],
+      "mitigations": [
+        "Insert a transcript review step before actioning",
+        "Compare Whisper output against a second pass for critical utterances",
+        "Mark low-confidence spans for manual confirmation",
+        "Disable automatic action triggers on raw transcripts",
+        "requires-engineering: add confidence-gated routing"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Pipecat can send audio/text to third-party APIs and touches analytics/metrics, while Whisper is local-only and handles only audio/speech. That creates a retention and residency mismatch if the same regulated audio is processed by both, because Pipecat may export it while Whisper does not. The other agent is cited because the mismatch arises from the pair\u2019s differing handling of the same data class.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio or speech data is processed through Pipecat\u2019s external providers",
+        "IF retention or residency rules require all processing to remain local"
+      ],
+      "mitigations": [
+        "Route regulated data only through local paths",
+        "Disable analytics/telemetry for sensitive jobs",
+        "Document provider residency for each Pipecat integration",
+        "Keep a per-job retention log",
+        "requires-engineering: enforce policy-based provider selection"
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "6.1",
+      "8.2",
+      "9.1"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:47182f56cc8a5ed205ef644116cd1d6c0cc429d8a443a880cdbd7e23572ab18b",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
