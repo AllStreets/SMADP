@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-22_ms-swift__slim_2b07dc",
+  "generated_at": "2026-07-22T14:04:27Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High-risk filesystem and shell overlap: ms-swift and slim can both write and execute commands, creating medium prompt-injection, data-leakage, and cascading-error exposure.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Both agents can read and write files and execute shell commands, so one can place content the other may later consume from shared files or stdout. No clipboard or MCP bridge is documented, so this is inferred from overlapping file/CLI surfaces rather than direct interaction evidence.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the two agents are pointed at the same workspace or output directory, injected instructions can cross from one to the other.",
+        "IF either agent parses the other's file or stdout content as instructions, prompt injection becomes actionable."
+      ],
+      "mitigations": [
+        "Use separate working directories for each agent.",
+        "Disable automatic parsing of peer-generated text files.",
+        "Require manual review before copying outputs between agents.",
+        "Prefix all inter-agent artifacts with provenance labels.",
+        "requires-engineering: add content-sanitization and trust-boundary checks."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ms-swift touches datasets, checkpoints, logs, and secrets like hub_token; slim touches filesystem artifacts, environment variables, certificate private keys, and registry credentials. Because both can read/write files and use network egress, a shared workspace could expose sensitive material across the pair even though no direct shared channel is documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF both agents are run against the same filesystem tree, secrets or artifacts from one can be read by the other.",
+        "IF either agent writes logs or outputs containing secrets into a shared directory, the other can ingest them."
+      ],
+      "mitigations": [
+        "Separate secret-bearing and non-secret workspaces.",
+        "Rotate any exposed hub or registry credentials.",
+        "Restrict file permissions on shared directories.",
+        "Review logs for accidental secret material.",
+        "requires-engineering: enforce per-agent storage isolation."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have unrestricted filesystem write and shell execution, so they can race on the same files, outputs, or container artifacts if co-located. Neither profile states locking, shared-state isolation, or multiple-instance support, so the conflict pathway is plausible in default orchestration but not proven to be simultaneous by design.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.session_scope"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same directory or container artifacts, writes can overwrite each other.",
+        "IF the orchestrator launches them concurrently without locks, shell-driven side effects can conflict."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Serialize write-heavy steps.",
+        "Add file locks around shared artifacts.",
+        "Avoid concurrent mutation of git or build outputs.",
+        "requires-engineering: add orchestrator-level locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ms-swift can generate model outputs, logs, and evaluation artifacts, while slim can act on container images and Dockerfiles. If slim consumes ms-swift-produced text or recommendations without verification, an upstream mistake can cascade into incorrect image changes or analysis decisions. The profiles do not show a built-in verification step, so the risk is inferred.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF slim treats ms-swift output as authoritative input, errors can propagate into downstream actions.",
+        "IF ms-swift emits malformed or hallucinated artifacts that slim consumes, the downstream result can be wrong."
+      ],
+      "mitigations": [
+        "Require human review of ms-swift outputs before use.",
+        "Validate schemas for any exchanged files.",
+        "Compare outputs against a second source.",
+        "Keep action-taking steps separate from generation steps.",
+        "requires-engineering: add automated verification gates."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift handles hub tokens, SDK tokens, datasets, checkpoints, and evaluation outputs, while slim handles registry credentials, certificate private keys, and environment variables. If these data classes are co-mingled, retention and residency obligations can diverge across the pair. No compliance controls or residency guarantees are documented, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated data such as secrets or private keys is processed in a shared workspace, retention policy mismatch can occur.",
+        "IF one agent logs sensitive artifacts longer than the other, compliance obligations diverge."
+      ],
+      "mitigations": [
+        "Keep regulated data in a separate workspace.",
+        "Set short log-retention windows.",
+        "Purge temporary artifacts after each run.",
+        "Review whether private keys are ever written to disk.",
+        "requires-engineering: document and enforce data-handling policies."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
