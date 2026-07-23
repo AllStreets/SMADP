@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "production-agentic-rag-course",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-23_production-agentic-rag-course__slim_5ac9f5",
+  "generated_at": "2026-07-23T19:24:44Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.59,
+  "headline": "Highest risk is data leakage: both agents write/read files and handle secrets, while the pair lacks documented isolation or provenance controls.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A can read/write filesystem and process stdin/stdout; B also reads/writes filesystem and uses interactive CLI/command execution. With no documented shared-channel isolation or provenance tracking, file-based instruction injection is plausible if B consumes A-produced artifacts. The interaction is inferred from profiles, not directly evidenced.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        }
+      ],
+      "conditions": [
+        "IF B ingests files or command output produced by A without validation, injected instructions can steer B.",
+        "IF both agents are pointed at the same workspace, file-based prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Require B to treat A-generated files as untrusted input.",
+        "Add a manual review step before B executes any instructions from files.",
+        "Disable automatic ingestion of shared artifacts.",
+        "requires-engineering: add provenance labels to all inter-agent files."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "A handles configuration secrets and research data; B handles environment variables, certificate private keys, and registry credentials. Both can read/write files and have network egress, so a shared workspace or copied artifacts could expose secrets externally. Because the profiles do not state isolation between them, uncertainty pushes this to high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF A and B share any filesystem path, secrets from either side can be copied into the other's outputs.",
+        "IF either agent uploads files or logs to a remote service, touched secrets may leave the local boundary."
+      ],
+      "mitigations": [
+        "Use separate directories and mount points.",
+        "Redact secrets before either agent reads shared artifacts.",
+        "Block network egress for secret-bearing runs.",
+        "Rotate any credentials used in the session.",
+        "requires-engineering: enforce per-agent secret scoping in the orchestrator."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have filesystem write and shell/subprocess execution, so they can contend over the same mutable resources if co-located. A explicitly supports multiple instances; B does not, but no locking or shared-state policy is stated. This is a real overlap, though not enough evidence for high because shared write targets are not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory, last-writer-wins conflicts can corrupt artifacts.",
+        "IF either agent mutates container or build state concurrently, outputs may diverge or fail."
+      ],
+      "mitigations": [
+        "Assign disjoint output directories.",
+        "Run only one writer at a time.",
+        "Freeze shared inputs before execution.",
+        "Use file locks for any shared artifact.",
+        "requires-engineering: add orchestrator-level mutual exclusion."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "A is a content-writing/RAG agent that can emit answers and stream outputs; B is a CLI-style container tool that can act on files and commands. If B consumes A's generated text as authoritative, errors can cascade into incorrect container changes or analysis. The pair lacks documented verification gates, so the default risk is moderate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.category"
+        },
+        {
+          "profile_field": "agent_b.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF B uses A-generated text as input without verification, A's mistakes can propagate into B's actions.",
+        "IF A produces summaries or facts that B renders or operationalizes, downstream errors can multiply."
+      ],
+      "mitigations": [
+        "Require source citations before B acts on A output.",
+        "Add a human approval step for any action derived from A.",
+        "Compare A output against original artifacts before use.",
+        "Limit B to read-only analysis when fed A output.",
+        "requires-engineering: implement confidence/provenance checks between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "A touches academic papers, research questions, and configuration secrets; B touches certificate private keys, environment variables, and vulnerability data. The profiles do not specify residency or retention controls, so compliance mismatch is plausible but not proven. Because the data classes differ and both can persist files, a retention or handling gap is a realistic default concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated data is placed into either agent's workspace, retention or logging differences can create policy violations.",
+        "IF one agent exports artifacts to a different jurisdiction or service, residency obligations may be breached."
+      ],
+      "mitigations": [
+        "Classify data before loading it into either agent.",
+        "Keep regulated data out of shared folders.",
+        "Review retention settings for both tools.",
+        "Purge session artifacts after completion.",
+        "requires-engineering: align residency and retention policies across the pair."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:2e709d69f253ce0231fc538c65d8a7ee9e14c3d02b2a3cfb2e700c4d4cbcb81c",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
