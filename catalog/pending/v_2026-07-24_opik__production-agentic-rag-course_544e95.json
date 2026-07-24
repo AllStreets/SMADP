@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "opik",
+    "production-agentic-rag-course"
+  ],
+  "verdict_id": "v_2026-07-24_opik__production-agentic-rag-course_544e95",
+  "generated_at": "2026-07-24T13:44:08Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.56,
+  "headline": "High-risk filesystem and network overlap: B can write and egress broadly while A can send REST traffic, creating prompt-injection, leakage, and cascading-error pathways.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "A has REST API output surfaces and broad network egress, while B reads/writes the filesystem and uses stdin/stdout plus API endpoints. A direct shared channel is not documented, but B can ingest files and A can emit content that may be copied into those files or API inputs. Uncertainty remains, so I choose medium over low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF A's REST output is copied into files that B later reads, injection becomes reachable.",
+        "IF B parses file or stdin content as instructions, attacker-controlled text can steer behavior."
+      ],
+      "mitigations": [
+        "Require a human review step before B consumes A-generated text.",
+        "Prefix A outputs with a strict schema and reject free-form instructions.",
+        "Store A outputs in a separate directory from B inputs.",
+        "Disable automatic ingestion of A outputs into B workflows.",
+        "requires-engineering: add provenance tags and parser hardening."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "B explicitly touches configuration secrets and academic data, and it has write/read filesystem plus allowlisted network egress. A has broad network egress and REST API access, so if A receives B-produced artifacts or secrets, exfiltration is plausible. The pairwise path is not directly documented, so I keep this at medium rather than high.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF B writes secrets or paper data into shared files that A can access, leakage is reachable.",
+        "IF A is given any B-produced context containing secrets, A can transmit it over broad egress."
+      ],
+      "mitigations": [
+        "Remove secrets from any shared workspace before running A.",
+        "Mount B's secret files read-only or outside A's reach.",
+        "Use separate service accounts and API keys for each agent.",
+        "Review outbound destinations on A and B before execution.",
+        "requires-engineering: enforce workspace isolation and secret redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "B can write the filesystem, spawn subprocesses, and install packages; A has REST API egress but no local write surface is documented. There is no direct write-write conflict, yet B's mutable local environment can still collide with A if A's outputs are materialized into the same workspace. Because shared locking is not stated, uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate on the same directory, B can overwrite artifacts produced from A's outputs.",
+        "IF A's API-driven artifacts are saved into B's workspace, concurrent mutation conflicts can occur."
+      ],
+      "mitigations": [
+        "Run the agents in separate directories.",
+        "Serialize any handoff between A and B.",
+        "Avoid concurrent package installs while B is active.",
+        "Snapshot the workspace before each run.",
+        "requires-engineering: add file locks or per-agent sandboxes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "B exposes agentic ask/stream endpoints and can act on files and subprocesses, while A can generate REST-backed outputs that may be treated as upstream content. If B trusts A's output without verification, errors can cascade into downstream actions or writes. The default workflow is not shown to verify A, so I rate this high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF B consumes A's output as authoritative input, downstream actions can propagate errors.",
+        "IF B's agentic-ask or stream workflow triggers writes based on A content, the cascade becomes operational."
+      ],
+      "mitigations": [
+        "Insert a verification step before B acts on A outputs.",
+        "Require citations or source links for any factual claim from A.",
+        "Limit B to read-only mode for A-derived artifacts.",
+        "Log and review all A-to-B handoffs.",
+        "requires-engineering: add confidence gating and policy checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "B touches configuration secrets and academic papers and runs in a local development environment with Docker/Airflow credentials, while A is an open-source observability/evaluation tool with broad egress. No explicit residency or certification mismatch is documented, but the presence of secrets and broad egress creates a plausible compliance gap if regulated data enters the pair. I therefore choose medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.elevated_privileges"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated or personal data is placed into B's workspace, compliance obligations may apply.",
+        "IF A receives data subject to retention or residency rules, broad egress can violate policy."
+      ],
+      "mitigations": [
+        "Keep regulated data out of the shared workspace.",
+        "Document retention and deletion rules for both agents.",
+        "Use separate credentials for any external services.",
+        "Review whether Docker/Airflow access is necessary before running.",
+        "requires-engineering: implement residency and retention controls."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2",
+      "GOVERN-1.3"
+    ],
+    "iso_42001": [
+      "8.2",
+      "8.3",
+      "10.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:40e48a7408bc99dfa04bc3780e17705bad94941bd1b7f8c95172f89c71a910dc",
+    "profile_b_hash": "sha256:2cdcfdb84c4aac3d192dcefc4ecede217c388e6fa1b6683bdf1821ff803767ba",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
