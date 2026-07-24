@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "emqx",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-24_emqx__slim_235eef",
+  "generated_at": "2026-07-24T22:41:06Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.47,
+  "headline": "High risk of data leakage and cascading errors: slim can read/write and egress broadly, while emqx can ingest networked IoT data and emit HTTP API outputs.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "A direct prompt-injection bridge is not documented. emqx exposes HTTP APIs and broad network egress, while slim runs an interactive CLI with filesystem access, so only an unusual manual copy/paste or file handoff could carry malicious instructions between them. The pair lacks a shared channel by default, making the blast radius small.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF an operator copies emqx output into slim's CLI or files, injected instructions can propagate.",
+        "IF both agents are connected through a shared workspace or message queue, the pathway becomes active."
+      ],
+      "mitigations": [
+        "Avoid copying raw agent output into commands.",
+        "Use a strict template for any handoff text.",
+        "Review transferred files before slim consumes them.",
+        "Keep the agents on separate workspaces.",
+        "requires-engineering: add provenance tagging between agents."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "slim can read filesystem artifacts, environment variables, and certificate private keys, and it has broad network egress. emqx touches IoT data and also has broad network egress. If they share a workspace or credentials, slim can expose sensitive material that emqx or its outputs may carry onward. The interaction is plausible in default operator setups, though not proven.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF emqx and slim are pointed at the same workspace or host files, slim can read data emqx touches.",
+        "IF registry credentials or private keys are present in slim's session, network egress can leak them outward."
+      ],
+      "mitigations": [
+        "Separate workspaces and credentials.",
+        "Remove secrets from shared directories.",
+        "Run slim on sanitized copies only.",
+        "Restrict outbound network access during analysis.",
+        "requires-engineering: enforce per-agent data-loss controls."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents have broad network egress, and slim can write the filesystem while emqx can call HTTP APIs. That creates overlapping authority over mutable external resources if they are aimed at the same targets or artifacts. The profiles do not show locking or coordination, so conflicts are plausible even though modify_git_state is false for slim.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents target the same remote service or shared artifact store, writes can race.",
+        "IF an operator maps slim output back into emqx-managed resources, conflicting updates can occur."
+      ],
+      "mitigations": [
+        "Assign disjoint targets to each agent.",
+        "Serialize any shared writes manually.",
+        "Disable outbound writes for one agent during the other's run.",
+        "Use separate service accounts.",
+        "requires-engineering: add locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "slim can execute shell commands and spawn subprocesses, while emqx can emit HTTP API-driven outputs from IoT data. If an operator feeds emqx-derived facts into slim without verification, slim may act on incorrect assumptions and amplify them into filesystem or container changes. The pair lacks a documented verification step, so the cascade is plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF emqx output is treated as authoritative input to slim, errors can cascade.",
+        "IF slim is allowed to execute commands based on unreviewed upstream facts, downstream actions may be wrong."
+      ],
+      "mitigations": [
+        "Require human review before slim acts on emqx output.",
+        "Validate emqx-derived facts against source data.",
+        "Log and diff proposed actions before execution.",
+        "Limit slim to read-only mode for the first pass.",
+        "requires-engineering: add schema validation between agents."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "emqx touches IoT data, while slim handles filesystem artifacts, environment variables, certificate files, and private keys. If regulated IoT or secret-bearing data is routed through slim, retention and residency obligations can diverge from emqx's handling. The profiles do not document matching compliance controls, so the mismatch is a realistic medium-risk concern.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT data or secrets are processed by both agents, retention obligations may diverge.",
+        "IF the deployment requires residency or deletion guarantees, slim's filesystem handling can violate them."
+      ],
+      "mitigations": [
+        "Keep regulated data out of slim sessions.",
+        "Purge temporary artifacts after each run.",
+        "Use redacted inputs for analysis.",
+        "Document retention rules for both tools.",
+        "requires-engineering: align compliance controls across the pair."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.3",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d8cb137a68ad9e483463ca2ec80ebbb627d8da133031d75f1628ffaf87147125",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
