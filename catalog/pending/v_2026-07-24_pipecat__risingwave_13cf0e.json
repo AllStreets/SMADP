@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "pipecat",
+    "risingwave"
+  ],
+  "verdict_id": "v_2026-07-24_pipecat__risingwave_13cf0e",
+  "generated_at": "2026-07-24T05:02:17Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.425,
+  "headline": "Highest risk is medium data leakage: pipecat can send audio/text to third-party APIs while risingwave is local-only, creating a one-way sensitive-data exposure path.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "low",
+      "rationale": "Pipecat has shared-bus session state and multiple instances, so if RisingWave outputs are manually bridged into Pipecat prompts, injection is possible. RisingWave itself has no I/O surfaces or write path shown, so there is no default automated bridge. The pathway exists but needs unusual operator wiring and the blast radius is limited to conversation control.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.session_scope"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces"
+        },
+        {
+          "profile_field": "agent_a.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF the operator copies RisingWave-produced text into Pipecat prompt inputs, injection content can influence downstream tool use.",
+        "IF a shared bus is used to pass untrusted text from RisingWave into Pipecat without sanitization, prompt injection becomes reachable."
+      ],
+      "mitigations": [
+        "Use a strict delimiter and system-prompt wrapper for any copied text.",
+        "Disable shared-bus handoff for untrusted content.",
+        "Add a one-line provenance tag before passing text between agents.",
+        "Review the first Pipecat turn after any manual bridge.",
+        "requires-engineering: add content filtering or schema validation on the bridge."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "Pipecat touches audio, video, images, text, and conversation state and can egress to allowlisted third-party APIs by default. RisingWave shows no network egress and no data classes touched, so it is not the leak source; the risk is Pipecat exporting sensitive conversational content once the pair is used together. This is a default-path exposure, though not clearly irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF Pipecat is configured with any external STT/LLM/TTS provider from its documented API surfaces, audio/text may leave the local environment.",
+        "IF RisingWave outputs are fed into Pipecat conversation state, those contents can be transmitted by Pipecat's allowlisted egress."
+      ],
+      "mitigations": [
+        "Prefer local-only providers for Pipecat.",
+        "Do not pass secrets or regulated data into the shared conversation.",
+        "Restrict Pipecat provider configuration to approved endpoints only.",
+        "Log outbound destinations for a quick spot check.",
+        "requires-engineering: enforce egress policy at the network layer."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Pipecat explicitly supports shared-bus shared state and multiple instances, while RisingWave is a mutable data-engineering system with no concurrency details exposed. Because both may operate on shared state in the same deployment, write/write or state overwrite conflicts are plausible, but the exact overlap is undocumented. Uncertainty pushes this to medium rather than low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same mutable workspace, bus, or database, concurrent updates can race.",
+        "IF RisingWave is used to materialize data that Pipecat also mutates or annotates, state conflicts can occur."
+      ],
+      "mitigations": [
+        "Separate writable storage per agent.",
+        "Assign one agent as read-only on shared resources.",
+        "Add a lock or lease around any shared mutable object.",
+        "Check for overlapping paths or tables before deployment.",
+        "requires-engineering: introduce transactional coordination for shared writes."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Pipecat can emit conversational text and RisingWave is a data-engineering system that could consume upstream outputs as pipeline inputs. If RisingWave treats Pipecat output as authoritative, errors or hallucinations can cascade into downstream data products. The profiles do not show verification gates, so the interaction is plausible in default integrations.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.category"
+        }
+      ],
+      "conditions": [
+        "IF RisingWave ingests Pipecat-generated text without validation, incorrect content can propagate downstream.",
+        "IF Pipecat is used to summarize or transform facts that RisingWave later materializes, a single upstream error can fan out."
+      ],
+      "mitigations": [
+        "Insert a validation step before RisingWave ingestion.",
+        "Require human review for any Pipecat-generated facts.",
+        "Keep Pipecat outputs labeled as untrusted.",
+        "Compare a sample of outputs against source data.",
+        "requires-engineering: add schema and semantic checks before downstream actions."
+      ]
+    },
+    "E_compliance": {
+      "severity": "low",
+      "rationale": "Pipecat documents broad handling of audio, video, images, text, and analytics, while RisingWave shows no touched data classes or residency/compliance claims. There is no direct evidence of a residency mismatch or regulated-data violation, but the pair could create one if regulated audio/text is routed into Pipecat's external services. RisingWave is not cited beyond its lack of such claims.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF regulated audio or text is routed through Pipecat's external API providers, residency or retention obligations may be implicated.",
+        "IF the deployment requires a specific compliance regime that RisingWave does not document, the pair may fail policy review."
+      ],
+      "mitigations": [
+        "Avoid sending regulated data to external Pipecat providers.",
+        "Document the data classes allowed through the pair.",
+        "Confirm retention settings for each external provider.",
+        "Keep compliance-sensitive workloads on a separate path.",
+        "requires-engineering: obtain vendor compliance attestations before production use."
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:6fe94749d3fed3faf6aad6375d0ec174b0dca978d9641a0f683ef0923ba85655",
+    "profile_b_hash": "sha256:97f5a6c6157065ace3387ebb3ba53f77f05bd57c7f9f4fea730a8bd7f267b13a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
