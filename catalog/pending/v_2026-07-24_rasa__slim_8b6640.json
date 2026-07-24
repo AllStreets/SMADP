@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "rasa",
+    "slim"
+  ],
+  "verdict_id": "v_2026-07-24_rasa__slim_8b6640",
+  "generated_at": "2026-07-24T05:08:02Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.5,
+  "headline": "High: shared filesystem and broad egress make prompt injection, leakage, and cascading errors plausible; no direct pairwise isolation is documented.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Rasa can ingest external chat content via APIs like Slack/Telegram, while slim reads and writes filesystem artifacts and executes shell commands. No shared channel is documented, but if outputs are bridged through files or copied text, attacker-controlled content from agent_a can influence agent_b. The pair lacks provenance controls in the profiles.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        }
+      ],
+      "conditions": [
+        "IF agent_a output is copied into a file that agent_b reads as instructions",
+        "IF agent_b parses agent_a-generated text as shell input or command arguments"
+      ],
+      "mitigations": [
+        "Use a strict handoff template with quoted, non-executable text",
+        "Add a manual review step before agent_b consumes agent_a output",
+        "Store handoffs in separate files with read-only permissions",
+        "Reject any agent_a content containing tool directives or shell metacharacters"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "agent_a handles text and voice and has allowlisted network egress; agent_b reads filesystem artifacts, environment variables, and certificate private keys and has broad egress. If they share a workspace or credentials, sensitive artifacts touched by agent_b could be exposed through agent_a's outbound channels. The profiles do not show isolation strong enough to rule this out.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.read_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF agent_a is given access to any workspace containing agent_b artifacts",
+        "IF agent_b outputs are forwarded through agent_a to external APIs or chat channels"
+      ],
+      "mitigations": [
+        "Keep separate workspaces and credentials for each agent",
+        "Do not place secrets or private keys in any shared directory",
+        "Disable forwarding of agent_b outputs through agent_a",
+        "Redact sensitive files before either agent processes them"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "agent_a has no write or shell capabilities, but agent_b can write the filesystem, execute shell, and spawn subprocesses. There is no documented locking or shared-state mechanism between them, so conflicts are possible if both target the same directory or artifacts. Uncertainty remains about the orchestrator, so the safer medium rating is warranted.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same writable directory",
+        "IF agent_a triggers workflows that cause agent_b to rewrite files agent_a later reads"
+      ],
+      "mitigations": [
+        "Assign each agent a separate working directory",
+        "Make agent_b write to a staging path only",
+        "Serialize access with a simple lock file",
+        "Snapshot inputs before agent_b modifies them"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Rasa produces conversational outputs that can be treated as authoritative by downstream systems, while slim executes commands and modifies files during container analysis. If agent_b consumes agent_a's text without verification, a mistaken or malicious response can cascade into incorrect actions or corrupted artifacts. The profiles do not show a verification gate, so the interaction is plausible in default use.",
+      "citations": [
+        {
+          "profile_field": "agent_a.category"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        }
+      ],
+      "conditions": [
+        "IF agent_b uses agent_a output as command text or configuration",
+        "IF agent_b acts on agent_a facts without an independent check"
+      ],
+      "mitigations": [
+        "Require a human or rule-based verification step before action",
+        "Pass only structured fields, not free-form prose",
+        "Log and diff agent_a outputs before agent_b consumes them",
+        "Block execution when agent_a output contains unresolved placeholders"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "agent_a touches text and voice and can egress to external messaging APIs, while agent_b handles filesystem artifacts, environment variables, and certificate private keys with broad network egress. If regulated or secret-bearing data is routed from agent_b into agent_a's external channels, retention and residency obligations can diverge. The profiles do not document matching compliance controls, so the mismatch remains plausible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF regulated data from agent_b is sent through agent_a's external messaging integrations",
+        "IF retention or deletion requirements differ between the two systems"
+      ],
+      "mitigations": [
+        "Classify data before routing it between agents",
+        "Keep regulated data out of agent_a channels",
+        "Document retention and deletion rules for both agents",
+        "Use separate tenants or accounts for compliance-sensitive workloads"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:ddc84eaab3342e157a93b2cfaa5035c9c06751b342e76c2116c33ed0e9f97552",
+    "profile_b_hash": "sha256:d2315f7c4cff81115315cefcb0bfbd75c6581f70d3e9ee74d4cbb3c0d94a46ce",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
