@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ms-swift",
+    "rasa"
+  ],
+  "verdict_id": "v_2026-07-25_ms-swift__rasa_0c8042",
+  "generated_at": "2026-07-25T16:32:49Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.56,
+  "composite_score": 0.5,
+  "headline": "High: ms-swift can write shared files and Rasa can ingest conversational content, creating default-path prompt, leakage, and cascading-error risks.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ms-swift can read/write files and use stdin/stdout, while Rasa consumes dialogue through messaging channels and an LLM subagent. A shared workspace or copied outputs could let attacker-controlled content from ms-swift be treated as instructions by Rasa. The pairwise bridge is not directly documented, so uncertainty pushes this above low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift outputs are copied into a Rasa training or runtime input channel, injection becomes reachable.",
+        "IF both agents share a filesystem or message bridge, attacker-controlled text can cross from A to B."
+      ],
+      "mitigations": [
+        "Separate workspaces for the two agents.",
+        "Disable automatic ingestion of A's outputs into B.",
+        "Add a manual review step before any prompt or training-data import.",
+        "Use provenance tags on files passed between agents.",
+        "requires-engineering: enforce content filtering on inter-agent text."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ms-swift explicitly handles hub_token and sdk-token and writes logs, configs, and training outputs; Rasa handles text/voice and can send data through messaging APIs. If they share a workspace or operator account, sensitive artifacts from A can leak into B's conversational outputs or channels. No direct isolation is stated for either agent, so the safer choice is medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        }
+      ],
+      "conditions": [
+        "IF ms-swift logs or configs containing tokens are accessible to Rasa, leakage is possible.",
+        "IF both agents share the same workspace or operator credentials, sensitive text can flow from A into B outputs."
+      ],
+      "mitigations": [
+        "Store secrets outside shared directories.",
+        "Rotate any tokens used by ms-swift.",
+        "Restrict Rasa to non-sensitive channels during joint runs.",
+        "Review logs before handing them to the other agent.",
+        "requires-engineering: add per-agent access controls and redaction."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ms-swift has filesystem write, shell, subprocess, and package-install capabilities; Rasa can also operate as a runnable bot framework with network egress. Even without explicit git overlap, both can mutate shared files or dependencies if co-located, creating default-path conflicts. The profiles do not state locking or isolation, so uncertainty warrants medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        }
+      ],
+      "conditions": [
+        "IF both agents operate in the same directory, file clobbering can occur.",
+        "IF either agent installs packages into a shared environment, dependency drift can break the other."
+      ],
+      "mitigations": [
+        "Run each agent in its own virtual environment.",
+        "Use separate working directories.",
+        "Freeze dependencies before joint execution.",
+        "Avoid concurrent package installs.",
+        "requires-engineering: add filesystem and environment locking."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "Rasa's subagent model means it may treat upstream text as dialogue input, and ms-swift can generate training outputs, configs, or evaluation artifacts that look authoritative. If Rasa consumes A's outputs without verification, errors can cascade into incorrect bot behavior or responses. The interaction is inferred rather than documented, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF Rasa uses ms-swift-generated text as training data or policy content, errors can propagate.",
+        "IF no verification step exists between A's outputs and B's actions, cascading mistakes are reachable."
+      ],
+      "mitigations": [
+        "Require human review of A's outputs before B uses them.",
+        "Keep generated artifacts separate from production bot assets.",
+        "Add checksum or schema validation on imported files.",
+        "Limit B to read-only consumption of reviewed artifacts.",
+        "requires-engineering: implement provenance-aware validation."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ms-swift touches datasets, model weights, checkpoints, logs, and configuration data, while Rasa handles text and voice through third-party messaging APIs. That creates a plausible retention and residency mismatch if the same customer data is routed through both systems. No specific certifications or DPA details are stated, so the compliance risk is present but not proven high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated customer data is processed by both agents, retention and residency must align.",
+        "IF logs from ms-swift are retained longer than Rasa conversation records, mismatch occurs."
+      ],
+      "mitigations": [
+        "Classify data before routing it to either agent.",
+        "Set matching retention windows for both systems.",
+        "Avoid sending regulated data through third-party channels.",
+        "Document residency for each storage location.",
+        "requires-engineering: align compliance controls and contracts."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:e30335d557eb163084e77e28f6b86f80830a4f1e434bfbf21eae4d5829a675ff",
+    "profile_b_hash": "sha256:b049675792d1794320926e6cb2bdfc3cfb919a1b13c27f1336a51c518d695224",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
