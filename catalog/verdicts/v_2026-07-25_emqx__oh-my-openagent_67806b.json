@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "emqx",
+    "oh-my-openagent"
+  ],
+  "verdict_id": "v_2026-07-25_emqx__oh-my-openagent_67806b",
+  "generated_at": "2026-07-25T16:16:21Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High risk of data leakage and cascading errors: oh-my-openagent\u2019s broad egress and MCP/tooling can expose EMQX IoT data if paired without isolation.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "oh-my-openagent exposes runtime-injected MCPs/hooks and parses files like AGENTS.md, while EMQX can surface IoT data over HTTP API and broad egress. A shared workspace or copied outputs could let attacker-controlled content from one side influence the other. No direct shared channel is documented, so this is inferred and not higher.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.files"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same workspace or message channel, injected instructions in files or outputs can be consumed by the other agent.",
+        "IF either agent treats file content as trusted instructions, prompt injection becomes feasible."
+      ],
+      "mitigations": [
+        "Separate workspaces per agent.",
+        "Disable automatic ingestion of AGENTS.md and similar instruction files.",
+        "Require provenance tags on any cross-agent text.",
+        "Review MCP/tool inputs before execution.",
+        "requires-engineering: add content-sanitization and trust-boundary enforcement."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "EMQX touches IoT data and has broad network egress; oh-my-openagent touches project code, session history, and provider auth data, and can call external services like PostHog and Exa. If they share a workspace or credentials, sensitive data can flow out through the agent with broader egress. The pairwise leakage path is plausible in default-style setups and can be irreversible.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents can read the same files or session state, EMQX IoT data may be exposed to oh-my-openagent outputs or third-party calls.",
+        "IF provider auth prompts or session history are shared, secrets can be relayed off-box."
+      ],
+      "mitigations": [
+        "Use separate OS users or containers.",
+        "Block outbound network for the agent handling sensitive data.",
+        "Remove shared credentials from the workspace.",
+        "Restrict file access to least-privilege paths.",
+        "requires-engineering: enforce per-agent data-loss-prevention and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "EMQX has broad network egress and HTTP API access, while oh-my-openagent can run browsers, spawn subprocesses, and use multiple mutable files plus runtime-injected MCPs. Their write and network surfaces can overlap on shared resources, creating race conditions or conflicting actions. No locking or coordination primitive is documented, so uncertainty pushes this to medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF both agents modify the same project files or configuration, concurrent writes can conflict.",
+        "IF both agents act on the same external account or API endpoint, overlapping operations can race."
+      ],
+      "mitigations": [
+        "Assign disjoint file paths per agent.",
+        "Serialize writes with a lock file.",
+        "Disable one agent\u2019s write access during the other\u2019s run.",
+        "Use separate API credentials per agent.",
+        "requires-engineering: add orchestrator-level coordination and conflict detection."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "oh-my-openagent can act through browsers, subprocesses, and MCP tools, so if it consumes EMQX-generated outputs as authoritative, mistakes can cascade into external actions. EMQX can emit networked data but has no documented verification layer for downstream use. Because the pair lacks a documented guardrail, the safer choice is high rather than medium.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_a.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.capabilities.run_browsers"
+        },
+        {
+          "profile_field": "agent_b.capabilities.spawn_subprocesses"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF oh-my-openagent uses EMQX output as a source of truth without verification, incorrect facts can drive actions.",
+        "IF browser or subprocess tools are enabled, those actions can propagate beyond the chat layer."
+      ],
+      "mitigations": [
+        "Require human review before external actions.",
+        "Add a verification step before acting on EMQX output.",
+        "Disable browser automation for untrusted inputs.",
+        "Log and diff all generated actions.",
+        "requires-engineering: implement schema validation and provenance checks."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "EMQX touches IoT data, while oh-my-openagent handles project code, session history, and provider auth prompts and may send data to third-party services like PostHog or Exa. That creates a plausible retention/residency mismatch if regulated IoT or customer data is routed through the agent stack. The profiles do not prove a specific legal violation, so medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT or customer data is routed through oh-my-openagent\u2019s external APIs, retention and residency obligations may be violated.",
+        "IF provider auth prompts are logged alongside sensitive data, compliance exposure increases."
+      ],
+      "mitigations": [
+        "Classify data before routing it to external APIs.",
+        "Disable telemetry for regulated workloads.",
+        "Keep sensitive data out of session history.",
+        "Review retention settings for third-party services.",
+        "requires-engineering: add residency-aware routing and audit logging."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MEASURE-2.7",
+      "MANAGE-1.2"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.2"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:d8cb137a68ad9e483463ca2ec80ebbb627d8da133031d75f1628ffaf87147125",
+    "profile_b_hash": "sha256:60ccecb0f0520945d926d4197239896db22533fcab3cbaa21d5a4e5716ad417a",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
