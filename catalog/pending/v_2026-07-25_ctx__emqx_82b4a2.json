@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "ctx",
+    "emqx"
+  ],
+  "verdict_id": "v_2026-07-25_ctx__emqx_82b4a2",
+  "generated_at": "2026-07-25T16:27:35Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.52,
+  "composite_score": 0.5,
+  "headline": "High: ctx can read/write filesystem and browser/API outputs while emqx has broad network egress, creating default-path leakage and cascading-action risk.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "ctx observes Claude Code PostToolUse/Stop events and can read filesystem content, so attacker-controlled text could be reinterpreted as instructions. emqx exposes HTTP API and broad network egress, but no direct shared channel is documented, so the interaction is inferred rather than proven. Uncertainty keeps this at medium, not low.",
+      "citations": [
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx ingests files or tool logs produced by emqx without provenance filtering, prompt injection is possible.",
+        "IF emqx forwards attacker-controlled payloads into ctx-observed files or events, instruction hijacking becomes reachable."
+      ],
+      "mitigations": [
+        "Add a provenance tag to every emqx-originated file or event before ctx reads it.",
+        "Restrict ctx to a read-only staging directory for emqx outputs.",
+        "Disable automatic parsing of free-form emqx payloads by ctx.",
+        "requires-engineering: add content-sanitization and allowlist parsing between emqx and ctx."
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "medium",
+      "rationale": "ctx touches filesystem, audit/runtime logs, graph data, and MCP servers; emqx has broad network egress and HTTP API access. That creates a plausible path for sensitive workspace data to leave the pair through emqx, even though no shared workspace is explicitly documented. Because the leak path is inferred from documented surfaces, medium is the conservative choice.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF ctx stores sensitive logs or graph data in a location emqx can read, leakage becomes plausible.",
+        "IF emqx sends received payloads to external endpoints, any ctx-derived content in those payloads can exfiltrate."
+      ],
+      "mitigations": [
+        "Keep ctx outputs in a directory emqx cannot access.",
+        "Disable or restrict emqx outbound destinations to a test endpoint.",
+        "Redact logs before they are handed from ctx to emqx.",
+        "requires-engineering: enforce per-agent filesystem isolation and egress allowlists."
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "ctx supports multiple instances and filesystem access; emqx has broad network egress and HTTP API access. Their mutable surfaces overlap in practice if they share a workspace or API target, but the profiles do not prove a locked coordination mechanism. Because the conflict pathway exists but is not fully documented, medium is appropriate.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.install_packages"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.supports_multiple_instances"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF both agents write to the same directory or config file, last-writer-wins conflicts can occur.",
+        "IF emqx and ctx mutate the same HTTP-backed resource without locking, state races are possible."
+      ],
+      "mitigations": [
+        "Assign separate working directories to ctx and emqx.",
+        "Pause one agent while the other writes shared state.",
+        "Use file locks or transactional updates for shared artifacts.",
+        "requires-engineering: add orchestrator-level locking around shared resources."
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "medium",
+      "rationale": "ctx can emit logs, graph data, and browser/API-derived outputs that another agent could treat as authoritative. emqx has HTTP API and network egress, so it could act on those outputs without a verification step. The pairwise chain is plausible but not directly evidenced, so medium fits better than high.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.capabilities.network_egress"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF emqx consumes ctx-produced text as instructions or facts, downstream actions may be wrong.",
+        "IF ctx-generated artifacts are forwarded to emqx without validation, errors can cascade into network actions."
+      ],
+      "mitigations": [
+        "Require a human review step before emqx acts on ctx output.",
+        "Add schema validation for ctx-produced artifacts.",
+        "Mark ctx outputs as untrusted until verified.",
+        "requires-engineering: implement confidence checks and provenance-aware gating."
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "ctx touches audit/runtime logs and harness records, while emqx touches IoT data. If regulated IoT or personal data is routed from ctx into emqx, retention and residency obligations may diverge. The profiles do not specify certifications or residency, so the compliance risk is uncertain but nontrivial; medium is the cautious assignment.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_b.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.docs_urls"
+        },
+        {
+          "profile_field": "agent_b.docs_urls"
+        }
+      ],
+      "conditions": [
+        "IF regulated IoT data or personal data is stored in ctx logs and then sent to emqx, policy mismatch may occur.",
+        "IF either agent retains data longer than the other for the same record class, deletion/export obligations can diverge."
+      ],
+      "mitigations": [
+        "Classify data before passing it between agents.",
+        "Set a short retention window for shared artifacts.",
+        "Document which agent is the system of record for each data class.",
+        "requires-engineering: align residency, retention, and deletion workflows."
+      ]
+    }
+  },
+  "framework_mappings": {
+    "nist_ai_rmf": [
+      "MAP-1.1",
+      "MEASURE-2.7"
+    ],
+    "iso_42001": [
+      "A.5.2",
+      "A.8.3"
+    ]
+  },
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:567adf434efbe99e9ad44cdba7c8be163c62223e34e498e4a3448c4a224c6511",
+    "profile_b_hash": "sha256:a8cfc01683481de30b6cec2c9303220d1b21ace6aec40cced9f815907295f3a6",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
