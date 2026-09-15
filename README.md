@@ -6,14 +6,16 @@
 
 &nbsp;
 
-<a href="https://allstreets.github.io/SMADP/"><img alt="profiles" src="https://img.shields.io/badge/profiles-6%2C369-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-2%2C279-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="sandbox-validated" src="https://img.shields.io/badge/sandbox--validated-11-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://github.com/AllStreets/SMADP/tree/main/adapters"><img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-475-06B6D4?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="executed in sandbox" src="https://img.shields.io/badge/executed_in_sandbox-11_pairs-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="#evidence-levels"><img alt="evidence ladder" src="https://img.shields.io/badge/evidence_ladder-4_rungs-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-2%2C279_%C2%B7_each_rung--labeled-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
+<a href="#quickstart"><img alt="tests" src="https://img.shields.io/badge/tests-973_passing-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 <a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
 
 <br/>
 
+<img alt="profiles indexed" src="https://img.shields.io/badge/profiles_indexed-6%2C371-6b7382?style=flat-square&labelColor=0b0712"/>
+<img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-475_scaffolded-6b7382?style=flat-square&labelColor=0b0712"/>
 <img alt="python" src="https://img.shields.io/badge/python-3.11+-6b7382?style=flat-square&labelColor=0b0712"/>
 <img alt="astro" src="https://img.shields.io/badge/site-Astro_4-6b7382?style=flat-square&labelColor=0b0712"/>
 <img alt="docker" src="https://img.shields.io/badge/sandbox-Docker_/_OCI-6b7382?style=flat-square&labelColor=0b0712"/>
@@ -53,6 +55,31 @@ Every verdict is **evidence-grounded** — each sub-verdict's *Grounded in* row 
 > Most verdicts are **heuristic estimates**: an LLM reads two agents' public-docs profiles and reasons about how they'd interact. **No code runs.** These carry an evidence level of `docs-only` (or lower) and are best read as risk *priors*, not proof.
 >
 > A verdict becomes **`sandbox-validated`** only when the pair is *actually executed* together in a Docker sandbox under a scenario and an LLM grades the real transcript — reproducible and signed. Today that's a small, deliberately-curated set (the `sandbox-validated` badge above is the honest count), growing one hand-authored real adapter at a time (e.g. `aider`, `goose`, `gptme`). The site's evidence badge shows **`▶ executed · sandbox`** for these and flags the rest as not-executed.
+
+### Where the evidence actually stands
+
+We would rather publish a small honest number than a large soft one. This is the real
+distribution across all 2,279 published verdicts, straight from the `evidence_level`
+field on every record:
+
+```
+  rung                    count      what it means
+  ─────────────────────────────────────────────────────────────────────────
+  sandbox-validated  ▶       11      ran in a container; judged on transcripts
+  profile-verified   ·        6      human-curated, evidence-cited
+  docs-only          ·    2,197      an LLM read the docs. no code ran.
+  unverified-profile ·       65      stub. makes no safety claim at all.
+  ─────────────────────────────────────────────────────────────────────────
+                          2,279      every one carries its rung in the data
+```
+
+**Eleven.** That is how many agent pairs have actually been executed against each
+other. The other 2,268 are priors, and the codebase calls them priors — the rung is a
+field on the record, not a disclaimer in a footer, so the site, the API, and the CLI
+all inherit it and none of them can quietly round a guess up into a finding.
+
+The ladder is the contribution. The count is what it honestly is today, and it climbs
+one hand-authored adapter at a time.
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
 
