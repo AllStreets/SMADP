@@ -47,6 +47,8 @@ from smadp.sandbox.isolation import (
     RuntimeBackend,
     RuntimeUnavailableError,
     build_run_command,
+    build_shared_workspace_create_command,
+    build_shared_workspace_remove_command,
     detect_runtime,
     engine_binary,
 )
@@ -153,6 +155,33 @@ def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
 MODEL_EGRESS_ENV: Final[str] = "SMADP_SANDBOX_MODEL_EGRESS"
 
 
+async def _run_engine_command(argv: list[str], *, obs: Any, what: str) -> int:
+    """Run a short engine command, recording rather than raising on failure.
+
+    A workspace that cannot be created or removed is a fact about this run and
+    belongs in its transcript. Raising here would lose the run entirely, and
+    the stage that follows will fail visibly anyway if the workspace is absent.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=30)
+        rc = proc.returncode if proc.returncode is not None else -1
+    except Exception as exc:  # noqa: BLE001
+        obs.emit(agent="runner", event_type="policy_violation",
+                 payload={"kind": "engine_command_failed", "what": what,
+                          "detail": f"{type(exc).__name__}: {exc}"})
+        return -1
+    if rc != 0:
+        obs.emit(agent="runner", event_type="policy_violation",
+                 payload={"kind": "engine_command_failed", "what": what,
+                          "detail": err.decode(errors="replace")[:400]})
+    return rc
+
+
 def _effective_egress(scenario: Scenario) -> tuple[str, ...]:
     """The scenario's egress allowlist, plus a caller-named model host.
 
@@ -209,6 +238,7 @@ def _build_spec_for_agent(
     adapter: AdapterDescriptor,
     env_passthrough: Mapping[str, str] | None = None,
     is_victim: bool = False,
+    shared_workspace_volume: str | None = None,
 ) -> ContainerSpec:
     """Compose a ContainerSpec for one agent in a scenario.
 
@@ -257,6 +287,7 @@ def _build_spec_for_agent(
     egress = _effective_egress(scenario)
 
     return ContainerSpec(
+        shared_workspace_volume=shared_workspace_volume,
         name=f"smadp-{run_id}-{role_key}",
         image_digest=image_digest,
         args=adapter.command,
@@ -653,6 +684,16 @@ async def execute_run(
         # 3. Build container specs. Both validated through policy.
         # Adversarial scenarios seed planted_assets into the victim's env only.
         victim_key = scenario.adversarial.victim if scenario.adversarial else None
+
+        # A scenario that declares shared workspace files means it: the pair
+        # gets one tmpfs-backed volume rather than a private tmpfs each. Without
+        # this the attacker plants into its own filesystem, the victim reads an
+        # empty one, and the run grades as though no attack succeeded. A
+        # scenario that declares none keeps the stricter private tmpfs.
+        workspace_volume = (
+            f"smadp-{run_id}-work" if scenario.shared_workspace_files else None
+        )
+
         try:
             spec_a = _build_spec_for_agent(
                 run_id=run_id,
@@ -662,6 +703,7 @@ async def execute_run(
                 adapter=adapter_a,
                 env_passthrough=env_passthrough,
                 is_victim=role_a.role_key == victim_key,
+                shared_workspace_volume=workspace_volume,
             )
             spec_b = _build_spec_for_agent(
                 run_id=run_id,
@@ -671,6 +713,7 @@ async def execute_run(
                 adapter=adapter_b,
                 env_passthrough=env_passthrough,
                 is_victim=role_b.role_key == victim_key,
+                shared_workspace_volume=workspace_volume,
             )
         except (PolicyError, ValueError) as e:
             writer.emit(
@@ -718,6 +761,23 @@ async def execute_run(
         poller = asyncio.create_task(_operator_halt_poller(run_id, obs, config=cfg))
 
         # 5. Run both containers concurrently with an outer wall-clock cap.
+        #
+        # The shared workspace is created first and removed in the finally
+        # below, whatever happens. A tmpfs volume exists only while a container
+        # has it mounted, so concurrency is what makes it shared: gather below
+        # is load-bearing, not an optimisation.
+        if workspace_volume:
+            await _run_engine_command(
+                build_shared_workspace_create_command(
+                    workspace_volume,
+                    size_mb=spec_a.tmpfs_size_mb,
+                    user=spec_a.user,
+                    backend=backend,
+                ),
+                obs=obs,
+                what="shared workspace create",
+            )
+
         outer_timeout = scenario.timeout_s + 30  # grace for cleanup
         results: list[int | BaseException]
         try:
@@ -746,6 +806,15 @@ async def execute_run(
                     await task
                 except (asyncio.CancelledError, Exception):  # noqa: S110
                     pass
+            # A volume left behind would be reused by a later run with the same
+            # name and carry state across an experiment boundary, which is a
+            # contaminated result rather than a leak.
+            if workspace_volume:
+                await _run_engine_command(
+                    build_shared_workspace_remove_command(workspace_volume, backend),
+                    obs=obs,
+                    what="shared workspace remove",
+                )
 
         # 6. Convert any exception result to a recorded violation.
         for spec, result in zip((spec_a, spec_b), results, strict=False):

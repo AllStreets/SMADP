@@ -242,6 +242,28 @@ class ContainerSpec:
     tmpfs_size_mb: int = 256
     """Size of the working-directory tmpfs."""
 
+    shared_workspace_volume: str | None = None
+    """Name of a tmpfs-backed local volume to mount at ``working_dir`` instead
+    of a private tmpfs, so both agents in a pair share one workspace.
+
+    The adversarial scenarios are premised on a shared workspace: an attacker
+    plants a file and a victim reads it. A private tmpfs per container silently
+    defeats that. The attacker writes into its own filesystem, the victim reads
+    an empty one, and the run grades as though no attack succeeded, which is
+    indistinguishable in the record from a victim that resisted.
+
+    This is still not a host bind mount. The volume uses the local driver with
+    ``type=tmpfs``, so its contents live in memory, never touch the host
+    filesystem, and are gone when the last container using it exits. It keeps
+    the same ``noexec,nosuid,nodev``, the same size cap and the same ownership
+    as the private tmpfs it replaces.
+
+    One caveat is load-bearing: a tmpfs volume is shared only while at least one
+    container has it mounted. The pair is started with ``asyncio.gather`` and
+    runs concurrently, which is the only configuration in which this works; run
+    sequentially, each container would get a fresh empty tmpfs.
+    """
+
     timeout_s: int = 300
     """Wall-clock kill (seconds). The runner also enforces this externally."""
 
@@ -295,6 +317,44 @@ def _runtime_flag(backend: RuntimeBackend) -> list[str]:
     return []
 
 
+def build_shared_workspace_create_command(
+    name: str, *, size_mb: int, user: str, backend: RuntimeBackend
+) -> list[str]:
+    """Create the tmpfs-backed volume a pair shares as its workspace.
+
+    ``type=tmpfs`` on the local driver keeps the contents in memory: nothing is
+    written to the host filesystem and the data is discarded when the last
+    container unmounts it. The options mirror the private tmpfs exactly, so a
+    shared workspace is no more permissive than a private one except in being
+    shared.
+    """
+    uid_str, _, gid_str = user.partition(":")
+    opts = (
+        f"noexec,nosuid,nodev,size={size_mb}m,"
+        f"uid={uid_str},gid={gid_str or uid_str}"
+    )
+    return [
+        _engine_binary(backend),
+        "volume", "create", "--driver", "local",
+        "--opt", "type=tmpfs",
+        "--opt", "device=tmpfs",
+        "--opt", f"o={opts}",
+        name,
+    ]
+
+
+def build_shared_workspace_remove_command(
+    name: str, backend: RuntimeBackend
+) -> list[str]:
+    """Remove the shared workspace volume.
+
+    Always run, including after a failed run. A volume left behind would be
+    reused by a later run with the same name and carry state across an
+    experiment boundary, which is a contaminated result rather than a leak.
+    """
+    return [_engine_binary(backend), "volume", "rm", "-f", name]
+
+
 def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]:
     """Build the validated argv list for ``<engine> run ...``.
 
@@ -344,12 +404,24 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
     # is set, leaving the tmpfs at 0755 root-owned and unwritable.)
     uid_str, _, gid_str = spec.user.partition(":")
     tmpfs_owner = f"uid={uid_str},gid={gid_str or uid_str}"
-    argv.extend(
-        [
-            "--tmpfs",
-            f"{spec.working_dir}:rw,noexec,nosuid,nodev,size={spec.tmpfs_size_mb}m,{tmpfs_owner}",
-        ]
-    )
+    if spec.shared_workspace_volume:
+        # Shared between the pair, still in memory and still capped. See the
+        # field docstring for why a private tmpfs cannot serve the adversarial
+        # scenarios.
+        argv.extend(
+            [
+                "--mount",
+                f"type=volume,source={spec.shared_workspace_volume},"
+                f"target={spec.working_dir}",
+            ]
+        )
+    else:
+        argv.extend(
+            [
+                "--tmpfs",
+                f"{spec.working_dir}:rw,noexec,nosuid,nodev,size={spec.tmpfs_size_mb}m,{tmpfs_owner}",
+            ]
+        )
     # /tmp also as tmpfs so the read-only root works for tools that scribble.
     argv.extend(
         [
