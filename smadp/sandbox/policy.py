@@ -16,12 +16,25 @@ Two responsibilities:
 2. **Image allowlist** — every container image must be pinned by digest
    (``image@sha256:<64-hex>``) and present in :data:`APPROVED_IMAGES`. This
    blocks supply-chain attacks via ``:latest`` tag drift and unknown images.
+
+   A caller running its own experiment may extend that set for its own process
+   only, by pointing ``SMADP_SANDBOX_EXTRA_APPROVED_IMAGES`` at a JSON file it
+   owns. This exists so that a downstream project studying agents it built
+   itself does not have to edit this package's committed allowlist, which is
+   the shared baseline every host validates against and is not one experiment's
+   to widen. The extension is additive only: an entry in the caller's file can
+   never remove or rewrite one here, so the baseline is a floor rather than a
+   default. Loading it emits a warning naming the file and the count, because a
+   widened trust boundary that nobody notices is the failure this whole module
+   exists to prevent.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import warnings
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
@@ -105,6 +118,60 @@ _IMAGE_DIGEST_RE = re.compile(
 
 _APPROVED_IMAGES_PATH: Final[Path] = Path(__file__).with_name("approved_images.json")
 
+#: Env var naming a JSON file of additional slug -> pinned digest entries.
+#: Read once at import, like the baseline, so the trust boundary of a process
+#: cannot change underneath a run that has already started.
+EXTRA_APPROVED_IMAGES_ENV: Final[str] = "SMADP_SANDBOX_EXTRA_APPROVED_IMAGES"
+
+
+def _load_extra_approved_images(baseline: dict[str, str]) -> dict[str, str]:
+    """Load the caller-supplied allowlist extension, if one is configured.
+
+    Additive only. A key already present in the baseline is refused rather than
+    overwritten: silently rebinding a slug that ships with this package would
+    let an extension file redirect a known agent to an image of its choosing,
+    which is precisely the substitution the allowlist exists to stop.
+    """
+    configured = os.environ.get(EXTRA_APPROVED_IMAGES_ENV)
+    if not configured:
+        return {}
+
+    path = Path(configured).expanduser()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise PolicyError(f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which "
+                          f"could not be read: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise PolicyError(f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which "
+                          f"is not valid JSON: {exc}") from exc
+
+    if not isinstance(raw, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in raw.items()
+    ):
+        raise PolicyError(f"{path} must be a JSON object of string to string")
+
+    collisions = sorted(set(raw) & set(baseline))
+    if collisions:
+        raise PolicyError(
+            f"{path} redefines slugs that ship with this package: "
+            f"{', '.join(collisions)}. The extension is additive; it may not "
+            f"rebind a baseline entry.")
+
+    for slug, digest in raw.items():
+        if not _IMAGE_DIGEST_RE.match(digest):
+            raise PolicyError(
+                f"{path} entry {slug!r} is not a pinned digest: {digest!r}")
+
+    if raw:
+        warnings.warn(
+            f"sandbox image allowlist extended with {len(raw)} entries from "
+            f"{path}. The baseline in this package is unchanged. Runs in this "
+            f"process may execute images that other hosts will refuse.",
+            stacklevel=2,
+        )
+    return raw
+
 
 def _load_approved_images() -> dict[str, str]:
     """Load `<package>/approved_images.json` into a slug → pinned-digest mapping.
@@ -122,7 +189,15 @@ def _load_approved_images() -> dict[str, str]:
     return raw
 
 
-APPROVED_IMAGES: Final[dict[str, str]] = _load_approved_images()
+_BASELINE_APPROVED_IMAGES: Final[dict[str, str]] = _load_approved_images()
+
+#: The effective allowlist for this process: the committed baseline, plus any
+#: caller extension. Callers that need to know which is which should read
+#: :data:`_BASELINE_APPROVED_IMAGES`.
+APPROVED_IMAGES: Final[dict[str, str]] = {
+    **_BASELINE_APPROVED_IMAGES,
+    **_load_extra_approved_images(_BASELINE_APPROVED_IMAGES),
+}
 
 
 def validate_image_digest(digest: str) -> bool:
