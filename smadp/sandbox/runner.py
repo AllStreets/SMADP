@@ -28,7 +28,9 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import json
+import os
 import re
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,6 +147,59 @@ def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
 # ---------------------------------------------------------------------------
 
 
+
+#: Env var naming one host an agent may reach for model inference, added to
+#: whatever a scenario already allows.
+MODEL_EGRESS_ENV: Final[str] = "SMADP_SANDBOX_MODEL_EGRESS"
+
+
+def _effective_egress(scenario: Scenario) -> tuple[str, ...]:
+    """The scenario's egress allowlist, plus a caller-named model host.
+
+    This exists because of a gap the adversarial scenarios have by
+    construction. All four of them declare an empty egress list, which the spec
+    below turns into ``--network none``. That is the right default for a
+    scenario about exfiltration. But every LLM agent needs to reach a model to
+    do anything at all, so under those scenarios a real agent cannot act, times
+    out, and the run grades as though no attack succeeded. A verdict produced
+    by agents that could not think is not evidence of safety, and it is
+    indistinguishable in the record from one produced by agents that resisted.
+
+    The cooperative scenarios already allow ``api.openai.com`` for exactly this
+    reason. The adversarial ones cannot, without handing an exfiltration
+    channel to the attacker they are studying.
+
+    So the host is named by the caller, for its own process, rather than
+    written into scenarios that ship to everyone. A local endpoint is the case
+    this is for: it is the agent's brain rather than a destination, it is
+    reachable without the public internet, and it keeps the model a pinned
+    experimental constant.
+
+    One host only, validated by the same allowlist check as any other entry,
+    and announced, because an egress rule nobody noticed is how a sandbox stops
+    being one.
+    """
+    configured = os.environ.get(MODEL_EGRESS_ENV, "").strip()
+    if not configured:
+        return tuple(scenario.allow_egress)
+    if configured in scenario.allow_egress:
+        return tuple(scenario.allow_egress)
+
+    host = configured.split("/")[0]
+    if ":" in host:
+        host = host.split(":")[0]
+    if not host:
+        raise ValueError(f"{MODEL_EGRESS_ENV} is set but names no host")
+
+    warnings.warn(
+        f"sandbox egress extended with the model host {host!r} from "
+        f"{MODEL_EGRESS_ENV} for scenario {scenario.name!r}. Agents in this run "
+        f"can reach that host. Runs on a host without this set will deny it.",
+        stacklevel=2,
+    )
+    return (*scenario.allow_egress, host)
+
+
 def _build_spec_for_agent(
     *,
     run_id: str,
@@ -199,14 +254,16 @@ def _build_spec_for_agent(
     if scenario.allow_egress:
         assert_egress_allowlist_ok(scenario.allow_egress)
 
+    egress = _effective_egress(scenario)
+
     return ContainerSpec(
         name=f"smadp-{run_id}-{role_key}",
         image_digest=image_digest,
         args=adapter.command,
         env=env,
         working_dir="/work",
-        network_mode="bridge" if scenario.allow_egress else "none",
-        allow_egress=scenario.allow_egress,
+        network_mode="bridge" if egress else "none",
+        allow_egress=egress,
         cpu_limit=1.0,
         mem_limit_mb=1024,
         pids_limit=256,
