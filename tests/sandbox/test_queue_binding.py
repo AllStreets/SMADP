@@ -171,3 +171,41 @@ def test_participants_for_row_raises_when_role_columns_null(
     assert broken_row["role_b"] is None
     with pytest.raises(ValueError, match="role_a/role_b are NULL"):
         queue.participants_for_row(broken_row)
+
+
+
+def test_a_caller_can_state_which_agent_takes_which_role(tmp_config: Config) -> None:
+    """Roles followed the alphabet, and half the matrix went unrun.
+
+    Binding tries orderings in the order given and takes the first that fits,
+    so a sorted pair always cast the alphabetically earlier slug in the first
+    role the scenario declares. Sweeping a set of agents that way, one
+    downstream dataset had an agent that was the attacker in a hundred and
+    sixteen runs and the victim in none, which no amount of further running
+    could fix while the caller's order was being discarded.
+    """
+    forward = queue.enqueue_sandbox_run(
+        slug_a="aider", slug_b="continue-dev", scenario="calendar_email",
+        config=tmp_config, preserve_order=True)
+    reverse = queue.enqueue_sandbox_run(
+        slug_a="continue-dev", slug_b="aider", scenario="calendar_email",
+        config=tmp_config, preserve_order=True)
+
+    assert "aider__continue-dev" in forward
+    assert "continue-dev__aider" in reverse
+
+    rows = {r["id"]: r for r in queue._all_rows_for_test(config=tmp_config)}
+    # role_a is the role held by slug_a, so with the order preserved the first
+    # role the scenario declares always lands on whichever agent was named
+    # first. The two runs therefore carry the same role in role_a while the
+    # agents holding it are swapped, which is what the run ids show.
+    assert rows[forward]["role_a"] == rows[reverse]["role_a"]
+    assert rows[forward]["role_a"] != rows[forward]["role_b"]
+    assert forward.split("_sb_")[-1] != reverse.split("_sb_")[-1]
+
+
+def test_the_default_still_sorts_so_a_run_id_stays_stable(tmp_config: Config) -> None:
+    run_id = queue.enqueue_sandbox_run(
+        slug_a="continue-dev", slug_b="aider", scenario="calendar_email",
+        config=tmp_config)
+    assert "aider__continue-dev" in run_id

@@ -195,8 +195,24 @@ def enqueue_sandbox_run(
     scenario: str,
     *,
     config: Config | None = None,
+    preserve_order: bool = False,
 ) -> str:
     """Enqueue a sandbox run; return its run id.
+
+    `preserve_order` decides whether the caller's ordering of the two slugs
+    means anything. By default it does not: the pair is sorted, which keeps a
+    run id stable however a caller happens to name the two agents.
+
+    In an adversarial scenario that default silently assigns the roles. Binding
+    tries orderings in the order given and the first that satisfies the roles
+    wins, so with sorted input the alphabetically earlier slug is always the
+    attacker and the later one is always the victim. A caller sweeping a set of
+    agents therefore never sees half its matrix: in one downstream dataset the
+    agent whose slug sorted first had been the attacker in a hundred and
+    sixteen runs and the victim in none, so nothing in that data could say
+    whether it was susceptible to anything. Pass True to say that slug_a is the
+    first role the scenario declares and slug_b the second, and run both
+    orderings to fill the matrix.
 
     Raises:
         ValueError: invalid slug, unknown scenario.
@@ -205,7 +221,12 @@ def enqueue_sandbox_run(
     cfg = config or load_config()
     a_norm = normalize_slug(slug_a)
     b_norm = normalize_slug(slug_b)
-    a_sorted, b_sorted = sort_pair(a_norm, b_norm)
+    if preserve_order:
+        if a_norm == b_norm:
+            raise ValueError("Pair must be two different slugs")
+        a_sorted, b_sorted = a_norm, b_norm
+    else:
+        a_sorted, b_sorted = sort_pair(a_norm, b_norm)
 
     if scenario not in list_builtin_scenarios():
         raise ValueError(f"Unknown scenario {scenario!r}. Available: {list_builtin_scenarios()}")
