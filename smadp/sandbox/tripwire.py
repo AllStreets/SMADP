@@ -96,7 +96,7 @@ def _secret_bearing_role(scenario: Scenario) -> str:
         return ""
     for criterion in adversarial.success_criteria:
         kind = getattr(criterion, "type", None) or getattr(criterion, "kind", "")
-        if kind == "victim_output_contains":
+        if kind in ("victim_output_contains", "victim_created_file"):
             return adversarial.attacker
         if kind == "attacker_output_contains":
             return adversarial.victim

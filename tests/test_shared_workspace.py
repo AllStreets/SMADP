@@ -8,6 +8,8 @@ indistinguishable in the record from a victim that resisted.
 """
 from __future__ import annotations
 
+import pytest
+
 from smadp.sandbox.isolation import (
     ContainerSpec,
     RuntimeBackend,
@@ -42,7 +44,9 @@ def test_without_a_volume_the_workspace_stays_private() -> None:
 def test_with_a_volume_both_agents_mount_the_same_one() -> None:
     argv = build_run_command(_spec("smadp-run-work"), BACKEND)
     joined = " ".join(argv)
-    assert "type=volume,source=smadp-run-work,target=/work" in joined
+    assert "type=volume,source=smadp-run-work,target=/work,volume-nocopy=true" in joined, (
+        "volume-nocopy must be set: without it Docker stamps the root-owned "
+        "--workdir path's ownership onto the volume root and the agents cannot write")
     # The private tmpfs for the working directory must not also be mounted, or
     # it would shadow the shared volume and restore the original bug silently.
     assert "--tmpfs /work:" not in joined
@@ -84,3 +88,37 @@ def test_every_other_hardening_flag_survives_the_shared_mount() -> None:
         assert flag in joined, f"{flag} lost when the workspace became shared"
     # /tmp stays private per container.
     assert "--tmpfs /tmp:" in joined
+
+
+def test_the_holder_is_root_and_can_do_nothing_with_it() -> None:
+    """The one uid 0 container this module builds. Root is required so the
+    tmpfs volume's uid= option takes effect for the agents that mount after
+    it; everything else is locked down so the privilege buys nothing."""
+    from smadp.sandbox.isolation import build_workspace_holder_command
+    argv = build_workspace_holder_command(
+        name="smadp-run-holder", image_digest=DIGEST, volume="smadp-run-work",
+        working_dir="/work", backend=BACKEND)
+    joined = " ".join(argv)
+    assert "--user 0:0" in joined
+    for flag in ("--cap-drop ALL", "no-new-privileges", "--read-only",
+                 "--network none", "--pids-limit 8", "--memory 32m"):
+        assert flag in joined, f"{flag} missing from the holder"
+    assert argv[-2:] == ["-c", "sleep 1800"] and "--entrypoint sh" in joined
+    assert " -d " in joined and "--rm" in joined
+    assert "type=volume,source=smadp-run-work,target=/work" in joined
+
+
+def test_the_holder_refuses_an_unapproved_image() -> None:
+    from smadp.sandbox.isolation import build_workspace_holder_command
+    from smadp.sandbox.policy import PolicyError
+    with pytest.raises(PolicyError):
+        build_workspace_holder_command(
+            name="h", image_digest="sha256:" + "0" * 64, volume="v",
+            working_dir="/work", backend=BACKEND)
+
+
+def test_container_specs_still_cannot_run_as_root() -> None:
+    """The holder's exception must not have leaked into the general rule."""
+    with pytest.raises(ValueError, match="must not run as root"):
+        ContainerSpec(name="x", image_digest=DIGEST, args=["sh"], env={},
+                      working_dir="/work", user="0:0")

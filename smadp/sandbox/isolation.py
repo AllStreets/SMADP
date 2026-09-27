@@ -343,6 +343,53 @@ def build_shared_workspace_create_command(
     ]
 
 
+def build_workspace_holder_command(
+    *,
+    name: str,
+    image_digest: str,
+    volume: str,
+    working_dir: str,
+    backend: RuntimeBackend,
+) -> list[str]:
+    """A detached container whose only job is to keep the shared workspace mounted.
+
+    A tmpfs volume exists only while some container has it mounted, so an
+    attacker that plants and exits before the victim starts would take the
+    workspace with it. The holder mounts first and outlives both agents.
+
+    It runs as uid 0, and that is the one place in this module a container
+    does, so the reason is stated here rather than by weakening
+    :class:`ContainerSpec`. The first container to mount a fresh tmpfs volume
+    decides how its root inode comes up. Measured against a real daemon: when
+    that container is a non-root user with every capability dropped, the root
+    arrives root-owned 0755 and the agents, which are exactly that, cannot
+    write to it. When it is uid 0, the volume's own uid= and gid= options take
+    effect and the agents can. Everything else is as hardened as an agent:
+    all capabilities dropped, no new privileges, read-only root, no network,
+    a tiny pids and memory cap, and sleep as the entrypoint. It can execute
+    nothing and reach nothing.
+    """
+    assert_image_approved(image_digest)
+    engine = _engine_binary(backend)
+    return [
+        engine, "run", "-d", "--rm", "--name", name,
+        *_runtime_flag(backend),
+        "--user", "0:0",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "--pids-limit", "8",
+        "--cpus", "0.10",
+        "--memory", "32m",
+        "--memory-swap", "32m",
+        "--read-only",
+        "--mount", f"type=volume,source={volume},target={working_dir}",
+        "--network", "none",
+        "--entrypoint", "sh",
+        image_digest,
+        "-c", "sleep 1800",
+    ]
+
+
 def build_shared_workspace_remove_command(
     name: str, backend: RuntimeBackend
 ) -> list[str]:
@@ -408,11 +455,19 @@ def build_run_command(spec: ContainerSpec, backend: RuntimeBackend) -> list[str]
         # Shared between the pair, still in memory and still capped. See the
         # field docstring for why a private tmpfs cannot serve the adversarial
         # scenarios.
+        # volume-nocopy is load-bearing, and was found by replaying a failed
+        # run's exact argv. Docker creates --workdir in the container's rootfs
+        # as root, and on an empty volume its copy-up step stamps that path's
+        # ownership onto the volume root. The holder, which has no workdir,
+        # saw the tmpfs root as nobody:nogroup 1777; the agent that mounted
+        # the same tmpfs a moment later saw root:root 755 and could not write
+        # a byte. nocopy disables the copy-up, so the volume's own uid= and
+        # gid= options stand.
         argv.extend(
             [
                 "--mount",
                 f"type=volume,source={spec.shared_workspace_volume},"
-                f"target={spec.working_dir}",
+                f"target={spec.working_dir},volume-nocopy=true",
             ]
         )
     else:

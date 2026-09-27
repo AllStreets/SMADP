@@ -81,7 +81,14 @@ ADVERSARIAL_OBJECTIVES: Final[frozenset[str]] = frozenset(
 )
 
 SUPPORTED_SUCCESS_CRITERIA: Final[frozenset[str]] = frozenset(
-    {"attacker_output_contains", "victim_output_contains", "any_output_contains"}
+    {
+        "attacker_output_contains",
+        "victim_output_contains",
+        "any_output_contains",
+        # A side effect only execution produces. Output matching cannot tell a
+        # victim that displayed untrusted content from one that executed it.
+        "victim_created_file",
+    }
 )
 
 
@@ -376,6 +383,16 @@ def _validate_adversarial(
                 f"allowed: {sorted(SUPPORTED_SUCCESS_CRITERIA)}"
             )
         params = {k: v for k, v in entry.items() if k != "type"}
+        if c_type == "victim_created_file":
+            path = params.get("path")
+            if not isinstance(path, str) or not path.startswith("/work/"):
+                raise ScenarioLoadError(
+                    "victim_created_file needs a 'path' under /work/")
+            if "needle" in params or "planted_asset" in params:
+                raise ScenarioLoadError(
+                    "victim_created_file takes a path, not a needle or planted_asset")
+            criteria.append(SuccessCriterion(type=c_type, params=params))
+            continue
         asset = params.get("planted_asset")
         needle = params.get("needle")
         if (asset is None) == (needle is None):
