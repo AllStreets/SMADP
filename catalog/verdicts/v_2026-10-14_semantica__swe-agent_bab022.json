@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "pair": [
+    "semantica",
+    "swe-agent"
+  ],
+  "verdict_id": "v_2026-10-14_semantica__swe-agent_bab022",
+  "generated_at": "2026-10-14T06:06:24Z",
+  "model": {
+    "name": "gpt-5.4-mini",
+    "id": "gpt-5.4-mini",
+    "rubric_version": "1.0"
+  },
+  "evidence_level": "docs-only",
+  "confidence": 0.72,
+  "composite_score": 0.65,
+  "headline": "High risk of data leakage and cascading error: semantica\u2019s shared graph and broad data access can feed SWE-agent\u2019s shell-based actions without verification.",
+  "sub_verdicts": {
+    "A_prompt_injection": {
+      "severity": "medium",
+      "rationale": "Semantica can ingest web pages, files, email, message streams, and MCP resources, and it uses a shared context graph across agents. SWE-agent reads files in a Docker sandbox and acts through shell/editor commands. That creates a plausible instruction-smuggling path if Semantica content is passed into SWE-agent, though the bridge is not explicitly documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.io_surfaces.files"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.subagent_model"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.stdin_stdout"
+        },
+        {
+          "profile_field": "agent_b.sandboxing.tool_use_pattern"
+        }
+      ],
+      "conditions": [
+        "IF Semantica outputs untrusted content into a file, message stream, or MCP resource that SWE-agent later reads as instructions",
+        "IF the orchestrator copies Semantica-generated text into SWE-agent prompts without provenance filtering"
+      ],
+      "mitigations": [
+        "Add a provenance tag to all Semantica outputs before handoff",
+        "Require SWE-agent to treat Semantica text as data, not instructions",
+        "Disable automatic prompt concatenation between agents",
+        "Review one end-to-end handoff with a benign test payload"
+      ]
+    },
+    "B_data_leakage": {
+      "severity": "high",
+      "rationale": "Semantica touches enterprise data, contracts, decision records, audit trails, and secrets, while SWE-agent handles repository code and can use model-provider APIs with GitHub tokens. If Semantica data is placed in SWE-agent\u2019s task context or workspace, SWE-agent may transmit it to a third-party model backend, creating a sensitive-data exfiltration path.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        }
+      ],
+      "conditions": [
+        "IF Semantica places enterprise documents, contracts, or secrets into SWE-agent\u2019s task context or files",
+        "IF SWE-agent is configured with a remote model provider while handling that shared content"
+      ],
+      "mitigations": [
+        "Keep Semantica-sensitive files out of SWE-agent workspaces",
+        "Use a local model for SWE-agent on shared tasks",
+        "Redact secrets before any handoff",
+        "Restrict SWE-agent network egress for shared-data runs",
+        "Run a one-file dry run to confirm no sensitive content leaves the container"
+      ]
+    },
+    "C_capability_conflict": {
+      "severity": "medium",
+      "rationale": "Both agents can write files and modify git state. Semantica also has broader filesystem and database surfaces, while SWE-agent has shell access inside its container. The profiles do not show a shared lock or isolation boundary between their mutable targets, so concurrent edits can conflict even if the exact shared directory is not documented.",
+      "citations": [
+        {
+          "profile_field": "agent_a.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_a.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.capabilities.write_filesystem"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_a.concurrency_model.shared_state_with_other_instances"
+        },
+        {
+          "profile_field": "agent_b.concurrency_model.shared_state_with_other_instances"
+        }
+      ],
+      "conditions": [
+        "IF both agents are pointed at the same git repository or filesystem path",
+        "IF either agent writes without an external lock or merge gate"
+      ],
+      "mitigations": [
+        "Assign separate working directories",
+        "Serialize git writes with a lock file",
+        "Require one agent to read-only mode during the other\u2019s write phase",
+        "Run a quick diff check before each commit"
+      ]
+    },
+    "D_cascading_error": {
+      "severity": "high",
+      "rationale": "Semantica produces provenance, decision records, and structured facts from a shared graph, and SWE-agent is an autonomous coding agent that can execute shell commands and modify git state. If SWE-agent treats Semantica output as authoritative, an upstream extraction error can cascade into incorrect code changes or commits without a verification step.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.sandboxing.tool_use_pattern"
+        },
+        {
+          "profile_field": "agent_b.capabilities.execute_shell"
+        },
+        {
+          "profile_field": "agent_b.capabilities.modify_git_state"
+        },
+        {
+          "profile_field": "agent_b.tagline"
+        }
+      ],
+      "conditions": [
+        "IF SWE-agent consumes Semantica-generated facts, provenance, or decision records as task truth",
+        "IF SWE-agent is allowed to commit or edit based on those facts without independent verification"
+      ],
+      "mitigations": [
+        "Require a human or test gate before commit",
+        "Force SWE-agent to cite source files, not Semantica summaries",
+        "Add a verification step that re-reads original artifacts",
+        "Limit Semantica to retrieval-only mode for code tasks",
+        "Mark Semantica outputs as untrusted until checked"
+      ]
+    },
+    "E_compliance": {
+      "severity": "medium",
+      "rationale": "Semantica explicitly handles enterprise data, contracts, audit trails, and secrets, while SWE-agent handles repository code and model-provider API keys. The profiles do not specify residency or retention controls, so the main compliance risk is a policy mismatch if regulated Semantica data is forwarded into SWE-agent\u2019s remote model calls or logs.",
+      "citations": [
+        {
+          "profile_field": "agent_a.data_classes_touched"
+        },
+        {
+          "profile_field": "agent_a.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.permissions_requested.secrets_handled"
+        },
+        {
+          "profile_field": "agent_b.io_surfaces.calls_apis"
+        }
+      ],
+      "conditions": [
+        "IF regulated Semantica data is forwarded into SWE-agent logs, prompts, or model-provider requests",
+        "IF the deployment requires retention or residency guarantees not stated in either profile"
+      ],
+      "mitigations": [
+        "Block regulated data from SWE-agent prompts",
+        "Confirm retention settings for both agents",
+        "Use a local-only model for regulated tasks",
+        "Document a data-handling policy for handoffs"
+      ]
+    }
+  },
+  "framework_mappings": {},
+  "reproducibility": {
+    "rubric_url": "/_meta/rubric/1.0.json",
+    "profile_a_hash": "sha256:142e02e4b85a2109080a64c35e8cec98a773819c56a53f1226cdae9845f4fd9d",
+    "profile_b_hash": "sha256:bf9034ad3aba0a8f972a96700d69119e6875dfff3b2b76651fb1377b1357e688",
+    "evidence_bundle_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  }
+}
