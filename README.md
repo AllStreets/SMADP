@@ -164,7 +164,7 @@ For the autopilot loop (launchd plist + 5-min ticks), see [`docs/autopilot.md`](
 
 | Path | What it is |
 |---|---|
-| **`catalog/profiles/<slug>.json`** | One Safety Profile per agent. ~6,369 today. |
+| **`catalog/profiles/<slug>.json`** | One Safety Profile per agent. ~6,524 today. |
 | **`catalog/verdicts/<...>.json`** | Public catalog. Pairwise + N-ary verdicts that an operator has approved. ~2,279 today. |
 | **`catalog/pending/<...>.json`** | Operator review queue. Autopilot writes here first; nothing is posted to the public site until approved. |
 | **`catalog/_rejected/<...>.json`** | Verdicts the operator rejected, preserved with `<key>.reason.json` sidecar. Never deleted. |
@@ -323,7 +323,7 @@ Got an agent we should know about? Two paths:
 ```
 SMADP/
 ├── catalog/                     # the product
-│   ├── profiles/                #   6,369 Safety Profiles
+│   ├── profiles/                #   6,524 Safety Profiles
 │   ├── verdicts/                #     2279 approved verdicts
 │   ├── pending/                 #         operator review queue
 │   ├── _rejected/               #         preserved with reasons
