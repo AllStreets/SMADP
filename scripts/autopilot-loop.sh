@@ -10,6 +10,15 @@ cd "$REPO_ROOT"
 
 mkdir -p "$REPO_ROOT/state"
 
+# Remote kill switch. state/PAUSED is gitignored, so it can only be set on the
+# machine itself. AUTOPILOT_PAUSED is tracked: committing it to main stops every
+# machine running this loop as soon as it next pulls. Delete it to resume.
+if [ -f "$REPO_ROOT/AUTOPILOT_PAUSED" ]; then
+  echo "[autopilot] AUTOPILOT_PAUSED present; skipping tick $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >>"$REPO_ROOT/state/autopilot.loop.stdout.log"
+  exit 0
+fi
+
 # Ensure the venv is on PATH; the plist points launchd at this script.
 if [ -d "$REPO_ROOT/.venv" ]; then
   export PATH="$REPO_ROOT/.venv/bin:$PATH"
