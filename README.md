@@ -6,33 +6,7 @@
 
 &nbsp;
 
-<a href="https://allstreets.github.io/SMADP/verdicts?level=sandbox-validated"><img alt="executed in sandbox" src="https://img.shields.io/badge/executed_in_sandbox-11_pairs-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="#evidence-levels"><img alt="evidence ladder" src="https://img.shields.io/badge/evidence_ladder-4_rungs-7C3AED?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://allstreets.github.io/SMADP/verdicts"><img alt="verdicts" src="https://img.shields.io/badge/verdicts-2%2C279_%C2%B7_each_rung--labeled-A78BFA?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="#quickstart"><img alt="tests" src="https://img.shields.io/badge/tests-973_passing-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-<a href="https://github.com/AllStreets/SMADP/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-22C55E?style=for-the-badge&labelColor=0b0712"/></a>
-
-<br/>
-
-<img alt="profiles indexed" src="https://img.shields.io/badge/profiles_indexed-6%2C371-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="adapters" src="https://img.shields.io/badge/MCP_adapters-475_scaffolded-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="python" src="https://img.shields.io/badge/python-3.11+-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="astro" src="https://img.shields.io/badge/site-Astro_4-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="docker" src="https://img.shields.io/badge/sandbox-Docker_/_OCI-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="autonomous" src="https://img.shields.io/badge/autopilot-launchd_/_cron-6b7382?style=flat-square&labelColor=0b0712"/>
-<img alt="ci" src="https://img.shields.io/github/actions/workflow/status/AllStreets/SMADP/ci.yml?style=flat-square&labelColor=0b0712&label=CI"/>
-
-&nbsp;
-
-<p>
-  <a href="https://allstreets.github.io/SMADP/"><strong>Live site →</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/risk-atlas/"><strong>Risk Atlas →</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/methodology/"><strong>Methodology →</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://allstreets.github.io/SMADP/submit/"><strong>Submit an agent →</strong></a>
-</p>
+<a href="https://allstreets.github.io/SMADP/">Live site</a> · <a href="https://allstreets.github.io/SMADP/risk-atlas/">Risk Atlas</a> · <a href="https://allstreets.github.io/SMADP/methodology/">Methodology</a> · <a href="https://allstreets.github.io/SMADP/submit/">Submit an agent</a> · <a href="#quickstart">Quickstart</a>
 
 </div>
 
@@ -54,12 +28,12 @@ Every verdict is **evidence-grounded** — each sub-verdict's *Grounded in* row 
 > ### Two classes of verdict — and we label which is which
 > Most verdicts are **heuristic estimates**: an LLM reads two agents' public-docs profiles and reasons about how they'd interact. **No code runs.** These carry an evidence level of `docs-only` (or lower) and are best read as risk *priors*, not proof.
 >
-> A verdict becomes **`sandbox-validated`** only when the pair is *actually executed* together in a Docker sandbox under a scenario and an LLM grades the real transcript — reproducible and signed. Today that's a small, deliberately-curated set (the `sandbox-validated` badge above is the honest count), growing one hand-authored real adapter at a time (e.g. `aider`, `goose`, `gptme`). The site's evidence badge shows **`▶ executed · sandbox`** for these and flags the rest as not-executed.
+> A verdict becomes **`sandbox-validated`** only when the pair is *actually executed* together in a Docker sandbox under a scenario and an LLM grades the real transcript. The verdict is signed; the run transcripts stay with the operator. Today that's a small, deliberately curated set (the count is below), growing one hand-authored real adapter at a time (e.g. `aider`, `goose`, `gptme`). The site's evidence badge shows **`▶ executed · sandbox`** for these and flags the rest as not-executed.
 
 ### Where the evidence actually stands
 
 We would rather publish a small honest number than a large soft one. This is the real
-distribution across all 2,279 published verdicts, straight from the `evidence_level`
+distribution across all 2,296 published verdicts, straight from the `evidence_level`
 field on every record:
 
 ```
@@ -67,14 +41,15 @@ field on every record:
   ─────────────────────────────────────────────────────────────────────────
   sandbox-validated  ▶       11      ran in a container; judged on transcripts
   profile-verified   ·        6      human-curated, evidence-cited
-  docs-only          ·    2,197      an LLM read the docs. no code ran.
+  docs-only          ·    2,214      an LLM read the docs. no code ran.
   unverified-profile ·       65      stub. makes no safety claim at all.
   ─────────────────────────────────────────────────────────────────────────
-                          2,279      every one carries its rung in the data
+                          2,296      every one carries its rung in the data
 ```
 
-**Eleven.** That is how many agent pairs have actually been executed against each
-other. The other 2,268 are priors, and the codebase calls them priors — the rung is a
+**Eleven.** That is how many verdicts come from pairs actually executed against each
+other, and one of those pairs is the runner's own test adapter, so ten are real agents.
+The other 2,285 are priors, and the codebase calls them priors — the rung is a
 field on the record, not a disclaimer in a footer, so the site, the API, and the CLI
 all inherit it and none of them can quietly round a guess up into a finding.
 
@@ -83,13 +58,13 @@ one hand-authored adapter at a time.
 
 > *The catalog is the product. The autopilot is the engine. The site is the showcase.*
 
-> **No setup required to browse.** The whole catalog is publicly readable at **[allstreets.github.io/SMADP](https://allstreets.github.io/SMADP/)**. Drop in for a [3-D interactive agent graph](https://allstreets.github.io/SMADP/risk-atlas/), thousands of agent profiles, every published pairwise verdict, the full chronicle audit log, and the operator review queue. No clone, no install.
+> **No setup required to browse.** The whole catalog is publicly readable at **[allstreets.github.io/SMADP](https://allstreets.github.io/SMADP/)**. Drop in for a [3-D interactive agent graph](https://allstreets.github.io/SMADP/risk-atlas/), thousands of listed agents, every published pairwise verdict, the full chronicle audit log, and the operator review queue. No clone, no install.
 
 ---
 
 ## v2 — The Proving Ground
 
-The next generation moves SMADP from *describing* multi-agent risk to *hunting, predicting, and intercepting* it. Three pillars, all built and tested (964 tests passing):
+The next generation moves SMADP from *describing* multi-agent risk to *hunting, predicting, and intercepting* it. Three pillars, all built and tested:
 
 - **S1 — Adversarial Proving Ground.** Attack scenarios where one agent actively tries to exfiltrate a partner's secrets, poison shared state, induce code execution, or escalate via the partner's broader authority. Deterministic security-property checks *bound* the LLM judge — a confirmed exfiltration cannot grade below `high`. A live sandbox console streams each run and a deterministic **tripwire engine** halts a run mid-flight when a planted secret leaks or egress steps outside the allowlist. Verdict pages render a **causal risk graph** showing which upstream risk amplifies which downstream one, and the single mitigation that collapses the most severity.
 - **S2 — Risk Intelligence Engine.** Deterministic **N-agent chain composition** over published pairwise verdicts (linear/star/loop), **capability-drift tracking** that stales affected verdicts when an agent quietly gains shell access or broader egress, and a dependency-light **learned triage** model that concentrates judge spend on the uncertain pairs — never publishing a number itself.
