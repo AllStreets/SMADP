@@ -104,3 +104,16 @@ def test_does_not_duplicate_already_researched_slug(tmp_path: Path) -> None:
     assert summary.promoted == 0
     # Staging copy is left in place (operator can reconcile); no duplicate created.
     assert (repo / "catalog" / "profiles" / "_unverified" / "alpha.json").exists()
+
+
+def test_lure_seeds_are_never_promoted(tmp_path: Path) -> None:
+    repo = _repo_with_seeds(
+        tmp_path,
+        [_seed("github-copilot-cracked", 0.99), _seed("krisp-2026", 0.98), _seed("alpha", 0.5)],
+    )
+
+    summary = sync_onexus(repo_root=repo, max_promote=10)
+
+    assert summary.promoted == 1
+    profiles_dir = repo / "catalog" / "profiles"
+    assert {p.stem for p in profiles_dir.glob("*.json")} == {"alpha"}

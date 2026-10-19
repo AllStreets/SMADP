@@ -14,6 +14,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
+from smadp.catalog.lures import lure_reason
 from smadp.catalog.repo import CatalogRepo
 from smadp.config import Config, load_config
 from smadp.schemas import Chain, Evidence, Profile, Verdict
@@ -101,6 +102,9 @@ def lint_catalog(config: Config | None = None) -> LintReport:
             if data is None:
                 report.add("error", "profile.parse", target, "could not parse JSON")
                 continue
+            lure = lure_reason(data)
+            if lure is not None:
+                report.add("error", "profile.lure", target, lure)
             tier = data.get("evidence_level")
             if tier == "unverified-profile":
                 # Stubs are autopilot-bootstrapped from ONEXUS records and

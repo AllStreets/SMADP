@@ -36,6 +36,7 @@ from typing import Any
 from smadp.autopilot.bootstrap import _atomic_write
 from smadp.autopilot.planners.enrichment import EnrichmentPlanner
 from smadp.autopilot.work_queue import append_items
+from smadp.catalog.lures import lure_reason
 
 KILL_SWITCH = "AGENTS_SYNC_DISABLED"
 
@@ -52,6 +53,8 @@ def _eligible(profile: dict[str, Any]) -> bool:
     """A staged seed can enter research once it carries the catalog
     provenance the EnrichmentPlanner keys on."""
     if profile.get("evidence_level") != "unverified-profile":
+        return False
+    if lure_reason(profile) is not None:
         return False
     return bool((profile.get("onexus") or {}).get("source_github"))
 
