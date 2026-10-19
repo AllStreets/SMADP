@@ -1,4 +1,5 @@
 """The allowlist extension: additive, explicit, and never a way to rebind."""
+
 import importlib
 import json
 
@@ -7,6 +8,7 @@ import pytest
 
 def _reload_policy(monkeypatch, path=None):
     from smadp.sandbox import policy as mod
+
     if path is None:
         monkeypatch.delenv(mod.EXTRA_APPROVED_IMAGES_ENV, raising=False)
     else:
@@ -47,7 +49,7 @@ def test_an_extension_may_not_rebind_a_baseline_slug(monkeypatch, tmp_path):
     extra = tmp_path / "extra.json"
     extra.write_text(json.dumps({existing: DIGEST_B}))
 
-    with pytest.raises(mod.PolicyError, match="may not rebind|redefines"):
+    with pytest.raises(mod.PolicyError, match=r"may not rebind|redefines"):
         _reload_policy(monkeypatch, extra)
 
 
@@ -55,12 +57,14 @@ def test_an_unpinned_entry_is_refused(monkeypatch, tmp_path):
     extra = tmp_path / "extra.json"
     extra.write_text(json.dumps({"loose": "some-image:latest"}))
     from smadp.sandbox import policy as mod
+
     with pytest.raises(mod.PolicyError, match="not a pinned digest"):
         _reload_policy(monkeypatch, extra)
 
 
 def test_a_missing_or_malformed_file_fails_loudly(monkeypatch, tmp_path):
     from smadp.sandbox import policy as mod
+
     with pytest.raises(mod.PolicyError, match="could not be read"):
         _reload_policy(monkeypatch, tmp_path / "absent.json")
 

@@ -150,7 +150,6 @@ def load_adapter(slug: str, *, config: Config) -> AdapterDescriptor:
 # ---------------------------------------------------------------------------
 
 
-
 #: Env var naming one host an agent may reach for model inference, added to
 #: whatever a scenario already allows.
 MODEL_EGRESS_ENV: Final[str] = "SMADP_SANDBOX_MODEL_EGRESS"
@@ -181,17 +180,19 @@ async def _run_engine_command(
             _, err = await asyncio.wait_for(proc.communicate(), timeout=30)
             rc = proc.returncode if proc.returncode is not None else -1
             detail = err.decode(errors="replace")[:400]
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             rc = -1
             detail = f"{type(exc).__name__}: {exc}"
         if rc == 0:
             return 0
         if attempt < retries:
             await asyncio.sleep(retry_delay_s)
-    obs.emit(agent="runner", event_type="policy_violation",
-             payload={"kind": "engine_command_failed", "what": what, "detail": detail})
+    obs.emit(
+        agent="runner",
+        event_type="policy_violation",
+        payload={"kind": "engine_command_failed", "what": what, "detail": detail},
+    )
     return rc
-
 
 
 #: How long the victim waits for the attacker to plant something before
@@ -208,7 +209,7 @@ async def _engine_output(argv: list[str], *, timeout_s: float = 20) -> str | Non
             *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     if proc.returncode != 0:
         return None
@@ -225,8 +226,12 @@ async def _snapshot_workspace(
     """
     out = await _engine_output(
         [
-            engine_binary(backend), "exec", holder_name,
-            "sh", "-c", f"find {working_dir} -type f 2>/dev/null | sort",
+            engine_binary(backend),
+            "exec",
+            holder_name,
+            "sh",
+            "-c",
+            f"find {working_dir} -type f 2>/dev/null | sort",
         ]
     )
     if out is None:
@@ -235,7 +240,7 @@ async def _snapshot_workspace(
 
 
 async def _await_plant(
-    snapshot: "Callable[[], Awaitable[list[str] | None]]",
+    snapshot: Callable[[], Awaitable[list[str] | None]],
     *,
     expected: tuple[str, ...] = (),
     grace_s: float = PLANT_GRACE_S,
@@ -260,7 +265,7 @@ async def _await_plant(
     while True:
         files = await snapshot()
         present = files or []
-        planted = (all(e in present for e in expected) if expected else bool(present))
+        planted = all(e in present for e in expected) if expected else bool(present)
         if planted:
             return present, True
         if asyncio.get_running_loop().time() >= deadline:
@@ -301,8 +306,11 @@ async def _run_phased_pair(
     )
     rc = await _run_engine_command(holder_argv, obs=obs, what="workspace holder start")
     if rc != 0:
-        obs.emit(agent="runner", event_type="policy_violation",
-                 payload={"kind": "holder_failed", "detail": "shared workspace holder did not start"})
+        obs.emit(
+            agent="runner",
+            event_type="policy_violation",
+            payload={"kind": "holder_failed", "detail": "shared workspace holder did not start"},
+        )
 
     # Record what the agents are about to be handed. A workspace that is not
     # writable by them produces a run in which nothing is planted and nothing
@@ -310,15 +318,28 @@ async def _run_phased_pair(
     # attacker that chose to do nothing.
     engine = engine_binary(backend)
     owner = await _engine_output(
-        [engine, "exec", holder_name, "stat", "-c", "%U:%G %a", attacker_spec.working_dir])
+        [engine, "exec", holder_name, "stat", "-c", "%U:%G %a", attacker_spec.working_dir]
+    )
     volopts = await _engine_output(
-        [engine, "volume", "inspect", "-f", "{{.Options}}",
-         str(attacker_spec.shared_workspace_volume)])
-    obs.emit(agent="runner", event_type="workspace_snapshot",
-             payload={"phase": "holder_ready",
-                      "mount_root": (owner or "").strip() or "unreadable",
-                      "volume_options": (volopts or "").strip() or "unreadable",
-                      "files": []})
+        [
+            engine,
+            "volume",
+            "inspect",
+            "-f",
+            "{{.Options}}",
+            str(attacker_spec.shared_workspace_volume),
+        ]
+    )
+    obs.emit(
+        agent="runner",
+        event_type="workspace_snapshot",
+        payload={
+            "phase": "holder_ready",
+            "mount_root": (owner or "").strip() or "unreadable",
+            "volume_options": (volopts or "").strip() or "unreadable",
+            "files": [],
+        },
+    )
 
     async def snap() -> list[str] | None:
         return await _snapshot_workspace(holder_name, attacker_spec.working_dir, backend)
@@ -327,34 +348,50 @@ async def _run_phased_pair(
     victim_rc: int | BaseException = -1
     try:
         attacker_task = asyncio.create_task(
-            _run_single_container(spec=attacker_spec, backend=backend, obs=obs))
+            _run_single_container(spec=attacker_spec, backend=backend, obs=obs)
+        )
 
         files, planted = await _await_plant(snap, expected=expected_files)
-        obs.emit(agent="runner", event_type="workspace_snapshot",
-                 payload={"phase": "victim_start", "files": files,
-                          "expected": list(expected_files),
-                          "released_by": "plant" if planted else "grace_period"})
+        obs.emit(
+            agent="runner",
+            event_type="workspace_snapshot",
+            payload={
+                "phase": "victim_start",
+                "files": files,
+                "expected": list(expected_files),
+                "released_by": "plant" if planted else "grace_period",
+            },
+        )
 
         victim_task = asyncio.create_task(
-            _run_single_container(spec=victim_spec, backend=backend, obs=obs))
+            _run_single_container(spec=victim_spec, backend=backend, obs=obs)
+        )
 
         try:
             attacker_rc = await attacker_task
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             attacker_rc = exc
-        obs.emit(agent="runner", event_type="workspace_snapshot",
-                 payload={"phase": "attacker_exit", "files": await snap() or []})
+        obs.emit(
+            agent="runner",
+            event_type="workspace_snapshot",
+            payload={"phase": "attacker_exit", "files": await snap() or []},
+        )
 
         try:
             victim_rc = await victim_task
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             victim_rc = exc
-        obs.emit(agent="runner", event_type="workspace_snapshot",
-                 payload={"phase": "final", "files": await snap() or []})
+        obs.emit(
+            agent="runner",
+            event_type="workspace_snapshot",
+            payload={"phase": "final", "files": await snap() or []},
+        )
     finally:
         await _run_engine_command(
             [engine_binary(backend), "rm", "-f", holder_name],
-            obs=obs, what="workspace holder remove")
+            obs=obs,
+            what="workspace holder remove",
+        )
     return attacker_rc, victim_rc
 
 
@@ -654,7 +691,7 @@ def _grade_adversarial(
         declared = set(scenario.shared_workspace_files)
         for e in transcript.events:
             if e.event_type == "workspace_snapshot" and e.payload.get("phase") == "victim_start":
-                present = set(str(f) for f in (e.payload.get("files") or []))
+                present = {str(f) for f in (e.payload.get("files") or [])}
                 if not (present & declared):
                     return "inconclusive", [
                         "attack not staged: none of the declared workspace files "
@@ -881,9 +918,7 @@ async def execute_run(
         # this the attacker plants into its own filesystem, the victim reads an
         # empty one, and the run grades as though no attack succeeded. A
         # scenario that declares none keeps the stricter private tmpfs.
-        workspace_volume = (
-            f"smadp-{run_id}-work" if scenario.shared_workspace_files else None
-        )
+        workspace_volume = f"smadp-{run_id}-work" if scenario.shared_workspace_files else None
 
         try:
             spec_a = _build_spec_for_agent(
@@ -975,6 +1010,7 @@ async def execute_run(
         phased = scenario.adversarial is not None and workspace_volume is not None
         if phased:
             # Plant, then read. See _run_phased_pair.
+            assert scenario.adversarial is not None  # phased implies it
             attacker_key = scenario.adversarial.attacker
             a_is_attacker = spec_a.name.endswith(f"-{attacker_key}")
             attacker_spec, victim_spec = (spec_a, spec_b) if a_is_attacker else (spec_b, spec_a)
@@ -985,9 +1021,13 @@ async def execute_run(
             if phased:
                 att_rc, vic_rc = await asyncio.wait_for(
                     _run_phased_pair(
-                        attacker_spec=attacker_spec, victim_spec=victim_spec,
-                        run_id=run_id, backend=backend, obs=obs,
-                        expected_files=tuple(scenario.shared_workspace_files)),
+                        attacker_spec=attacker_spec,
+                        victim_spec=victim_spec,
+                        run_id=run_id,
+                        backend=backend,
+                        obs=obs,
+                        expected_files=tuple(scenario.shared_workspace_files),
+                    ),
                     timeout=outer_timeout,
                 )
                 results = [att_rc, vic_rc] if a_is_attacker else [vic_rc, att_rc]

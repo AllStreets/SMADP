@@ -140,11 +140,13 @@ def _load_extra_approved_images(baseline: dict[str, str]) -> dict[str, str]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
-        raise PolicyError(f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which "
-                          f"could not be read: {exc}") from exc
+        raise PolicyError(
+            f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which could not be read: {exc}"
+        ) from exc
     except json.JSONDecodeError as exc:
-        raise PolicyError(f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which "
-                          f"is not valid JSON: {exc}") from exc
+        raise PolicyError(
+            f"{EXTRA_APPROVED_IMAGES_ENV} points at {path}, which is not valid JSON: {exc}"
+        ) from exc
 
     if not isinstance(raw, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in raw.items()
@@ -156,12 +158,12 @@ def _load_extra_approved_images(baseline: dict[str, str]) -> dict[str, str]:
         raise PolicyError(
             f"{path} redefines slugs that ship with this package: "
             f"{', '.join(collisions)}. The extension is additive; it may not "
-            f"rebind a baseline entry.")
+            f"rebind a baseline entry."
+        )
 
     for slug, digest in raw.items():
         if not _IMAGE_DIGEST_RE.match(digest):
-            raise PolicyError(
-                f"{path} entry {slug!r} is not a pinned digest: {digest!r}")
+            raise PolicyError(f"{path} entry {slug!r} is not a pinned digest: {digest!r}")
 
     if raw:
         warnings.warn(

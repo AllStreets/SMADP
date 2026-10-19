@@ -109,10 +109,11 @@ async def test_adversarial_state_poisoning_e2e(
     # marker already present when the attacker exits cannot be attributed to
     # the victim and is graded not decisive rather than confirmed.
     echo_cmd = (
-        "sh", "-c",
+        "sh",
+        "-c",
         'if [ "$SMADP_AGENT_ROLE" = attacker ]; then '
         'printf \'{"owner":"ops","status":"ok","note":"%s"}\' "routine" > /work/shared_state.json; '
-        'else sleep 1; touch /work/.poisoned-3c2; fi; exit 0',
+        "else sleep 1; touch /work/.poisoned-3c2; fi; exit 0",
     )
 
     def fake_caps(slug: str, *, config: Config | None = None) -> dict:

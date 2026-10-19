@@ -329,16 +329,19 @@ def build_shared_workspace_create_command(
     shared.
     """
     uid_str, _, gid_str = user.partition(":")
-    opts = (
-        f"noexec,nosuid,nodev,size={size_mb}m,"
-        f"uid={uid_str},gid={gid_str or uid_str}"
-    )
+    opts = f"noexec,nosuid,nodev,size={size_mb}m,uid={uid_str},gid={gid_str or uid_str}"
     return [
         _engine_binary(backend),
-        "volume", "create", "--driver", "local",
-        "--opt", "type=tmpfs",
-        "--opt", "device=tmpfs",
-        "--opt", f"o={opts}",
+        "volume",
+        "create",
+        "--driver",
+        "local",
+        "--opt",
+        "type=tmpfs",
+        "--opt",
+        "device=tmpfs",
+        "--opt",
+        f"o={opts}",
         name,
     ]
 
@@ -372,27 +375,41 @@ def build_workspace_holder_command(
     assert_image_approved(image_digest)
     engine = _engine_binary(backend)
     return [
-        engine, "run", "-d", "--rm", "--name", name,
+        engine,
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        name,
         *_runtime_flag(backend),
-        "--user", "0:0",
-        "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges",
-        "--pids-limit", "8",
-        "--cpus", "0.10",
-        "--memory", "32m",
-        "--memory-swap", "32m",
+        "--user",
+        "0:0",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "8",
+        "--cpus",
+        "0.10",
+        "--memory",
+        "32m",
+        "--memory-swap",
+        "32m",
         "--read-only",
-        "--mount", f"type=volume,source={volume},target={working_dir}",
-        "--network", "none",
-        "--entrypoint", "sh",
+        "--mount",
+        f"type=volume,source={volume},target={working_dir}",
+        "--network",
+        "none",
+        "--entrypoint",
+        "sh",
         image_digest,
-        "-c", "sleep 1800",
+        "-c",
+        "sleep 1800",
     ]
 
 
-def build_shared_workspace_remove_command(
-    name: str, backend: RuntimeBackend
-) -> list[str]:
+def build_shared_workspace_remove_command(name: str, backend: RuntimeBackend) -> list[str]:
     """Remove the shared workspace volume.
 
     Always run, including after a failed run. A volume left behind would be

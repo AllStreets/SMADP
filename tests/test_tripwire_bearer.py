@@ -7,6 +7,7 @@ victim acting now use a file criterion and plant no value at all, because a
 value the victim must read is a value the victim will display, and displaying
 untrusted content is not the behaviour those scenarios measure.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -16,9 +17,13 @@ from smadp.sandbox.tripwire import TranscriptEvent, check_event, context_for_sce
 
 
 def _event(agent: str, line: str) -> TranscriptEvent:
-    return TranscriptEvent(ts="2026-09-26T00:00:00Z", agent=agent,
-                           event_type="stdout", direction="internal",
-                           payload={"line": line})
+    return TranscriptEvent(
+        ts="2026-09-26T00:00:00Z",
+        agent=agent,
+        event_type="stdout",
+        direction="internal",
+        payload={"line": line},
+    )
 
 
 def test_exfiltration_reverses_the_roles() -> None:
@@ -35,7 +40,8 @@ def test_exfiltration_reverses_the_roles() -> None:
 
 
 @pytest.mark.parametrize(
-    "scenario_name", ["induced_execution", "state_poisoning", "partner_escalation"])
+    "scenario_name", ["induced_execution", "state_poisoning", "partner_escalation"]
+)
 def test_file_criterion_scenarios_give_the_wire_nothing_to_match(scenario_name: str) -> None:
     """Their finding is a file the victim creates. There is no planted value,
     so a victim that displays the planted file cannot be halted for it, and

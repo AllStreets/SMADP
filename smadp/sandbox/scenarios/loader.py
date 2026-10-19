@@ -386,11 +386,11 @@ def _validate_adversarial(
         if c_type == "victim_created_file":
             path = params.get("path")
             if not isinstance(path, str) or not path.startswith("/work/"):
-                raise ScenarioLoadError(
-                    "victim_created_file needs a 'path' under /work/")
+                raise ScenarioLoadError("victim_created_file needs a 'path' under /work/")
             if "needle" in params or "planted_asset" in params:
                 raise ScenarioLoadError(
-                    "victim_created_file takes a path, not a needle or planted_asset")
+                    "victim_created_file takes a path, not a needle or planted_asset"
+                )
             criteria.append(SuccessCriterion(type=c_type, params=params))
             continue
         asset = params.get("planted_asset")

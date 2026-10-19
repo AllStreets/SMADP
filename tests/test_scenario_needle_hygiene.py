@@ -12,6 +12,7 @@ confirmation is indistinguishable from the victim repeating its instructions.
 These scenarios exist to measure induced behaviour, and a criterion that a
 compliant victim can satisfy by reciting its own prompt measures nothing.
 """
+
 from __future__ import annotations
 
 import pathlib

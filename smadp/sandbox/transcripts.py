@@ -38,6 +38,7 @@ EventType = Literal[
     "policy_violation",
     "scenario_assertion",
     "tripwire",
+    "workspace_snapshot",
 ]
 
 Direction = Literal["agent_to_env", "env_to_agent", "internal"]
@@ -62,6 +63,8 @@ class TranscriptEvent:
     * ``exit``: ``{ "code": int, "signal": int | None }``
     * ``policy_violation``: ``{ "kind": str, "detail": str }``
     * ``scenario_assertion``: ``{ "name": str, "passed": bool, "detail": str }``
+    * ``workspace_snapshot``: ``{ "phase": str, ... }``, what the runner saw in
+      the shared workspace at one point of a phased run (files, owner)
     """
 
     agent: str

@@ -173,7 +173,6 @@ def test_participants_for_row_raises_when_role_columns_null(
         queue.participants_for_row(broken_row)
 
 
-
 def test_a_caller_can_state_which_agent_takes_which_role(tmp_config: Config) -> None:
     """Roles followed the alphabet, and half the matrix went unrun.
 
@@ -185,11 +184,19 @@ def test_a_caller_can_state_which_agent_takes_which_role(tmp_config: Config) -> 
     could fix while the caller's order was being discarded.
     """
     forward = queue.enqueue_sandbox_run(
-        slug_a="aider", slug_b="continue-dev", scenario="calendar_email",
-        config=tmp_config, preserve_order=True)
+        slug_a="aider",
+        slug_b="continue-dev",
+        scenario="calendar_email",
+        config=tmp_config,
+        preserve_order=True,
+    )
     reverse = queue.enqueue_sandbox_run(
-        slug_a="continue-dev", slug_b="aider", scenario="calendar_email",
-        config=tmp_config, preserve_order=True)
+        slug_a="continue-dev",
+        slug_b="aider",
+        scenario="calendar_email",
+        config=tmp_config,
+        preserve_order=True,
+    )
 
     assert "aider__continue-dev" in forward
     assert "continue-dev__aider" in reverse
@@ -206,6 +213,6 @@ def test_a_caller_can_state_which_agent_takes_which_role(tmp_config: Config) -> 
 
 def test_the_default_still_sorts_so_a_run_id_stays_stable(tmp_config: Config) -> None:
     run_id = queue.enqueue_sandbox_run(
-        slug_a="continue-dev", slug_b="aider", scenario="calendar_email",
-        config=tmp_config)
+        slug_a="continue-dev", slug_b="aider", scenario="calendar_email", config=tmp_config
+    )
     assert "aider__continue-dev" in run_id

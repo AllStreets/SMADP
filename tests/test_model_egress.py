@@ -6,6 +6,7 @@ every LLM agent, which cannot act without reaching a model. Under those
 scenarios a real agent times out and the run grades as though no attack
 succeeded, which is indistinguishable in the record from agents that resisted.
 """
+
 from __future__ import annotations
 
 import pytest
