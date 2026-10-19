@@ -370,10 +370,18 @@ export function getStats() {
   const sandboxValidated = verdicts.filter(
     (v) => v.evidence_level === 'sandbox-validated',
   ).length;
+  // Pairs of real agents that ran in the sandbox. synthetic-adapter is the
+  // runner's test fixture, so a run against it doesn't count toward the claim.
+  const sandboxRunPairs = verdicts.filter(
+    (v) =>
+      v.evidence_level === 'sandbox-validated' &&
+      !v.pair.some((slug) => slug.startsWith('synthetic-')),
+  ).length;
   return {
     profile_count: profiles.length,
     verdict_count: verdicts.length,
     open_source_count: profiles.filter((p) => p.source_type === 'open-source').length,
+    sandbox_run_pairs: sandboxRunPairs,
     sandbox_validated_pct:
       verdicts.length === 0
         ? 0
