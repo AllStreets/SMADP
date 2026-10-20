@@ -9,6 +9,9 @@ const present = new Set(profiles.map((p) => p.category));
 const visibleCategories = categories.filter((c) => present.has(c.id));
 
 const verifiedCount = profiles.filter((p) => (p as any).verification?.status === 'verified').length;
+const tierOf = (p: any) => p.review_tier ?? 'unreviewed';
+const handChecked = profiles.filter((p) => tierOf(p) === 'hand-checked').length;
+const reviewed = profiles.filter((p) => tierOf(p) !== 'unreviewed').length;
 const sourceTypes = ['open-source', 'closed-source', 'source-available'] as const;
 ---
 
@@ -17,8 +20,10 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
     <span class="heading-eyebrow">Catalog</span>
     <h1 class="h1 mt-3 text-white">All agents</h1>
     <p class="lead mt-4 max-w-2xl">
-      {profiles.length} profiles in the catalog · {verifiedCount} verified.
-      Filter by category, source type, or verification status.
+      {reviewed.toLocaleString()} reviewed profiles: {handChecked} hand-checked against the agent's
+      docs and code, and the rest profiled from its documentation. Another
+      {(profiles.length - reviewed).toLocaleString()} are unreviewed stubs from a bulk import, with no
+      capabilities filled in. They're behind the Review filter.
     </p>
   </section>
 
@@ -49,6 +54,17 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
       </select>
 
       <select
+        id="agent-review"
+        aria-label="Review level"
+        class="rounded-lg border border-white/10 bg-ink-900/80 px-3 py-2 text-sm text-ink-100 focus:border-brand-500/60"
+      >
+        <option value="reviewed" selected>Reviewed ({reviewed.toLocaleString()})</option>
+        <option value="hand-checked">Hand-checked only ({handChecked})</option>
+        <option value="unreviewed">Unreviewed stubs only</option>
+        <option value="">Everything ({profiles.length.toLocaleString()})</option>
+      </select>
+
+      <select
         id="agent-status"
         class="rounded-lg border border-white/10 bg-ink-900/80 px-3 py-2 text-sm text-ink-100 focus:border-brand-500/60"
       >
@@ -58,7 +74,7 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
       </select>
 
       <span id="agent-count" class="ml-auto font-mono text-xs text-ink-400">
-        {profiles.length} shown
+        {reviewed.toLocaleString()} shown
       </span>
     </div>
 
@@ -78,6 +94,8 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
             data-category={p.category}
             data-source={p.source_type}
             data-status={(p as any).verification?.status ?? 'unverified'}
+            data-review={tierOf(p)}
+            style={tierOf(p) === 'unreviewed' ? 'display:none' : undefined}
           >
             <AgentCard profile={p} />
           </div>
@@ -92,6 +110,7 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
   const category = document.getElementById('agent-category') as HTMLSelectElement | null;
   const source = document.getElementById('agent-source') as HTMLSelectElement | null;
   const status = document.getElementById('agent-status') as HTMLSelectElement | null;
+  const review = document.getElementById('agent-review') as HTMLSelectElement | null;
   const counter = document.getElementById('agent-count');
   const tiles = document.querySelectorAll<HTMLDivElement>('.agent-tile');
 
@@ -100,24 +119,32 @@ const sourceTypes = ['open-source', 'closed-source', 'source-available'] as cons
     const cat = category?.value || '';
     const src = source?.value || '';
     const stat = status?.value || '';
+    const rev = review?.value ?? 'reviewed';
     let shown = 0;
     tiles.forEach((t) => {
       const okQ = !q || t.dataset.name?.includes(q);
       const okC = !cat || t.dataset.category === cat;
       const okS = !src || t.dataset.source === src;
       const okV = !stat || t.dataset.status === stat;
-      const ok = okQ && okC && okS && okV;
+      const tier = t.dataset.review;
+      const okR = !rev || (rev === 'reviewed' ? tier !== 'unreviewed' : tier === rev);
+      const ok = okQ && okC && okS && okV && okR;
       t.style.display = ok ? '' : 'none';
       if (ok) shown++;
     });
     if (counter) counter.textContent = `${shown} shown`;
   }
 
-  [search, category, source, status].forEach((el) => el?.addEventListener('input', apply));
+  [search, category, source, status, review].forEach((el) => el?.addEventListener('input', apply));
 
   // Hydrate from URL query params for homepage stat-card deep-links
   // (e.g. /agents?source=open-source).
   const params = new URLSearchParams(window.location.search);
+  const reviewParam = params.get('review');
+  if (reviewParam !== null && review && Array.from(review.options).some((o) => o.value === reviewParam)) {
+    review.value = reviewParam;
+    apply();
+  }
   const sourceParam = params.get('source');
   if (sourceParam && source) {
     const match = Array.from(source.options).find((o) => o.value === sourceParam);

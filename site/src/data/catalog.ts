@@ -83,6 +83,26 @@ function normalizeProfile(raw: any): Profile {
   } as Profile;
 }
 
+/**
+ * How much a person has looked at a profile:
+ * - hand-checked: a person read the agent's docs and code and wrote the profile
+ *   (`manual: true`);
+ * - docs: profiled from the agent's own documentation (`evidence_level: docs-only`);
+ * - unreviewed: a bulk-imported stub with no capabilities filled in.
+ * The agents page leads with the first two; stubs sit behind a filter.
+ */
+export type ReviewTier = 'hand-checked' | 'docs' | 'unreviewed';
+export function reviewTierOf(raw: any): ReviewTier {
+  if (raw?.manual === true) return 'hand-checked';
+  if (raw?.evidence_level === 'docs-only') return 'docs';
+  return 'unreviewed';
+}
+function withTier(raw: any): Profile {
+  const p = normalizeProfile(raw) as any;
+  p.review_tier = reviewTierOf(raw);
+  return p as Profile;
+}
+
 let _profiles: Profile[] | null = null;
 export function getProfiles(): Profile[] {
   if (_profiles) return _profiles;
@@ -93,13 +113,13 @@ export function getProfiles(): Profile[] {
     (f) => f.endsWith('.json') && !f.startsWith('_'),
   )) {
     const p = safeReadJSON<any>(path.join(dir, f));
-    if (p) out.push(normalizeProfile(p));
+    if (p) out.push(withTier(p));
   }
   // Unverified seeds live at catalog/profiles/_unverified/<slug>.json.
   const unverifiedDir = path.join(dir, '_unverified');
   for (const f of safeReadDir(unverifiedDir).filter((f) => f.endsWith('.json'))) {
     const p = safeReadJSON<any>(path.join(unverifiedDir, f));
-    if (p) out.push(normalizeProfile(p));
+    if (p) out.push(withTier(p));
   }
   out.sort((a, b) => a.name.localeCompare(b.name));
   _profiles = out;
@@ -377,8 +397,11 @@ export function getStats() {
       v.evidence_level === 'sandbox-validated' &&
       !v.pair.some((slug) => slug.startsWith('synthetic-')),
   ).length;
+  const tier = (t: ReviewTier) => profiles.filter((p) => (p as any).review_tier === t).length;
   return {
     profile_count: profiles.length,
+    hand_checked_count: tier('hand-checked'),
+    reviewed_count: tier('hand-checked') + tier('docs'),
     verdict_count: verdicts.length,
     open_source_count: profiles.filter((p) => p.source_type === 'open-source').length,
     sandbox_run_pairs: sandboxRunPairs,
